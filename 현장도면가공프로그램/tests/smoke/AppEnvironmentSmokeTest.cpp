@@ -3,6 +3,8 @@
 #include "config/AppEnvironment.h"
 
 #include <cstdlib>
+#include <optional>
+#include <string>
 
 namespace {
 
@@ -23,6 +25,29 @@ void clearAppEnv()
     unsetenv("APP_ENV");
 #endif
 }
+
+class ScopedAppEnv final {
+public:
+    ScopedAppEnv()
+    {
+        const char* current = std::getenv("APP_ENV");
+        if (current != nullptr) {
+            previous_ = std::string(current);
+        }
+    }
+
+    ~ScopedAppEnv()
+    {
+        if (previous_) {
+            setAppEnv(previous_->c_str());
+        } else {
+            clearAppEnv();
+        }
+    }
+
+private:
+    std::optional<std::string> previous_;
+};
 
 } // namespace
 
@@ -56,11 +81,11 @@ TEST_CASE("compiled default runtime mode matches the build configuration")
 
 TEST_CASE("APP_ENV overrides the compiled runtime mode")
 {
+    const ScopedAppEnv scopedAppEnv;
+
     setAppEnv("production");
     CHECK(yjcad::runtimeModeFromEnvironment() == yjcad::RuntimeMode::Production);
 
     setAppEnv("development");
     CHECK(yjcad::runtimeModeFromEnvironment() == yjcad::RuntimeMode::Development);
-
-    clearAppEnv();
 }
