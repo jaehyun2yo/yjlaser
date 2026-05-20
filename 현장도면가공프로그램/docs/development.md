@@ -7,6 +7,11 @@
 - Qt 6-capable toolchain
 - vcpkg with `VCPKG_ROOT` set
 
+The presets keep vcpkg's installed packages under
+`$env:VCPKG_ROOT/installed/yjlaser-onsite`. Keep `VCPKG_ROOT` on an ASCII path
+on Windows; MSVC link response files can fail to resolve dependency libraries
+when vcpkg-installed paths contain Korean characters.
+
 ## Configure
 
 ```powershell
@@ -28,7 +33,7 @@ ctest --preset dev
 ## Benchmark
 
 ```powershell
-Get-ChildItem build/dev -Recurse -Filter "yjcad_benchmarks.exe" | Select-Object -First 1 | ForEach-Object { & $_.FullName --benchmark_min_time=0.01 }
+Get-ChildItem build/dev -Recurse -Filter "yjcad_benchmarks.exe" | Select-Object -First 1 | ForEach-Object { & $_.FullName --benchmark_min_time=0.01s }
 ```
 
 ## Production Build

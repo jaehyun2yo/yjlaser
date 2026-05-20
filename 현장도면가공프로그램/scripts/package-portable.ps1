@@ -53,14 +53,23 @@ Copy-Item "README.md" (Join-Path $outputResolved "README.txt")
 Copy-Item "docs/portable.md" (Join-Path $outputResolved "portable.md")
 
 $windeployqt = Get-Command windeployqt -ErrorAction SilentlyContinue
-if (-not $windeployqt) {
+$windeployqtPath = if ($windeployqt) { $windeployqt.Source } else { $null }
+
+if (-not $windeployqtPath -and $env:VCPKG_ROOT) {
+    $vcpkgDeployQt = Join-Path $env:VCPKG_ROOT "installed/yjlaser-onsite/x64-windows/tools/Qt6/bin/windeployqt.exe"
+    if (Test-Path -LiteralPath $vcpkgDeployQt) {
+        $windeployqtPath = $vcpkgDeployQt
+    }
+}
+
+if (-not $windeployqtPath) {
     if ($AllowMissingQtRuntime) {
         Write-Warning "windeployqt not found. Qt DLL/plugin validation was intentionally bypassed."
     } else {
         throw "windeployqt not found. Install Qt tools or rerun with -AllowMissingQtRuntime only for local diagnostics."
     }
 } else {
-    & $windeployqt.Source $targetExe --no-translations
+    & $windeployqtPath $targetExe --no-translations
     if ($LASTEXITCODE -ne 0) {
         throw "windeployqt failed with exit code $LASTEXITCODE"
     }

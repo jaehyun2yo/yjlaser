@@ -2,12 +2,10 @@
 
 #include "config/AppEnvironment.h"
 
+#include <spdlog/logger.h>
+
 #include <filesystem>
 #include <memory>
-
-namespace spdlog {
-class logger;
-}
 
 namespace yjcad {
 
