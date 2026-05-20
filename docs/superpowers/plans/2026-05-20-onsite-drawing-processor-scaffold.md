@@ -21,6 +21,8 @@
 
 - Create: `현장도면가공프로그램/CMakeLists.txt`  
   Root build graph, dependencies, app/test/benchmark targets.
+- Create: `현장도면가공프로그램/.gitignore`
+  Exclude local build, package, log, and IDE outputs from the first configure onward.
 - Create: `현장도면가공프로그램/CMakePresets.json`  
   `dev` and `prod` configure/build/test presets using vcpkg toolchain.
 - Create: `현장도면가공프로그램/vcpkg.json`  
@@ -57,7 +59,7 @@
 - Create: `현장도면가공프로그램/benchmarks/smoke/CoreSmokeBenchmark.cpp`  
   Google Benchmark smoke target.
 - Create: `현장도면가공프로그램/scripts/package-portable.ps1`  
-  Copy release executable, config/docs, create portable folders, run `windeployqt` when available.
+  Copy release executable, config/docs, create portable folders, run and validate `windeployqt` unless an explicit escape hatch is used.
 - Create: `현장도면가공프로그램/docs/architecture.md`
 - Create: `현장도면가공프로그램/docs/development.md`
 - Create: `현장도면가공프로그램/docs/portable.md`
@@ -67,6 +69,7 @@
 
 **Files:**
 - Create: `현장도면가공프로그램/CMakeLists.txt`
+- Create: `현장도면가공프로그램/.gitignore`
 - Create: `현장도면가공프로그램/CMakePresets.json`
 - Create: `현장도면가공프로그램/vcpkg.json`
 - Create: `현장도면가공프로그램/config/defaults.json`
@@ -91,7 +94,20 @@ New-Item -ItemType Directory -Force `
 
 Expected: directories exist and no source files are created yet.
 
-- [ ] **Step 2: Create vcpkg manifest**
+- [ ] **Step 2: Create project ignore file**
+
+Create `현장도면가공프로그램/.gitignore`:
+
+```gitignore
+build/
+dist/
+logs/
+*.user
+```
+
+Expected: generated configure/build/package outputs are ignored before any local CMake command runs.
+
+- [ ] **Step 3: Create vcpkg manifest**
 
 Create `현장도면가공프로그램/vcpkg.json`:
 
@@ -108,7 +124,7 @@ Create `현장도면가공프로그램/vcpkg.json`:
 }
 ```
 
-- [ ] **Step 3: Create CMake presets**
+- [ ] **Step 4: Create CMake presets**
 
 Create `현장도면가공프로그램/CMakePresets.json`:
 
@@ -147,17 +163,20 @@ Create `현장도면가공프로그램/CMakePresets.json`:
   "buildPresets": [
     {
       "name": "dev",
-      "configurePreset": "dev"
+      "configurePreset": "dev",
+      "configuration": "Debug"
     },
     {
       "name": "prod",
-      "configurePreset": "prod"
+      "configurePreset": "prod",
+      "configuration": "Release"
     }
   ],
   "testPresets": [
     {
       "name": "dev",
       "configurePreset": "dev",
+      "configuration": "Debug",
       "output": {
         "outputOnFailure": true
       }
@@ -166,7 +185,7 @@ Create `현장도면가공프로그램/CMakePresets.json`:
 }
 ```
 
-- [ ] **Step 4: Create root CMake file**
+- [ ] **Step 5: Create root CMake file**
 
 Create `현장도면가공프로그램/CMakeLists.txt`:
 
@@ -188,7 +207,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 ```
 
-- [ ] **Step 5: Create default config**
+- [ ] **Step 6: Create default config**
 
 Create `현장도면가공프로그램/config/defaults.json`:
 
@@ -214,7 +233,7 @@ Create `현장도면가공프로그램/config/defaults.json`:
 }
 ```
 
-- [ ] **Step 6: Run configure to expose dependency/toolchain problems**
+- [ ] **Step 7: Run configure to expose dependency/toolchain problems**
 
 Run:
 
@@ -226,12 +245,13 @@ cmake --preset dev
 Expected if `VCPKG_ROOT` and dependencies are available: configure succeeds with no build targets yet.  
 Expected if `VCPKG_ROOT` is missing: CMake reports that `$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake` cannot be found. Set `VCPKG_ROOT` before continuing.
 
-- [ ] **Step 7: Commit build skeleton**
+- [ ] **Step 8: Commit build skeleton**
 
 Run:
 
 ```powershell
 git add 현장도면가공프로그램/CMakeLists.txt `
+  현장도면가공프로그램/.gitignore `
   현장도면가공프로그램/CMakePresets.json `
   현장도면가공프로그램/vcpkg.json `
   현장도면가공프로그램/config/defaults.json
@@ -353,6 +373,9 @@ add_library(yjcad_core STATIC
 )
 target_include_directories(yjcad_core PUBLIC src)
 target_link_libraries(yjcad_core PUBLIC spdlog::spdlog)
+target_compile_definitions(yjcad_core PUBLIC
+    YJCAD_DEFAULT_PRODUCTION=$<IF:$<CONFIG:Release>,1,0>
+)
 
 include(CTest)
 if(YJCAD_BUILD_TESTS)
@@ -407,6 +430,10 @@ Create `현장도면가공프로그램/src/config/AppEnvironment.cpp`:
 #include <cctype>
 #include <cstdlib>
 
+#ifndef YJCAD_DEFAULT_PRODUCTION
+#define YJCAD_DEFAULT_PRODUCTION 0
+#endif
+
 namespace {
 
 std::string normalized(std::string value)
@@ -435,7 +462,7 @@ RuntimeMode runtimeModeFromEnvironment()
 {
     const char* value = std::getenv("APP_ENV");
     if (value == nullptr) {
-        return RuntimeMode::Development;
+        return YJCAD_DEFAULT_PRODUCTION == 1 ? RuntimeMode::Production : RuntimeMode::Development;
     }
 
     return runtimeModeFromString(value);
@@ -605,7 +632,8 @@ Run:
 ```powershell
 git add 현장도면가공프로그램/src/config `
   현장도면가공프로그램/src/logging `
-  현장도면가공프로그램/tests
+  현장도면가공프로그램/tests `
+  현장도면가공프로그램/CMakeLists.txt
 git commit -m "feat: 실행 모드와 로깅 골격 추가"
 ```
 
@@ -657,8 +685,10 @@ Create `현장도면가공프로그램/src/canvas/CadCanvasWidget.cpp`:
 ```cpp
 #include "canvas/CadCanvasWidget.h"
 
+#include <QColor>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QPen>
 
 namespace yjcad {
 
@@ -720,6 +750,7 @@ Create `현장도면가공프로그램/src/ui/ToolPanelWidget.cpp`:
 #include "ui/ToolPanelWidget.h"
 
 #include <QPushButton>
+#include <QStringList>
 #include <QVBoxLayout>
 
 namespace yjcad {
@@ -793,6 +824,7 @@ Create `현장도면가공프로그램/src/ui/RightPanelWidget.cpp`:
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QStringList>
 #include <QTabWidget>
 #include <QVBoxLayout>
 
@@ -1088,6 +1120,9 @@ add_library(yjcad_core STATIC
 )
 target_include_directories(yjcad_core PUBLIC src)
 target_link_libraries(yjcad_core PUBLIC spdlog::spdlog)
+target_compile_definitions(yjcad_core PUBLIC
+    YJCAD_DEFAULT_PRODUCTION=$<IF:$<CONFIG:Release>,1,0>
+)
 
 add_library(yjcad_ui STATIC
     src/app/MainWindow.cpp
@@ -1119,6 +1154,7 @@ Run:
 
 ```powershell
 cd 현장도면가공프로그램
+cmake --preset dev
 cmake --build --preset dev
 ```
 
@@ -1153,7 +1189,8 @@ Run:
 ```powershell
 git add 현장도면가공프로그램/src/app `
   현장도면가공프로그램/src/canvas `
-  현장도면가공프로그램/src/ui
+  현장도면가공프로그램/src/ui `
+  현장도면가공프로그램/CMakeLists.txt
 git commit -m "feat: Qt 작업 화면 골격 추가"
 ```
 
@@ -1226,6 +1263,9 @@ add_library(yjcad_core STATIC
 )
 target_include_directories(yjcad_core PUBLIC src)
 target_link_libraries(yjcad_core PUBLIC spdlog::spdlog)
+target_compile_definitions(yjcad_core PUBLIC
+    YJCAD_DEFAULT_PRODUCTION=$<IF:$<CONFIG:Release>,1,0>
+)
 
 add_library(yjcad_ui STATIC
     src/app/MainWindow.cpp
@@ -1261,6 +1301,7 @@ Run:
 
 ```powershell
 cd 현장도면가공프로그램
+cmake --preset dev
 cmake --build --preset dev
 ```
 
@@ -1305,41 +1346,78 @@ Create `현장도면가공프로그램/scripts/package-portable.ps1`:
 ```powershell
 param(
     [string]$BuildDir = "build/prod",
-    [string]$OutputDir = "dist/현장도면가공프로그램-portable"
+    [string]$OutputDir = "dist/현장도면가공프로그램-portable",
+    [switch]$AllowMissingQtRuntime
 )
 
 $ErrorActionPreference = "Stop"
+
+$projectRoot = (Resolve-Path ".").Path
+$distRoot = Join-Path $projectRoot "dist"
+New-Item -ItemType Directory -Force $distRoot | Out-Null
+$distRoot = (Resolve-Path $distRoot).Path
+
+$outputResolved = if ([System.IO.Path]::IsPathRooted($OutputDir)) {
+    [System.IO.Path]::GetFullPath($OutputDir)
+} else {
+    [System.IO.Path]::GetFullPath((Join-Path $projectRoot $OutputDir))
+}
+
+$outputLeaf = Split-Path -Leaf $outputResolved
+if ([string]::IsNullOrWhiteSpace($outputLeaf)) {
+    throw "OutputDir must include a folder name under dist."
+}
+
+$trimChars = [char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+$distPrefix = $distRoot.TrimEnd($trimChars) + [System.IO.Path]::DirectorySeparatorChar
+if (-not $outputResolved.StartsWith($distPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "OutputDir must stay under $distRoot for safe cleanup. Requested: $outputResolved"
+}
 
 $exe = Get-ChildItem -Path $BuildDir -Recurse -Filter "현장도면가공프로그램.exe" | Select-Object -First 1
 if (-not $exe) {
     throw "현장도면가공프로그램.exe not found under $BuildDir. Run: cmake --build --preset prod"
 }
 
-if (Test-Path $OutputDir) {
-    Remove-Item $OutputDir -Recurse -Force
+if (Test-Path -LiteralPath $outputResolved) {
+    Remove-Item -LiteralPath $outputResolved -Recurse -Force
 }
 
 New-Item -ItemType Directory -Force `
-    $OutputDir, `
-    "$OutputDir/config", `
-    "$OutputDir/logs", `
-    "$OutputDir/plugins", `
-    "$OutputDir/runtime", `
-    "$OutputDir/licenses" | Out-Null
+    $outputResolved, `
+    (Join-Path $outputResolved "config"), `
+    (Join-Path $outputResolved "logs"), `
+    (Join-Path $outputResolved "platforms"), `
+    (Join-Path $outputResolved "plugins"), `
+    (Join-Path $outputResolved "runtime"), `
+    (Join-Path $outputResolved "licenses") | Out-Null
 
-Copy-Item $exe.FullName "$OutputDir/현장도면가공프로그램.exe"
-Copy-Item "config/defaults.json" "$OutputDir/config/defaults.json"
-Copy-Item "README.md" "$OutputDir/README.txt"
-Copy-Item "docs/portable.md" "$OutputDir/portable.md"
+$targetExe = Join-Path $outputResolved "현장도면가공프로그램.exe"
+Copy-Item $exe.FullName $targetExe
+Copy-Item "config/defaults.json" (Join-Path $outputResolved "config/defaults.json")
+Copy-Item "README.md" (Join-Path $outputResolved "README.txt")
+Copy-Item "docs/portable.md" (Join-Path $outputResolved "portable.md")
 
 $windeployqt = Get-Command windeployqt -ErrorAction SilentlyContinue
-if ($windeployqt) {
-    & $windeployqt.Source "$OutputDir/현장도면가공프로그램.exe" --no-translations
+if (-not $windeployqt) {
+    if ($AllowMissingQtRuntime) {
+        Write-Warning "windeployqt not found. Qt DLL/plugin validation was intentionally bypassed."
+    } else {
+        throw "windeployqt not found. Install Qt tools or rerun with -AllowMissingQtRuntime only for local diagnostics."
+    }
 } else {
-    Write-Warning "windeployqt not found. Qt DLL/plugin files were not copied automatically."
+    & $windeployqt.Source $targetExe --no-translations
+    if ($LASTEXITCODE -ne 0) {
+        throw "windeployqt failed with exit code $LASTEXITCODE"
+    }
 }
 
-Write-Host "Portable package created: $OutputDir"
+$platformPlugin = Join-Path $outputResolved "platforms/qwindows.dll"
+if (-not (Test-Path -LiteralPath $platformPlugin) -and -not $AllowMissingQtRuntime) {
+    throw "Qt platform plugin missing: $platformPlugin. Ensure windeployqt is on PATH."
+}
+
+Write-Host "Portable package created: $outputResolved"
 ```
 
 - [ ] **Step 2: Add architecture document**
@@ -1415,6 +1493,11 @@ Get-ChildItem build/dev -Recurse -Filter "yjcad_benchmarks.exe" | Select-Object 
 cmake --preset prod
 cmake --build --preset prod
 ```
+
+## Runtime Mode
+
+Debug builds default to `development`; Release builds default to `production`.
+Set `APP_ENV=development` or `APP_ENV=production` to override the compiled default.
 ```
 
 - [ ] **Step 4: Add portable document**
@@ -1447,13 +1530,17 @@ cmake --build --preset prod
 +-- 현장도면가공프로그램.exe
 +-- config/
 +-- logs/
++-- platforms/
++   +-- qwindows.dll
 +-- plugins/
 +-- runtime/
 +-- licenses/
 +-- README.txt
 ```
 
-If `windeployqt` is not available, Qt runtime files must be copied before field use.
+The package script fails by default when `windeployqt` is missing because field PCs
+need Qt DLLs and `platforms/qwindows.dll` inside the portable folder. Use
+`-AllowMissingQtRuntime` only for local packaging diagnostics, not for field distribution.
 The portable folder must not include customer drawings or sensitive logs.
 ```
 
@@ -1509,6 +1596,12 @@ cmake --preset prod
 cmake --build --preset prod
 ./scripts/package-portable.ps1
 ```
+
+`./scripts/package-portable.ps1 -AllowMissingQtRuntime` is allowed only for local packaging diagnostics when Qt deployment tools are not installed.
+
+## Runtime Mode
+
+Debug builds start in `development`; Release builds start in `production`. Override with `APP_ENV` when diagnosing a packaged build.
 ```
 
 - [ ] **Step 6: Build production package**
@@ -1522,7 +1615,7 @@ cmake --build --preset prod
 ./scripts/package-portable.ps1
 ```
 
-Expected: `dist/현장도면가공프로그램-portable/` exists with executable, config, logs, plugins, runtime, licenses, README, and portable docs. If `windeployqt` is missing, the script warns and still creates the folder skeleton.
+Expected: `dist/현장도면가공프로그램-portable/` exists with executable, config, logs, plugins, runtime, licenses, README, portable docs, and `platforms/qwindows.dll`. If `windeployqt` is missing, the script fails unless `-AllowMissingQtRuntime` is explicitly supplied for local diagnostics.
 
 - [ ] **Step 7: Commit packaging and docs**
 
@@ -1607,7 +1700,7 @@ Run:
 git status --short
 ```
 
-Expected: source/docs files are tracked candidates. Build outputs under `현장도면가공프로그램/build/` and `현장도면가공프로그램/dist/` are not staged. If they appear as untracked files, add a project `.gitignore` before committing:
+Expected: source/docs files are tracked candidates. Build outputs under `현장도면가공프로그램/build/` and `현장도면가공프로그램/dist/` are not staged because `현장도면가공프로그램/.gitignore` was created in Task 1. If generated outputs still appear, fix the project `.gitignore` before committing:
 
 ```gitignore
 build/
@@ -1616,9 +1709,9 @@ logs/
 *.user
 ```
 
-- [ ] **Step 6: Commit final ignore file if needed**
+- [ ] **Step 6: Fix ignore rules if generated outputs still appear**
 
-If `build/`, `dist/`, or `logs/` appear in git status, create `현장도면가공프로그램/.gitignore` with:
+If `build/`, `dist/`, or `logs/` appear in git status, update `현장도면가공프로그램/.gitignore` with:
 
 ```gitignore
 build/
@@ -1631,7 +1724,7 @@ Run:
 
 ```powershell
 git add 현장도면가공프로그램/.gitignore
-git commit -m "chore: 현장도면가공프로그램 생성 파일 제외"
+git commit -m "chore: 현장도면가공프로그램 생성 파일 제외 보정"
 ```
 
 Expected: generated build/package/log outputs are ignored.
@@ -1677,3 +1770,63 @@ No unresolved markers are allowed in implementation files. The UI contains initi
 
 **Type consistency:**  
 All C++ symbols use namespace `yjcad`. CMake targets are `yjcad_core`, `yjcad_ui`, `onsite_drawing_processor`, `yjcad_tests`, and `yjcad_benchmarks`. The executable output name is `현장도면가공프로그램`.
+
+## DevEx Review Findings
+
+**Mode:** DX TRIAGE
+**Product type:** Windows desktop C++/Qt internal tool scaffold
+**Primary developer persona:** future YJLaser implementer who must clone the repo, configure Qt/vcpkg, build the app, run smoke tests, and create a portable package without guessing hidden setup steps.
+**Empathy narrative:** "I need one known-good path from clean checkout to running app. When it fails, I need the command, missing prerequisite, and next action immediately because the CAD automation work will already be complex."
+
+### Scorecard
+
+| Dimension | Before | After plan update | Notes |
+|-----------|--------|-------------------|-------|
+| Getting Started | 6/10 | 8/10 | Added early `.gitignore`, explicit build/test/package sequence, and multi-config build preset configuration. |
+| Error Messages & Debugging | 6/10 | 8/10 | Packaging now fails with actionable messages instead of silently creating a broken folder. |
+| Developer Environment & Tooling | 6/10 | 8/10 | Debug/Release runtime mode defaults now match dev/prod presets and can be overridden with `APP_ENV`. |
+| Documentation | 7/10 | 8/10 | Runtime mode and Qt deployment expectations are documented in development/portable/README sections. |
+
+**TTHW estimate:** 20-40 minutes before review -> 10-15 minutes after review, assuming Qt/vcpkg prerequisites are already installed.
+**Competitive benchmark:** internal tool scaffold; target is one golden path, clear failure, no silent broken package.
+**Magical moment:** after `cmake --preset dev && cmake --build --preset dev`, the developer can launch a real Qt shell with the intended CAD work surface and see logs/tests already wired.
+
+### Implementation Tasks From DX Review
+
+- [x] **T1 (P1)** — Packaging — fail when Qt runtime deployment is incomplete.
+  Surfaced by: Error Messages & Debugging. A portable folder without `platforms/qwindows.dll` looks successful but will fail on a field PC.
+  Files: `현장도면가공프로그램/scripts/package-portable.ps1`, `docs/portable.md`, `README.md` plan sections.
+  Verify: `./scripts/package-portable.ps1` fails when `windeployqt` is unavailable unless `-AllowMissingQtRuntime` is used.
+- [x] **T2 (P1)** — Safe cleanup — constrain recursive package cleanup to `dist/`.
+  Surfaced by: Developer Environment & Tooling. `Remove-Item -Recurse` needs an absolute path guard before deleting a computed output directory.
+  Files: `현장도면가공프로그램/scripts/package-portable.ps1` plan section.
+  Verify: script rejects `-OutputDir` outside `dist/` before creating or deleting the target path.
+- [x] **T3 (P2)** — Build hygiene — create project `.gitignore` before the first CMake run.
+  Surfaced by: Getting Started. Build/package/log outputs should not appear as commit candidates after local verification.
+  Files: `현장도면가공프로그램/.gitignore` plan section.
+  Verify: `git status --short` after build does not show `build/`, `dist/`, or `logs/`.
+- [x] **T4 (P2)** — Preset clarity — make dev/prod presets explicit for multi-config generators.
+  Surfaced by: Developer Environment & Tooling. Visual Studio generators can ignore `CMAKE_BUILD_TYPE` unless build/test configuration is specified.
+  Files: `현장도면가공프로그램/CMakePresets.json`, `CMakeLists.txt`, `AppEnvironment.cpp` plan sections.
+  Verify: dev build defaults to development, prod build defaults to production, `APP_ENV` override still works.
+- [x] **T5 (P2)** — Commit accuracy — include changed `CMakeLists.txt` in task-level commits.
+  Surfaced by: Getting Started. Task 2 and Task 3 changed root CMake but the original commit commands could omit it.
+  Files: Task 2 and Task 3 commit command sections.
+  Verify: each task commit contains the CMake changes it depends on.
+
+### Review Tooling Note
+
+`gstack-review-read` could not run in this Windows session because the script file has no associated executable handler in PowerShell. Earlier Bash fallback also failed in this environment, so no GStack JSONL/dashboard artifact was emitted. Per the skill rule, JSONL was not hand-written.
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | NOT RUN | Not requested for this implementation scaffold. |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | NOT RUN | No code diff to review yet; this is still plan-stage. |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | REQUIRED NEXT | Architecture/build/test review has not run. |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | NOT RUN | First implementation UI is a shell; visual review can wait until real interactions exist. |
+| DX Review | `/plan-devex-review` | Developer setup, build, test, packaging | 1 | CLEAR WITH NOTES | Score 6/10 -> 8/10; TTHW 20-40 min -> 10-15 min; fixed packaging failure behavior, safe cleanup, gitignore timing, multi-config presets, and task commit accuracy. |
+
+- **UNRESOLVED:** 0 DX decisions. Eng review remains pending before implementation is claimed ready.
+- **VERDICT:** DX REVIEW APPLIED — proceed to `gstack-plan-eng-review` before executing the scaffold implementation.
