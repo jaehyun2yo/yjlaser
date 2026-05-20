@@ -48,3 +48,7 @@ include(CTest)
 if(YJCAD_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
+
+if(YJCAD_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
