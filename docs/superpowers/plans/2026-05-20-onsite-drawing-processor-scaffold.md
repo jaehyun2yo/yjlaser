@@ -103,6 +103,7 @@ build/
 dist/
 logs/
 *.user
+CMakeUserPresets.json
 ```
 
 Expected: generated configure/build/package outputs are ignored before any local CMake command runs.
@@ -280,6 +281,30 @@ Create `현장도면가공프로그램/tests/smoke/AppEnvironmentSmokeTest.cpp`:
 
 #include "config/AppEnvironment.h"
 
+#include <cstdlib>
+
+namespace {
+
+void setAppEnv(const char* value)
+{
+#ifdef _WIN32
+    _putenv_s("APP_ENV", value);
+#else
+    setenv("APP_ENV", value, 1);
+#endif
+}
+
+void clearAppEnv()
+{
+#ifdef _WIN32
+    _putenv_s("APP_ENV", "");
+#else
+    unsetenv("APP_ENV");
+#endif
+}
+
+} // namespace
+
 TEST_CASE("runtime mode names are stable")
 {
     CHECK(yjcad::runtimeModeName(yjcad::RuntimeMode::Development) == "development");
@@ -297,6 +322,26 @@ TEST_CASE("runtime mode parser defaults to development for unclear values")
 {
     CHECK(yjcad::runtimeModeFromString("") == yjcad::RuntimeMode::Development);
     CHECK(yjcad::runtimeModeFromString("local") == yjcad::RuntimeMode::Development);
+}
+
+TEST_CASE("compiled default runtime mode matches the build configuration")
+{
+#if YJCAD_DEFAULT_PRODUCTION == 1
+    CHECK(yjcad::defaultRuntimeMode() == yjcad::RuntimeMode::Production);
+#else
+    CHECK(yjcad::defaultRuntimeMode() == yjcad::RuntimeMode::Development);
+#endif
+}
+
+TEST_CASE("APP_ENV overrides the compiled runtime mode")
+{
+    setAppEnv("production");
+    CHECK(yjcad::runtimeModeFromEnvironment() == yjcad::RuntimeMode::Production);
+
+    setAppEnv("development");
+    CHECK(yjcad::runtimeModeFromEnvironment() == yjcad::RuntimeMode::Development);
+
+    clearAppEnv();
 }
 ```
 
@@ -393,7 +438,7 @@ cmake --preset dev
 cmake --build --preset dev
 ```
 
-Expected: compile fails because `AppEnvironment.h` and `Logger.h` do not exist yet.
+Expected: configure/generate fails because the core source/header files do not exist yet. This is the intentional red step before implementation.
 
 - [ ] **Step 6: Add runtime mode header**
 
@@ -412,6 +457,7 @@ enum class RuntimeMode {
 };
 
 RuntimeMode runtimeModeFromString(std::string value);
+RuntimeMode defaultRuntimeMode();
 RuntimeMode runtimeModeFromEnvironment();
 std::string runtimeModeName(RuntimeMode mode);
 bool isDevelopment(RuntimeMode mode);
@@ -458,11 +504,16 @@ RuntimeMode runtimeModeFromString(std::string value)
     return RuntimeMode::Development;
 }
 
+RuntimeMode defaultRuntimeMode()
+{
+    return YJCAD_DEFAULT_PRODUCTION == 1 ? RuntimeMode::Production : RuntimeMode::Development;
+}
+
 RuntimeMode runtimeModeFromEnvironment()
 {
     const char* value = std::getenv("APP_ENV");
     if (value == nullptr) {
-        return YJCAD_DEFAULT_PRODUCTION == 1 ? RuntimeMode::Production : RuntimeMode::Development;
+        return defaultRuntimeMode();
     }
 
     return runtimeModeFromString(value);
@@ -1070,18 +1121,23 @@ Create `현장도면가공프로그램/src/app/main.cpp`:
 #include "logging/Logger.h"
 
 #include <QApplication>
+#include <QCoreApplication>
+
+#include <filesystem>
 
 int main(int argc, char* argv[])
 {
+    QApplication app(argc, argv);
+
     const auto mode = yjcad::runtimeModeFromEnvironment();
+    const auto appDirectory = std::filesystem::path(QCoreApplication::applicationDirPath().toStdWString());
     yjcad::initializeLogging({
         .mode = mode,
-        .logDirectory = yjcad::defaultLogDirectory(),
+        .logDirectory = appDirectory / "logs",
         .console = yjcad::isDevelopment(mode)
     });
     yjcad::appLogger()->info("application starting");
 
-    QApplication app(argc, argv);
     yjcad::MainWindow window;
     window.show();
 
@@ -1707,6 +1763,7 @@ build/
 dist/
 logs/
 *.user
+CMakeUserPresets.json
 ```
 
 - [ ] **Step 6: Fix ignore rules if generated outputs still appear**
@@ -1718,6 +1775,7 @@ build/
 dist/
 logs/
 *.user
+CMakeUserPresets.json
 ```
 
 Run:
@@ -1793,23 +1851,23 @@ All C++ symbols use namespace `yjcad`. CMake targets are `yjcad_core`, `yjcad_ui
 
 ### Implementation Tasks From DX Review
 
-- [x] **T1 (P1)** — Packaging — fail when Qt runtime deployment is incomplete.
+- [x] **T1 (P1)** - Packaging - fail when Qt runtime deployment is incomplete.
   Surfaced by: Error Messages & Debugging. A portable folder without `platforms/qwindows.dll` looks successful but will fail on a field PC.
   Files: `현장도면가공프로그램/scripts/package-portable.ps1`, `docs/portable.md`, `README.md` plan sections.
   Verify: `./scripts/package-portable.ps1` fails when `windeployqt` is unavailable unless `-AllowMissingQtRuntime` is used.
-- [x] **T2 (P1)** — Safe cleanup — constrain recursive package cleanup to `dist/`.
+- [x] **T2 (P1)** - Safe cleanup - constrain recursive package cleanup to `dist/`.
   Surfaced by: Developer Environment & Tooling. `Remove-Item -Recurse` needs an absolute path guard before deleting a computed output directory.
   Files: `현장도면가공프로그램/scripts/package-portable.ps1` plan section.
   Verify: script rejects `-OutputDir` outside `dist/` before creating or deleting the target path.
-- [x] **T3 (P2)** — Build hygiene — create project `.gitignore` before the first CMake run.
+- [x] **T3 (P2)** - Build hygiene - create project `.gitignore` before the first CMake run.
   Surfaced by: Getting Started. Build/package/log outputs should not appear as commit candidates after local verification.
   Files: `현장도면가공프로그램/.gitignore` plan section.
   Verify: `git status --short` after build does not show `build/`, `dist/`, or `logs/`.
-- [x] **T4 (P2)** — Preset clarity — make dev/prod presets explicit for multi-config generators.
+- [x] **T4 (P2)** - Preset clarity - make dev/prod presets explicit for multi-config generators.
   Surfaced by: Developer Environment & Tooling. Visual Studio generators can ignore `CMAKE_BUILD_TYPE` unless build/test configuration is specified.
   Files: `현장도면가공프로그램/CMakePresets.json`, `CMakeLists.txt`, `AppEnvironment.cpp` plan sections.
   Verify: dev build defaults to development, prod build defaults to production, `APP_ENV` override still works.
-- [x] **T5 (P2)** — Commit accuracy — include changed `CMakeLists.txt` in task-level commits.
+- [x] **T5 (P2)** - Commit accuracy - include changed `CMakeLists.txt` in task-level commits.
   Surfaced by: Getting Started. Task 2 and Task 3 changed root CMake but the original commit commands could omit it.
   Files: Task 2 and Task 3 commit command sections.
   Verify: each task commit contains the CMake changes it depends on.
@@ -1818,15 +1876,137 @@ All C++ symbols use namespace `yjcad`. CMake targets are `yjcad_core`, `yjcad_ui
 
 `gstack-review-read` could not run in this Windows session because the script file has no associated executable handler in PowerShell. Earlier Bash fallback also failed in this environment, so no GStack JSONL/dashboard artifact was emitted. Per the skill rule, JSONL was not hand-written.
 
+## Eng Review Findings
+
+**Mode:** FULL_REVIEW
+**Scope challenge:** Complexity threshold is intentionally exceeded because this is a scaffold plan that creates build, UI, tests, benchmarks, packaging, and docs in one new project folder. The scope remains acceptable because the first implementation still avoids CAD parsing/editing algorithms and only creates execution boundaries.
+**What already exists:** Existing Python/PyQt desktop projects in this monorepo prove local desktop distribution patterns, but they do not provide reusable C++/Qt 6 build infrastructure. The plan correctly starts a separate C++ project instead of adapting PyInstaller/Python internals.
+**NOT in scope:** DXF/AI/PDF/EPS parsing, CAD entity algorithms, command history, real bridge insertion, real sheet generation, installer, auto-update, and automatic workflow sequencing remain deferred because the first implementation is only the executable scaffold.
+**External grounding:** CMake presets are project-shared config while `CMakeUserPresets.json` is user-local per official CMake docs (`https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html`). Qt's Windows deployment docs recommend `windeployqt` for collecting required Qt libraries/plugins and call out `platforms/qwindows.dll` as the Windows platform plugin (`https://doc.qt.io/qt-6/windows-deployment.html`).
+
+### Scope and Architecture
+
+- [x] **E1 (P1, confidence: 8/10)** - Portable logging must write next to the executable, not whatever current working directory launched the app.
+  - Why: field PCs and shortcuts can start the executable from a different working directory; logs would be scattered or unwritable.
+  - Plan change: `main.cpp` now creates `QApplication` first and initializes logs at `QCoreApplication::applicationDirPath()/logs`.
+  - Verify: launch packaged app from outside its folder and confirm `dist/현장도면가공프로그램-portable/logs/yjcad.log` is created.
+- [x] **E2 (P2, confidence: 8/10)** - User-local CMake presets must be ignored.
+  - Why: CMake documents `CMakeUserPresets.json` as developer-specific; committing it would make one machine's paths leak into shared build config.
+  - Plan change: `현장도면가공프로그램/.gitignore` includes `CMakeUserPresets.json`.
+  - Verify: create `현장도면가공프로그램/CMakeUserPresets.json` and confirm `git status --short` does not show it.
+
+### Code Quality
+
+- [x] **E3 (P2, confidence: 8/10)** - Runtime mode default should be named and testable instead of embedded only inside environment parsing.
+  - Why: dev/prod behavior is a core debugging promise, and the Release default is otherwise easy to regress while refactoring config loading.
+  - Plan change: added `defaultRuntimeMode()` and made `runtimeModeFromEnvironment()` call it when `APP_ENV` is unset.
+  - Verify: `AppEnvironmentSmokeTest` checks `defaultRuntimeMode()` against `YJCAD_DEFAULT_PRODUCTION`.
+- [x] **E4 (P3, confidence: 9/10)** - The intentional red step described the wrong failure phase.
+  - Why: after adding source files to `add_library`, missing `.cpp` files usually fail during CMake configure/generate, not during compilation.
+  - Plan change: Task 2 Step 5 expectation now says configure/generate fails before implementation.
+  - Verify: run Task 2 Step 5 before creating `src/config` and `src/logging` files.
+
+### Test Coverage Diagram
+
+```text
++-------------------------------+-----------------------------+------------------------------+
+| Code path                     | Planned coverage            | Remaining gap                |
+|-------------------------------+-----------------------------+------------------------------|
+| runtimeModeName               | AppEnvironmentSmokeTest     | none                         |
+| runtimeModeFromString aliases | AppEnvironmentSmokeTest     | none                         |
+| defaultRuntimeMode            | AppEnvironmentSmokeTest     | none                         |
+| APP_ENV override              | AppEnvironmentSmokeTest     | none                         |
+| initializeLogging             | LoggerSmokeTest             | file write only, acceptable  |
+| appLogger lazy init           | indirectly via logger test  | no concurrent init test      |
+| Qt main window composition    | manual launch check         | no automated UI smoke yet    |
+| benchmark executable          | manual benchmark run        | no perf threshold yet        |
+| package-portable.ps1          | manual package command      | no Pester/unit script tests  |
++-------------------------------+-----------------------------+------------------------------+
+```
+
+**Test review result:** 3 test gaps remain intentionally accepted for the first scaffold: automated Qt UI smoke, Pester tests for the PowerShell packager, and benchmark threshold assertions. They are not critical because the first implementation target is a local scaffold, but they should be reconsidered before real CAD algorithms land.
+
+### Failure Modes
+
+| Flow | Failure mode | Covered now | Handling expected |
+|------|--------------|-------------|------------------|
+| Configure | `VCPKG_ROOT` missing | manual configure step | CMake error plus docs guidance |
+| Build | Qt/spdlog/Catch2/benchmark package missing | configure/build command | vcpkg/CMake failure |
+| Runtime logging | app launched outside exe folder | plan fixed | executable-adjacent `logs/` |
+| Package | `windeployqt` missing | plan fixed | fail unless explicit diagnostic bypass |
+| Package cleanup | `OutputDir` points outside `dist/` | plan fixed | reject before delete |
+| UI launch | Qt platform plugin missing | package validation | fail package if `qwindows.dll` absent |
+
+**Critical silent gaps:** 0 after the plan updates above.
+
+### Performance Review
+
+No runtime performance issue blocks this scaffold. The plan has a Google Benchmark target, keeps config/logging independent from Qt, and defers heavy CAD parsing/rendering. The benchmark is only a smoke target, so real thresholds must be added when geometry/import services begin.
+
+### Worktree Parallelization Strategy
+
+| Step | Modules touched | Depends on |
+|------|-----------------|------------|
+| Build skeleton | root config, config/ | none |
+| Runtime/logging core | src/config, src/logging, tests/ | Build skeleton |
+| Qt shell | src/app, src/canvas, src/ui | Runtime/logging core |
+| Benchmark | benchmarks/, root CMake | Runtime/logging core |
+| Packaging/docs | scripts/, docs/, README | Qt shell |
+
+Parallel lanes:
+- Lane A: Build skeleton -> runtime/logging core.
+- Lane B: Qt shell after Lane A.
+- Lane C: Benchmark after Lane A; can run in parallel with Qt shell if both coordinate root `CMakeLists.txt` edits.
+- Lane D: Packaging/docs after Qt shell.
+
+Recommended execution: keep this sequential for the first scaffold because several tasks rewrite root `CMakeLists.txt`. Parallel work is possible only after Task 2 if one worker owns UI files and another owns benchmark files, with one integrator owning `CMakeLists.txt`.
+
+### Implementation Tasks From Eng Review
+
+- [x] **T1 (P1, human: ~30min / CC: ~5min)** - Runtime - make portable logs executable-adjacent.
+  - Surfaced by: Architecture review.
+  - Files: `현장도면가공프로그램/src/app/main.cpp`.
+  - Verify: packaged app writes under its own `logs/` folder.
+- [x] **T2 (P2, human: ~20min / CC: ~5min)** - Config - expose and test compiled default runtime mode.
+  - Surfaced by: Code quality and test review.
+  - Files: `src/config/AppEnvironment.h`, `src/config/AppEnvironment.cpp`, `tests/smoke/AppEnvironmentSmokeTest.cpp`.
+  - Verify: `ctest --preset dev`.
+- [x] **T3 (P2, human: ~5min / CC: ~2min)** - Build hygiene - ignore `CMakeUserPresets.json`.
+  - Surfaced by: Architecture review and official CMake preset guidance.
+  - Files: `현장도면가공프로그램/.gitignore`.
+  - Verify: `git status --short`.
+- [x] **T4 (P3, human: ~5min / CC: ~2min)** - Plan accuracy - correct the expected red-step failure phase.
+  - Surfaced by: Code quality review.
+  - Files: implementation plan Task 2 Step 5.
+  - Verify: read the step and confirm it says configure/generate failure.
+
+### Eng Review Completion Summary
+
+- Step 0 Scope Challenge: scope accepted as-is; many files are justified by scaffold boundaries.
+- Architecture Review: 2 issues found, 2 fixed in the plan.
+- Code Quality Review: 2 issues found, 2 fixed in the plan.
+- Test Review: coverage diagram produced, 3 accepted non-critical follow-up gaps.
+- Performance Review: 0 blocking issues.
+- NOT in scope: written above.
+- What already exists: written above.
+- TODOS.md updates: 0 added; existing TODO files are for other subprojects and do not block this scaffold.
+- Failure modes: 0 critical silent gaps after updates.
+- Outside voice: skipped; no separate reviewer agent was permitted by current tool policy.
+- Parallelization: 4 lanes identified, sequential execution recommended.
+
+### Eng Review Tooling Note
+
+`gstack-review-log` could not persist metadata in this Windows session. Direct PowerShell execution has no file association for the script; Bash can find `gstack-review-read`, but `gstack-review-log` depends on `bun` for JSON validation and `bun` is not available in that Bash environment. `jq` is also unavailable, so the eng review task JSONL artifact was not emitted. No hand-written JSONL was created.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | NOT RUN | Not requested for this implementation scaffold. |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | NOT RUN | No code diff to review yet; this is still plan-stage. |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | REQUIRED NEXT | Architecture/build/test review has not run. |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR WITH NOTES | 4 issues found and fixed in plan; 0 critical gaps; 3 non-critical future test gaps accepted. |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | NOT RUN | First implementation UI is a shell; visual review can wait until real interactions exist. |
 | DX Review | `/plan-devex-review` | Developer setup, build, test, packaging | 1 | CLEAR WITH NOTES | Score 6/10 -> 8/10; TTHW 20-40 min -> 10-15 min; fixed packaging failure behavior, safe cleanup, gitignore timing, multi-config presets, and task commit accuracy. |
 
-- **UNRESOLVED:** 0 DX decisions. Eng review remains pending before implementation is claimed ready.
-- **VERDICT:** DX REVIEW APPLIED — proceed to `gstack-plan-eng-review` before executing the scaffold implementation.
+- **UNRESOLVED:** 0 DX/Eng decisions. No TODO was added because review follow-ups are not blocking this scaffold.
+- **VERDICT:** DX + ENG CLEARED WITH NOTES - ready to execute the scaffold implementation plan.
