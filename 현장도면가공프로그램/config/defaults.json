@@ -1,0 +1,19 @@
+{
+  "runtime": {
+    "defaultMode": "production"
+  },
+  "logging": {
+    "directory": "logs",
+    "maxFileSizeMb": 5,
+    "maxFiles": 5,
+    "allowDetailedLogsInProduction": false
+  },
+  "ui": {
+    "workspace": "mixed",
+    "showChecklist": true
+  },
+  "portable": {
+    "preferLocalConfig": true,
+    "fallbackToAppData": true
+  }
+}

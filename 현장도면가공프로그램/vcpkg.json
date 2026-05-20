@@ -1,0 +1,10 @@
+{
+  "name": "yjlaser-onsite-drawing-processor",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "qtbase",
+    "spdlog",
+    "catch2",
+    "benchmark"
+  ]
+}
