@@ -49,6 +49,38 @@
 - undo/redo를 위한 명령 이력 구조
 - 향후 스냅, 치수선, 트림/연장 확장을 위한 service/port 경계
 
+첫 구현 작업은 위 범위 전체를 한 번에 완성하지 않는다. 선택된 첫 구현 산출물은
+`프로젝트 골격 + 빈 Qt 메인 화면 + 로깅/테스트/벤치마크/포터블 폴더 기준`이다.
+
+첫 구현 산출물:
+
+- `현장도면가공프로그램/` 프로젝트 폴더 생성
+- C++20, Qt 6 Widgets, CMake 기반 실행 앱 골격
+- `CMakePresets.json`의 `dev`, `prod` preset
+- vcpkg manifest 파일
+- 빈 Qt 메인 화면
+- 중앙 CAD 캔버스 placeholder
+- 좌측 도구 패널 placeholder
+- 우측 자동화/검수/리포트/레이어/도면정보 탭 placeholder
+- 하단 상태/로그 영역 placeholder
+- spdlog 초기화와 dev/prod 로그 정책 골격
+- Catch2 기반 smoke test
+- Google Benchmark 기반 smoke benchmark
+- 포터블 배포 폴더 구조 문서 또는 스크립트 골격
+- README에 개발, 빌드, 테스트, 벤치마크, 포터블 실행 기준 기록
+
+첫 구현에서 하지 않는 것:
+
+- 실제 DXF/AI/PDF/EPS 파싱
+- 실제 CAD 엔티티 편집 알고리즘
+- 실제 오시/칼선 자동 구분
+- 실제 브릿지 삽입
+- 실제 합판 생성
+- 실제 구아이 기입
+- 실제 출력 전 검수 알고리즘
+- 설치파일 제작
+- 자동 시퀀스 실행
+
 첫 개발 범위에서 실제 완성 기능으로 포함하지 않는 것은 다음과 같다.
 
 - 완전한 DXF 파서 구현
