@@ -1,0 +1,52 @@
+{
+  "project": "yjlaser-website",
+  "task": "external-sync-company-folder",
+  "prompt": "자체웹하드에는 외부웹하드에 동기화되는 폴더 + 업체등록시 생성되는 폴더가있다. 기존 작업방식에서 이제 자체웹하드로 업체들이 이동하게되면 외부웹하드에 감지되는 파일들을 자체웹하드 내부에 외부웹하드 폴더안에 업체에다가 넣을게아니라 이제는 연결된 해당업체 폴더에 넣어야될거같은데 이 기능 개발해야되",
+  "totalPhases": 6,
+  "created_at": "2026-04-27T15:30:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-27T11:54:34+0900",
+      "completed_at": "2026-04-27T12:03:47+0900"
+    },
+    {
+      "phase": 1,
+      "name": "db-schema",
+      "status": "completed",
+      "started_at": "2026-04-27T12:03:52+0900",
+      "completed_at": "2026-04-27T12:10:51+0900"
+    },
+    {
+      "phase": 2,
+      "name": "match-strengthen",
+      "status": "completed",
+      "started_at": "2026-04-27T12:10:53+0900",
+      "completed_at": "2026-04-27T12:28:16+0900"
+    },
+    {
+      "phase": 3,
+      "name": "admin-endpoint",
+      "status": "completed",
+      "started_at": "2026-04-27T12:28:19+0900",
+      "completed_at": "2026-04-27T12:39:20+0900"
+    },
+    {
+      "phase": 4,
+      "name": "admin-ui",
+      "status": "completed",
+      "started_at": "2026-04-27T12:39:23+0900",
+      "completed_at": "2026-04-27T12:48:50+0900"
+    },
+    {
+      "phase": 5,
+      "name": "docs-sync-e2e",
+      "status": "completed",
+      "started_at": "2026-04-27T12:48:53+0900",
+      "completed_at": "2026-04-27T13:10:00+0900",
+      "error_message": "E2E 시나리오 1·3 은 dev DB 에 phase 1 마이그레이션(20260427030704_add_contact_company_id) 미배포로 contacts.company_id 컬럼 부재 → runtime 실패. 시나리오 2(reject 멱등성)는 통과. AC 통합 회귀(pnpm build / npx tsc --noEmit / pnpm test / cd webhard-api && pnpm build / pnpm test) 는 모두 통과 (frontend 793 pass, backend 672 pass). E2E 환경 미셋업, 본 phase 외 무관 — dev DB 에 npx prisma migrate deploy 적용 후 재실행 필요."
+    }
+  ]
+}

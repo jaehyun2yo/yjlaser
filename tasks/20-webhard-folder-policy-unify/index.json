@@ -1,0 +1,53 @@
+{
+  "project": "yjlaser-website",
+  "task": "webhard-folder-policy-unify",
+  "prompt": "task 19 후속. docs/followups/19-webhard-folder-policy-status.md 의 7개 디테일 후보 중 사용자 요청대로 '문의 발생 시 웹하드 폴더 자동 생성 룰' 을 탄탄하게 재설계.\n\n조사 결과 — Contact 생성 6 경로 현황:\n1) 웹폼 (POST /api/v1/contacts) — inquiryTitle 기반 fire-and-forget 폴더 생성\n2) 웹하드 단건 감지 (confirmUpload → autoContact) — 폴더 생성 안 함\n3) 웹하드 배치 감지 (batchConfirmUpload → autoContact) — 동일\n4) 관리프로그램 DXF (POST /integration/contacts/auto) — 웹하드 완전 미연결\n5) 문의 분할 (POST /contacts/:id/split) — 폴더 생성 안 함\n6) merge-drawing-from — Contact 생성 아님 (제외)\n\n확정 정책 7 차원:\n1. 폴더 생성 시점: 하이브리드 (번호 있는 경로 eager, auto-contact/split lazy)\n2. 폴더 이름: 문의-{O} / 문의-{O}_{F} / 문의-{O}-{N} 단일\n3. 미분류 Contact: 폴더 없음 (원위치 유지)\n4. 분할 Contact: 독립 동급 (문의-{O}-{N})\n5. 경로 4 DXF: task 21 로 분리\n6. W.3 레거시 registerFilesToWebhard: 즉시 제거 (호출자 1곳뿐)\n7. 파일 이동: 분류 확정 시 즉시\n\n구조 변경 — 중간 '문의' 폴더 삽입:\n{업체}/\n├── 칼선의뢰/\n├── 목형의뢰/\n├── 문의/       ← NEW 중간 루트\n│   ├── 문의-{O}/\n│   ├── 문의-{O}_{F}/\n│   └── 문의-{O}-1/  (분할)\n└── 완료/\n    └── 문의-{O}_{F}/\n\n범위 제외 (task 21 이후 후보): §3.1 기존 파일 정리 스크립트, §3.2 dxf방 정책, §3.4 F 번호 rename 시 파일명 재계산, §3.5 완료 폴더 운영, §3.6 webhardWarning 복구 UI, §3.7 루트 파일 v1 링크 UI, 경로 4 DXF 폴더 연결.",
+  "totalPhases": 6,
+  "created_at": "2026-04-22T14:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-22T17:45:08+0900",
+      "completed_at": "2026-04-22T17:58:46+0900"
+    },
+    {
+      "phase": 1,
+      "name": "folder-service-refactor",
+      "status": "completed",
+      "started_at": "2026-04-22T17:58:49+0900",
+      "completed_at": "2026-04-22T18:15:35+0900"
+    },
+    {
+      "phase": 2,
+      "name": "web-form-path",
+      "status": "completed",
+      "started_at": "2026-04-22T18:15:37+0900",
+      "completed_at": "2026-04-22T18:27:28+0900"
+    },
+    {
+      "phase": 3,
+      "name": "auto-contact-path",
+      "status": "completed",
+      "started_at": "2026-04-22T18:27:30+0900",
+      "completed_at": "2026-04-22T18:38:01+0900"
+    },
+    {
+      "phase": 4,
+      "name": "split-path",
+      "status": "completed",
+      "started_at": "2026-04-22T18:38:04+0900",
+      "completed_at": "2026-04-22T18:47:08+0900"
+    },
+    {
+      "phase": 5,
+      "name": "docs-sync-changelog",
+      "status": "completed",
+      "started_at": "2026-04-22T18:47:10+0900",
+      "completed_at": "2026-04-22T19:03:44+0900",
+      "note": "docs 수정 완료. AC 중 webhard-api build + pnpm test (552/552), frontend npx tsc --noEmit 은 통과. Next.js `pnpm build` (Turbopack PageNotFoundError) 및 frontend jest 2건 (useTimelineRealtime.test.tsx T6, WorkerDrawingUpload.test.tsx T3) 은 task 19 merge (3b404e8a) 이후 pre-existing 회귀 — `git diff 3b404e8a..HEAD -- 'src/'` 가 비어 있어 task 20 무관임이 증명됨. task 19 changelog 가 기록한 `refetchType: 'all'` 전환 시 테스트 갱신 누락에서 기인. 별도 fix 커밋/PR 필요."
+    }
+  ],
+  "completed_at": "2026-04-22T19:03:47+0900"
+}

@@ -1,0 +1,52 @@
+{
+  "project": "yjlaser-website",
+  "task": "company-link-fix",
+  "prompt": "기존에 개발했던 내용 피드백:\n1. 관리자에서 레이저가공 업체관리에 업체연결시 기존에 진행됬던 문의들 업체대시보드에서 확인이안됨.\n2. 개발서버의 백업현황도 내용 안보임 (http://localhost:3000/admin/integration/webhard)",
+  "totalPhases": 6,
+  "created_at": "2026-04-16T19:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-sync",
+      "status": "completed",
+      "started_at": "2026-04-16T12:47:25+0900",
+      "completed_at": "2026-04-16T12:49:46+0900"
+    },
+    {
+      "phase": 1,
+      "name": "contact-link-backend",
+      "status": "completed",
+      "started_at": "2026-04-16T12:49:49+0900",
+      "completed_at": "2026-04-16T12:57:32+0900"
+    },
+    {
+      "phase": 2,
+      "name": "backup-auth-backend",
+      "status": "completed",
+      "started_at": "2026-04-16T12:57:35+0900",
+      "completed_at": "2026-04-16T13:00:53+0900"
+    },
+    {
+      "phase": 3,
+      "name": "backup-api-frontend",
+      "status": "completed",
+      "started_at": "2026-04-16T13:00:55+0900",
+      "completed_at": "2026-04-16T13:09:03+0900"
+    },
+    {
+      "phase": 4,
+      "name": "e2e-tests",
+      "status": "completed",
+      "started_at": "2026-04-16T13:09:06+0900",
+      "completed_at": "2026-04-16T13:13:32+0900"
+    },
+    {
+      "phase": 5,
+      "name": "docs-final",
+      "status": "completed",
+      "started_at": "2026-04-16T13:13:34+0900",
+      "completed_at": "2026-04-16T13:17:27+0900"
+    }
+  ],
+  "completed_at": "2026-04-16T13:17:30+0900"
+}

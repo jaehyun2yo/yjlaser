@@ -1,0 +1,1061 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum StorageProvider {
+  R2           @map("r2")
+  GOOGLE_DRIVE @map("google_drive")
+}
+
+enum DriveProvisioningStatus {
+  PENDING @map("pending")
+  READY   @map("ready")
+  FAILED  @map("failed")
+}
+
+model Company {
+  // === 기존 필드 (유지) ===
+  id          Int       @id @default(autoincrement())
+  companyName String    @map("company_name")
+  managerName String    @map("manager_name")
+  createdAt   DateTime? @default(now()) @map("created_at")
+  updatedAt   DateTime? @default(now()) @map("updated_at")
+
+  // === 인증 ===
+  username     String @unique
+  passwordHash String @map("password_hash")
+
+  // === 사업자 정보 ===
+  businessRegistrationNumber   String  @map("business_registration_number")
+  representativeName           String  @map("representative_name")
+  businessType                 String? @map("business_type")
+  businessCategory             String? @map("business_category")
+  businessAddress              String  @map("business_address")
+  businessRegistrationFileUrl  String? @map("business_registration_file_url")
+  businessRegistrationFileName String? @map("business_registration_file_name")
+
+  // === 담당자 ===
+  managerPosition String @map("manager_position")
+  managerPhone    String @map("manager_phone")
+  managerEmail    String @map("manager_email")
+
+  // === 경리 ===
+  accountantName  String? @map("accountant_name")
+  accountantPhone String? @map("accountant_phone")
+  accountantEmail String? @map("accountant_email")
+  accountantFax   String? @map("accountant_fax")
+
+  // === 견적 수신 방법 ===
+  quoteMethodEmail Boolean? @default(false) @map("quote_method_email")
+  quoteMethodFax   Boolean? @default(false) @map("quote_method_fax")
+  quoteMethodSms   Boolean? @default(false) @map("quote_method_sms")
+
+  // === 상태/권한 ===
+  status                         String?                 @default("active")
+  webhardAccess                  Boolean                 @default(true) @map("webhard_access")
+  laserOnly                      Boolean                 @default(false) @map("laser_only")
+  isApproved                     Boolean                 @default(false) @map("is_approved")
+  approvedAt                     DateTime?               @map("approved_at")
+  approvedBy                     String?                 @map("approved_by")
+  driveRootFolderId              String?                 @map("drive_root_folder_id")
+  driveProvisioningStatus        DriveProvisioningStatus @default(PENDING) @map("drive_provisioning_status")
+  driveProvisioningError         String?                 @map("drive_provisioning_error")
+  driveProvisioningLastAttemptAt DateTime?               @map("drive_provisioning_last_attempt_at")
+  driveProvisionedAt             DateTime?               @map("drive_provisioned_at")
+  deletedAt                      DateTime?               @map("deleted_at")
+  deletedBy                      String?                 @map("deleted_by")
+  deletedPreviousStatus          String?                 @map("deleted_previous_status")
+  deletedPreviousWebhardAccess   Boolean?                @map("deleted_previous_webhard_access")
+
+  // === 관계 ===
+  files               WebhardFile[]
+  folders             WebhardFolder[]
+  laserOnlyMappings   LaserOnlyMapping[]
+  folderAliases       CompanyFolderAlias[]
+  contacts            Contact[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([username])
+  @@index([companyName])
+  @@index([businessRegistrationNumber])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([status, deletedAt])
+  @@index([isApproved])
+  @@index([driveProvisioningStatus])
+  @@index([createdAt(sort: Desc)])
+  @@map("companies")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  companyId Int       @map("company_id")
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([companyId, usedAt])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model WebhardFile {
+  id              String          @id @default(uuid())
+  name            String
+  originalName    String          @map("original_name")
+  size            BigInt
+  mimeType        String          @map("mime_type")
+  path            String
+  folderId        String?         @map("folder_id")
+  companyId       Int?            @map("company_id")
+  uploadedBy      String          @map("uploaded_by")
+  inquiryNumber   String?         @map("inquiry_number")
+  isDownloaded    Boolean         @default(false) @map("is_downloaded")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @default(now()) @map("updated_at")
+  deletedAt       DateTime?       @map("deleted_at")
+  deletedBy       String?         @map("deleted_by")
+  storageProvider StorageProvider @default(GOOGLE_DRIVE) @map("storage_provider")
+  driveFileId     String?         @map("drive_file_id")
+  driveMimeType   String?         @map("drive_mime_type")
+
+  folder  WebhardFolder? @relation(fields: [folderId], references: [id])
+  company Company?       @relation(fields: [companyId], references: [id])
+
+  @@index([folderId])
+  @@index([companyId])
+  @@index([deletedAt])
+  @@index([companyId, deletedAt])
+  @@index([folderId, deletedAt])
+  @@index([isDownloaded, deletedAt])
+  @@index([name, folderId, deletedAt])
+  @@index([driveFileId])
+  @@index([storageProvider])
+  @@map("webhard_files")
+}
+
+model WebhardFolder {
+  id        String    @id @default(uuid())
+  name      String
+  parentId  String?   @map("parent_id")
+  companyId Int?      @map("company_id")
+  path      String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  inquiryNumber   String?         @map("inquiry_number")
+  workNumber      String?         @map("work_number")
+  contactId       String?         @map("contact_id") @db.Uuid
+  folderKind      String          @default("generic") @map("folder_kind") @db.VarChar(20)
+  storageProvider StorageProvider @default(GOOGLE_DRIVE) @map("storage_provider")
+  driveFolderId   String?         @map("drive_folder_id")
+
+  parent   WebhardFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children WebhardFolder[] @relation("FolderHierarchy")
+  files    WebhardFile[]
+  company  Company?        @relation(fields: [companyId], references: [id])
+
+  @@index([parentId])
+  @@index([companyId])
+  @@index([path])
+  @@index([deletedAt])
+  @@index([deletedBy])
+  @@index([name, parentId, companyId])
+  @@index([parentId, deletedAt])
+  @@index([contactId], map: "webhard_folders_contact_id_idx")
+  @@index([driveFolderId])
+  @@index([storageProvider])
+  @@map("webhard_folders")
+}
+
+model CompanyStorage {
+  companyId Int      @id @map("company_id")
+  usedBytes BigInt   @default(0) @map("used_bytes")
+  fileCount Int      @default(0) @map("file_count")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@map("company_storage")
+}
+
+model WebhardSettings {
+  userId               String   @id @map("user_id")
+  fontSize             String   @default("small") @map("font_size")
+  notificationsEnabled Boolean  @default(true) @map("notifications_enabled")
+  downloadFolderPath   String?  @map("download_folder_path")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @map("updated_at")
+
+  @@map("webhard_settings")
+}
+
+model WebhardFolderFavorite {
+  userId    String   @map("user_id")
+  folderId  String   @map("folder_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([userId, folderId])
+  @@map("webhard_folder_favorites")
+}
+
+// ============================================================================
+// ERP Models
+// ============================================================================
+
+model Machine {
+  id          String   @id @default(uuid())
+  name        String   @db.VarChar(100)
+  type        String   @db.VarChar(50) // laser/osi_bending/knife_bending/sample
+  status      String   @default("active") @db.VarChar(20)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  tasks Task[]
+
+  @@index([type])
+  @@index([status])
+  @@map("machines")
+}
+
+model Task {
+  id                String    @id @default(uuid())
+  contactId         BigInt?   @map("contact_id")
+  title             String    @db.VarChar(255)
+  description       String?
+  taskType          String?   @map("task_type") @db.VarChar(50) // drawing/sample/laser/cutting/inspection/delivery
+  status            String    @default("pending") @db.VarChar(20) // pending/in_progress/completed/cancelled
+  priority          String    @default("normal") @db.VarChar(10) // urgent/normal/low
+  machineId         String?   @map("machine_id")
+  assignedTo        String?   @map("assigned_to") @db.VarChar(100)
+  startedAt         DateTime? @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+  estimatedDuration Int?      @map("estimated_duration") // minutes
+  actualDuration    Int?      @map("actual_duration") // minutes
+  sortOrder         Int       @default(0) @map("sort_order")
+  orderId           String?   @map("order_id")
+  memo              String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @map("updated_at")
+
+  machine Machine? @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  order   Order?   @relation("OrderTasks", fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([contactId])
+  @@index([status])
+  @@index([priority])
+  @@index([taskType])
+  @@index([machineId])
+  @@index([assignedTo])
+  @@index([sortOrder])
+  @@index([createdAt])
+  @@index([orderId])
+  @@index([status, priority, sortOrder])
+  @@map("tasks")
+}
+
+model ErpWorker {
+  id          String    @id @default(uuid())
+  name        String    @db.VarChar(100)
+  pinHash     String    @map("pin_hash") @db.VarChar(255)
+  role        String    @default("field_worker") @db.VarChar(20) // field_worker/supervisor/manager/office_worker
+  workerType  String?   @map("worker_type") @db.VarChar(20) // field/office/laser/cutting
+  isActive    Boolean   @default(true) @map("is_active")
+  allowedIps  String[]  @default([]) @map("allowed_ips") // empty = allow all
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @map("updated_at")
+
+  accessLogs WorkerAccessLog[]
+
+  @@index([isActive])
+  @@index([role])
+  @@map("erp_workers")
+}
+
+model WorkerAccessLog {
+  id        String   @id @default(uuid())
+  workerId  String?  @map("worker_id")
+  ipAddress String   @map("ip_address") @db.VarChar(45)
+  userAgent String?  @map("user_agent")
+  action    String   @db.VarChar(30) // login_success, login_failed, ip_blocked, logout
+  success   Boolean  @default(false)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  worker ErpWorker? @relation(fields: [workerId], references: [id], onDelete: SetNull)
+
+  @@index([workerId])
+  @@index([createdAt(sort: Desc)])
+  @@index([ipAddress])
+  @@map("worker_access_logs")
+}
+
+// ============================================================================
+// Integration Models (통합 연동)
+// ============================================================================
+
+model Order {
+  id                        String    @id @default(uuid())
+  contactId                 BigInt?   @map("contact_id")
+  inquiryNumber             String?   @map("inquiry_number")
+  companyName               String    @map("company_name") @db.VarChar(200)
+  customerName              String?   @map("customer_name") @db.VarChar(100)
+  customerPhone             String?   @map("customer_phone") @db.VarChar(50)
+  title                     String    @db.VarChar(500)
+  description               String?
+  orderType                 String    @default("standard") @map("order_type") @db.VarChar(30)
+  status                    String    @default("inquiry_received") @db.VarChar(30)
+  priority                  String    @default("normal") @db.VarChar(10)
+  drawingFileCount          Int       @default(0) @map("drawing_file_count")
+  webhardFolderId           String?   @map("webhard_folder_id")
+  dxfClassifiedCount        Int       @default(0) @map("dxf_classified_count")
+  dxfTotalPrice             Int       @default(0) @map("dxf_total_price")
+  nestingSheetCount         Int?      @map("nesting_sheet_count")
+  nestingUtilization        Float?    @map("nesting_utilization")
+  receivedAt                DateTime  @default(now()) @map("received_at")
+  confirmedAt               DateTime? @map("confirmed_at")
+  cuttingStartedAt          DateTime? @map("cutting_started_at")
+  cuttingCompletedAt        DateTime? @map("cutting_completed_at")
+  postProcessingStartedAt   DateTime? @map("post_processing_started_at")
+  postProcessingCompletedAt DateTime? @map("post_processing_completed_at")
+  deliveredAt               DateTime? @map("delivered_at")
+  scheduledAutoCompleteAt   DateTime? @map("scheduled_auto_complete_at")
+  deliveryMethod            String?   @map("delivery_method") @db.VarChar(50)
+  deliveryAddress           String?   @map("delivery_address")
+  deliveryNote              String?   @map("delivery_note")
+  memo                      String?
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  events       OrderEvent[]
+  tasks        Task[]        @relation("OrderTasks")
+  deliveries   Delivery[]
+  nestingTasks NestingTask[]
+
+  @@index([contactId])
+  @@index([status])
+  @@index([companyName])
+  @@index([inquiryNumber])
+  @@index([priority, status])
+  @@map("orders")
+}
+
+model NestingTask {
+  id               String    @id @default(uuid())
+  orderId          String    @map("order_id")
+  status           String    @default("pending") @db.VarChar(20)
+  priority         Int       @default(10)
+  dxfFileUrls      Json      @default("[]") @map("dxf_file_urls")
+  sheetWidth       Float     @default(1220) @map("sheet_width")
+  sheetHeight      Float     @default(2440) @map("sheet_height")
+  options          Json      @default("{}")
+  totalSheets      Int?      @map("total_sheets")
+  totalUsageRate   Float?    @map("total_usage_rate")
+  unplacedCount    Int?      @map("unplaced_count")
+  resultReportedAt DateTime? @map("result_reported_at")
+  message          String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status, priority, createdAt])
+  @@index([orderId])
+  @@map("nesting_tasks")
+}
+
+model OrderEvent {
+  id         String   @id @default(uuid())
+  orderId    String   @map("order_id")
+  eventType  String   @map("event_type") @db.VarChar(50)
+  fromStatus String?  @map("from_status") @db.VarChar(30)
+  toStatus   String?  @map("to_status") @db.VarChar(30)
+  source     String   @db.VarChar(30)
+  actorName  String?  @map("actor_name") @db.VarChar(100)
+  data       Json?
+  message    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([eventType])
+  @@index([source])
+  @@map("order_events")
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  name        String    @db.VarChar(100)
+  keyHash     String    @map("key_hash") @db.VarChar(255)
+  programType String    @map("program_type") @db.VarChar(30)
+  permissions String[]  @default([])
+  isActive    Boolean   @default(true) @map("is_active")
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([keyHash])
+  @@map("api_keys")
+}
+
+model ProgramHeartbeat {
+  id           String   @id @default(uuid())
+  programType  String   @map("program_type") @db.VarChar(30)
+  instanceName String   @map("instance_name") @db.VarChar(100)
+  status       String   @default("online") @db.VarChar(20)
+  version      String?  @db.VarChar(20)
+  hostname     String?  @db.VarChar(100)
+  lastSeenAt   DateTime @default(now()) @map("last_seen_at")
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([programType, instanceName])
+  @@map("program_heartbeats")
+}
+
+model Delivery {
+  id             String    @id @default(uuid())
+  orderId        String    @map("order_id")
+  deliveryType   String    @map("delivery_type") @db.VarChar(30)
+  // delivery_type: pickup(직접수령) | courier(택배) | direct_delivery(직접배송)
+  status         String    @default("pending") @db.VarChar(20)
+  // status: pending | preparing | in_transit | delivered | returned
+  recipientName  String?   @map("recipient_name") @db.VarChar(100)
+  recipientPhone String?   @map("recipient_phone") @db.VarChar(50)
+  address        String?
+  trackingNumber String?   @map("tracking_number") @db.VarChar(100)
+  courierCompany String?   @map("courier_company") @db.VarChar(50)
+  scheduledDate  DateTime? @map("scheduled_date")
+  shippedAt      DateTime? @map("shipped_at")
+  deliveredAt    DateTime? @map("delivered_at")
+  note           String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("deliveries")
+}
+
+model InventoryItem {
+  id           String   @id @default(uuid())
+  name         String   @db.VarChar(200)
+  category     String   @db.VarChar(50)
+  // category: plywood(합판) | steel_plate(철판) | blade(칼날) | sponge(스폰지) | packaging(포장재) | other
+  unit         String   @db.VarChar(20) // 장, 개, m, kg 등
+  currentStock Float    @default(0) @map("current_stock")
+  minStock     Float    @default(0) @map("min_stock")
+  width        Float? // mm (합판/철판용)
+  height       Float? // mm (합판/철판용)
+  thickness    Float? // mm
+  unitPrice    Int?     @map("unit_price") // KRW
+  supplier     String?  @db.VarChar(200)
+  location     String?  @db.VarChar(100) // 보관 위치
+  isActive     Boolean  @default(true) @map("is_active")
+  memo         String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  transactions InventoryTransaction[]
+
+  @@index([category])
+  @@index([isActive])
+  @@index([currentStock])
+  @@map("inventory_items")
+}
+
+model InventoryTransaction {
+  id            String   @id @default(uuid())
+  itemId        String   @map("item_id")
+  type          String   @db.VarChar(20)
+  // type: in(입고) | out(출고) | adjust(조정)
+  quantity      Float
+  previousStock Float    @map("previous_stock")
+  newStock      Float    @map("new_stock")
+  orderId       String?  @map("order_id")
+  reason        String?  @db.VarChar(200)
+  actorName     String?  @map("actor_name") @db.VarChar(100)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, createdAt])
+  @@index([type])
+  @@index([orderId])
+  @@map("inventory_transactions")
+}
+
+model SyncLog {
+  id           Int      @id @default(autoincrement())
+  filename     String   @db.VarChar(500)
+  companyName  String?  @map("company_name") @db.VarChar(200)
+  status       String   @db.VarChar(30)
+  // status: synced | company_not_found | api_error | duplicate | skipped
+  contactId    Int?     @map("contact_id")
+  orderId      String?  @map("order_id")
+  errorMessage String?  @map("error_message")
+  md5Hash      String?  @map("md5_hash") @db.VarChar(64)
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([md5Hash])
+  @@map("sync_logs")
+}
+
+// ============================================================================
+// Supabase 전용 테이블 → Prisma 모델 등록 (15개)
+// ============================================================================
+
+model Contact {
+  // === 기본 정보 ===
+  id               String    @id @default(uuid()) @db.Uuid
+  name             String
+  email            String
+  phone            String?
+  companyName      String?   @map("company_name")
+  // task 24: 외부 동기화 → 가입 업체 통합 식별자. null = 미통합 (폴더명 원본 fallback).
+  companyId        Int?      @map("company_id")
+  position         String?
+  subject          String?
+  message          String?
+  status           String?   @default("new")
+  contactType      String?   @map("contact_type")
+  source           String?   @default("website") @db.VarChar(20)
+  inquiryType      String?   @map("inquiry_type") @db.VarChar(20)
+  inquiryNumber    String?   @map("inquiry_number")
+  workNumber       String?   @map("work_number")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime? @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+  isRead           Boolean?  @default(false) @map("is_read")
+  previousStatus   String?   @map("previous_status")
+  orderType        String?   @default("standard") @map("order_type") @db.VarChar(30)
+  memo             String?
+  originalFilename String?   @map("original_filename")
+
+  // === 도면 정보 ===
+  drawingFileUrl      String?  @map("drawing_file_url")
+  drawingFileName     String?  @map("drawing_file_name")
+  drawingType         String?  @map("drawing_type")
+  referencePhotosUrls String?  @map("reference_photos_urls")
+  drawingModification String?  @map("drawing_modification")
+  drawingNotes        String?  @map("drawing_notes")
+  drawingFileCount    Int?     @default(0) @map("drawing_file_count")
+  boxShape            String?  @map("box_shape")
+  length              String?
+  width               String?
+  height              String?
+  material            String?
+  hasPhysicalSample   Boolean? @default(false) @map("has_physical_sample")
+  hasReferencePhotos  Boolean? @default(false) @map("has_reference_photos")
+  sampleNotes         String?  @map("sample_notes")
+
+  // === 배송 정보 ===
+  deliveryMethod          String?   @map("delivery_method")
+  deliveryAddress         String?   @map("delivery_address")
+  deliveryName            String?   @map("delivery_name")
+  deliveryPhone           String?   @map("delivery_phone")
+  deliveryType            String?   @map("delivery_type")
+  deliveryCompanyName     String?   @map("delivery_company_name")
+  deliveryCompanyPhone    String?   @map("delivery_company_phone")
+  deliveryCompanyAddress  String?   @map("delivery_company_address")
+  deliveryNote            String?   @map("delivery_note")
+  deliveryMethodChangedAt DateTime? @map("delivery_method_changed_at")
+  receiptMethod           String?   @map("receipt_method")
+  deliveryProofImage      String?   @map("delivery_proof_image")
+  deliveryCompleteImage   String?   @map("delivery_complete_image")
+
+  // === 수정 요청 ===
+  revisionRequestTitle    String?   @map("revision_request_title")
+  revisionRequestContent  String?   @map("revision_request_content")
+  revisionRequestedAt     DateTime? @map("revision_requested_at")
+  revisionRequestFileUrl  String?   @map("revision_request_file_url")
+  revisionRequestFileName String?   @map("revision_request_file_name")
+  revisionRequestHistory  Json?     @default("[]") @map("revision_request_history")
+
+  // === 포트폴리오 참조 ===
+  portfolioReferenceId        Int?    @map("portfolio_reference_id")
+  portfolioReferenceTitle     String? @map("portfolio_reference_title")
+  portfolioReferenceField     String? @map("portfolio_reference_field")
+  portfolioReferenceType      String? @map("portfolio_reference_type")
+  portfolioReferenceFormat    String? @map("portfolio_reference_format")
+  portfolioReferenceSize      String? @map("portfolio_reference_size")
+  portfolioReferencePaper     String? @map("portfolio_reference_paper")
+  portfolioReferencePrinting  String? @map("portfolio_reference_printing")
+  portfolioReferenceFinishing String? @map("portfolio_reference_finishing")
+  portfolioReferenceImage     String? @map("portfolio_reference_image")
+  portfolioReferenceUrl       String? @map("portfolio_reference_url")
+  portfolioReferenceInfo      Json?   @map("portfolio_reference_info")
+
+  // === 공정 단계 ===
+  processStage            String?   @map("process_stage")
+  confirmedAt             DateTime? @map("confirmed_at")
+  productionStartedAt     DateTime? @map("production_started_at")
+  cuttingStartedAt        DateTime? @map("cutting_started_at")
+  cuttingCompletedAt      DateTime? @map("cutting_completed_at")
+  finishingStartedAt      DateTime? @map("finishing_started_at")
+  finishingCompletedAt    DateTime? @map("finishing_completed_at")
+  scheduledAutoCompleteAt DateTime? @map("scheduled_auto_complete_at")
+  bookingChangedAt        DateTime? @map("booking_changed_at")
+
+  // === DXF 정보 ===
+  dxfClassifiedCount Int?   @default(0) @map("dxf_classified_count")
+  dxfTotalPrice      Int?   @default(0) @map("dxf_total_price")
+  nestingSheetCount  Int?   @map("nesting_sheet_count")
+  nestingUtilization Float? @map("nesting_utilization")
+
+  // === 작업자 메모 (deprecated — worker_notes 테이블로 이전) ===
+  workerMemo      String?   @map("worker_memo")
+  workerIssue     Boolean?  @default(false) @map("worker_issue")
+  workerMemoAt    DateTime? @map("worker_memo_at")
+  workerMemoBy    String?   @map("worker_memo_by")
+  webhardFolderId String?   @map("webhard_folder_id")
+
+  // === 긴급 ===
+  isUrgent Boolean?  @default(false) @map("is_urgent")
+  urgentAt DateTime? @map("urgent_at")
+
+  // === 기타 ===
+  referralSource           String?  @map("referral_source")
+  visitLocation            String?  @map("visit_location")
+  inquiryTitle             String?  @map("inquiry_title")
+  serviceMoldRequest       Boolean? @default(false) @map("service_mold_request")
+  serviceDeliveryBrokerage Boolean? @default(false) @map("service_delivery_brokerage")
+  attachmentFilename       String?  @map("attachment_filename")
+  attachmentUrl            String?  @map("attachment_url")
+  visitDate                String?  @map("visit_date")
+  visitTimeSlot            String?  @map("visit_time_slot")
+
+  // === 분할 관련 ===
+  parentContactId  String?                @map("parent_contact_id") @db.Uuid
+  splitIndex       Int?                   @map("split_index")
+  splitCount       Int?                   @map("split_count")
+  stageCompleted   Boolean                @default(false) @map("stage_completed")
+  // Timeline history relation
+  statusHistory    ContactStatusHistory[]
+  workerNotes      WorkerNote[]
+  drawingRevisions DrawingRevision[]
+  parent           Contact?               @relation("ContactSplit", fields: [parentContactId], references: [id], onDelete: SetNull)
+  children         Contact[]              @relation("ContactSplit")
+  company          Company?               @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  // === 인덱스 ===
+  @@index([status])
+  @@index([companyName])
+  @@index([inquiryNumber])
+  @@index([createdAt(sort: Desc)])
+  @@index([deletedAt])
+  @@index([source])
+  @@index([inquiryType])
+  @@index([deliveryMethod])
+  @@index([workNumber])
+  @@index([originalFilename])
+  @@index([status, companyName])
+  @@index([status, createdAt])
+  @@index([isUrgent, urgentAt])
+  @@index([processStage])
+  @@index([processStage, status])
+  @@index([status, updatedAt])
+  @@index([parentContactId])
+  @@index([parentContactId, splitIndex])
+  @@index([companyId])
+  @@map("contacts")
+}
+
+// 문의 상태 변경 이력 (타임라인)
+// OrderEvent 패턴 참고: fromStatus/toStatus + source + actorName
+model ContactStatusHistory {
+  id          String   @id @default(uuid())
+  contactId   String   @map("contact_id") @db.Uuid
+  changeType  String   @map("change_type") @db.VarChar(30)
+  fromStatus  String?  @map("from_status") @db.VarChar(30)
+  toStatus    String?  @map("to_status") @db.VarChar(30)
+  fromStage   String?  @map("from_stage") @db.VarChar(30)
+  toStage     String?  @map("to_stage") @db.VarChar(30)
+  actorType   String   @map("actor_type") @db.VarChar(20)
+  actorName   String?  @map("actor_name") @db.VarChar(100)
+  companyName String?  @map("company_name") @db.VarChar(200)
+  companyId   Int?     @map("company_id")
+  source      String   @db.VarChar(30)
+  note        String?
+  metadata    Json?    @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+  @@index([contactId, changeType])
+  @@map("contact_status_history")
+}
+
+model DrawingRevision {
+  id             String   @id @default(uuid())
+  contactId      String   @map("contact_id") @db.Uuid
+  version        Int
+  processStage   String?  @map("process_stage") @db.VarChar(30)
+  reason         String   @db.VarChar(30)
+  reasonDetail   String?  @map("reason_detail")
+  files          Json     @default("[]")
+  webhardFileIds String[] @default([]) @map("webhard_file_ids")
+  actorType      String   @map("actor_type") @db.VarChar(20)
+  actorName      String?  @map("actor_name") @db.VarChar(100)
+  source         String   @db.VarChar(30)
+  isPublic       Boolean  @default(false) @map("is_public")
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+  @@index([contactId, version])
+  @@map("drawing_revisions")
+}
+
+model VisitBooking {
+  id              BigInt    @id @default(autoincrement())
+  visitDate       DateTime  @map("visit_date") @db.Date
+  visitTimeSlot   String    @map("visit_time_slot")
+  companyName     String    @map("company_name")
+  contactId       String?   @map("contact_id") @db.Uuid
+  status          String?   @default("confirmed")
+  notes           String?
+  createdAt       DateTime? @default(now()) @map("created_at")
+  updatedAt       DateTime? @default(now()) @map("updated_at")
+  createdBy       String?   @map("created_by")
+  deliveryMethod  String?   @map("delivery_method")
+  deliveryName    String?   @map("delivery_name")
+  deliveryPhone   String?   @map("delivery_phone")
+  deliveryAddress String?   @map("delivery_address")
+
+  @@unique([visitDate, visitTimeSlot, companyName, contactId])
+  @@index([visitDate])
+  @@index([visitTimeSlot])
+  @@index([visitDate, visitTimeSlot])
+  @@index([companyName])
+  @@index([contactId])
+  @@index([status])
+  @@index([deliveryMethod])
+  @@map("visit_bookings")
+}
+
+model Portfolio {
+  id          String    @id @default(uuid())
+  title       String
+  field       String
+  purpose     String
+  type        String
+  format      String
+  size        String
+  paper       String
+  printing    String
+  finishing   String
+  description String
+  images      Json      @default("[]")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime? @map("updated_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@map("portfolio")
+}
+
+model Post {
+  id        BigInt   @id
+  title     String?
+  content   String?
+  viewCount Int?     @default(0) @map("view_count")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("posts")
+}
+
+model CompanyFeedback {
+  id            BigInt    @id @default(autoincrement())
+  companyId     Int       @map("company_id")
+  companyName   String    @map("company_name")
+  content       String
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @map("updated_at")
+  resolvedAt    DateTime? @map("resolved_at")
+  adminNotes    String?   @map("admin_notes")
+  companyEmail  String?   @map("company_email")
+  category      String?
+  categoryOther String?   @map("category_other")
+
+  @@index([companyId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("company_feedback")
+}
+
+model ActivityLog {
+  id           String   @id @default(uuid())
+  actorType    String   @map("actor_type")
+  actorId      String   @map("actor_id")
+  actorName    String?  @map("actor_name")
+  action       String
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  details      Json?    @default("{}")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([action])
+  @@index([actorId])
+  @@index([createdAt(sort: Desc)])
+  @@map("activity_logs")
+}
+
+model DeliveryCompany {
+  id        BigInt    @id @default(autoincrement())
+  companyId BigInt    @map("company_id")
+  name      String
+  phone     String
+  address   String
+  createdAt DateTime? @default(now()) @map("created_at")
+  updatedAt DateTime? @default(now()) @map("updated_at")
+
+  @@index([companyId])
+  @@index([createdAt(sort: Desc)])
+  @@map("delivery_companies")
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userType  String    @map("user_type") @db.VarChar(20)
+  userId    BigInt?   @map("user_id")
+  type      String    @db.VarChar(50)
+  title     String    @db.VarChar(255)
+  message   String
+  metadata  Json?     @default("{}")
+  isRead    Boolean   @default(false) @map("is_read")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userType, userId, createdAt(sort: Desc)])
+  @@index([userType, userId, isRead])
+  @@index([type])
+  @@index([createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model PushSubscription {
+  id        String    @id @default(uuid())
+  workerId  String    @map("worker_id")
+  endpoint  String
+  p256dh    String
+  auth      String
+  createdAt DateTime? @default(now()) @map("created_at")
+  updatedAt DateTime? @default(now()) @map("updated_at")
+
+  @@unique([workerId, endpoint])
+  @@index([workerId])
+  @@index([endpoint])
+  @@map("push_subscriptions")
+}
+
+model ShareLink {
+  id            String    @id @default(uuid())
+  token         String    @unique @db.VarChar(64)
+  filePath      String    @map("file_path")
+  webhardFileId String?   @map("webhard_file_id")
+  fileName      String    @map("file_name")
+  companyId     Int?      @map("company_id")
+  createdBy     Int       @map("created_by")
+  expiresAt     DateTime  @map("expires_at")
+  maxDownloads  Int?      @map("max_downloads")
+  downloadCount Int?      @default(0) @map("download_count")
+  isActive      Boolean?  @default(true) @map("is_active")
+  createdAt     DateTime? @default(now()) @map("created_at")
+  updatedAt     DateTime? @default(now()) @map("updated_at")
+
+  @@index([token])
+  @@index([companyId])
+  @@index([webhardFileId])
+  @@index([expiresAt])
+  @@index([isActive])
+  @@map("share_links")
+}
+
+model ActiveSession {
+  id           Int      @id @default(autoincrement())
+  userType     String   @default("company") @map("user_type") @db.VarChar(20)
+  userId       Int      @map("user_id")
+  username     String   @db.VarChar(100)
+  companyName  String?  @map("company_name") @db.VarChar(200)
+  lastActivity DateTime @default(now()) @map("last_activity")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([userType, userId])
+  @@index([userType])
+  @@index([lastActivity])
+  @@map("active_sessions")
+}
+
+model WebhardLog {
+  id           BigInt   @id @default(autoincrement())
+  action       String
+  fileName     String   @map("file_name")
+  fileSize     BigInt?  @map("file_size")
+  companyId    BigInt?  @map("company_id")
+  userId       BigInt?  @map("user_id")
+  folderPath   String?  @map("folder_path")
+  status       String   @default("success")
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([action])
+  @@index([companyId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("webhard_logs")
+}
+
+model WebhardSyncHistory {
+  id              String    @id @default(uuid())
+  companyId       Int       @map("company_id")
+  syncStartedAt   DateTime? @default(now()) @map("sync_started_at")
+  syncCompletedAt DateTime? @map("sync_completed_at")
+  syncType        String    @map("sync_type")
+  filesAdded      Int?      @default(0) @map("files_added")
+  filesUpdated    Int?      @default(0) @map("files_updated")
+  filesDeleted    Int?      @default(0) @map("files_deleted")
+  foldersAdded    Int?      @default(0) @map("folders_added")
+  foldersDeleted  Int?      @default(0) @map("folders_deleted")
+  totalSizeBytes  BigInt?   @default(0) @map("total_size_bytes")
+  syncStatus      String?   @default("in_progress") @map("sync_status")
+  errorMessage    String?   @map("error_message")
+  createdAt       DateTime? @default(now()) @map("created_at")
+
+  @@index([companyId, syncStartedAt(sort: Desc)])
+  @@map("webhard_sync_history")
+}
+
+model WebhardSyncState {
+  id            String    @id @default(uuid())
+  companyId     Int       @unique @map("company_id")
+  lastSyncAt    DateTime? @default(now()) @map("last_sync_at")
+  lastSyncHash  String?   @map("last_sync_hash")
+  filesSynced   Int?      @default(0) @map("files_synced")
+  foldersSynced Int?      @default(0) @map("folders_synced")
+  syncType      String?   @default("full") @map("sync_type")
+  syncStatus    String?   @default("completed") @map("sync_status")
+  errorMessage  String?   @map("error_message")
+  createdAt     DateTime? @default(now()) @map("created_at")
+  updatedAt     DateTime? @default(now()) @map("updated_at")
+
+  @@index([companyId])
+  @@map("webhard_sync_state")
+}
+
+model WebhardUserSettings {
+  id           String   @id @default(uuid())
+  userId       String   @unique @map("user_id")
+  settingsJson Json     @default("{\"notifyOnError\": true, \"downloadFolderPath\": \"Downloads\", \"notifyOnUploadComplete\": true, \"notifyOnDownloadComplete\": true}") @map("settings_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  @@index([userId])
+  @@index([updatedAt])
+  @@map("webhard_user_settings")
+}
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+model NumberCounter {
+  dateKey DateTime @map("date_key") @db.Date
+  type    String   @db.VarChar(20)
+  lastSeq Int      @default(0) @map("last_seq")
+
+  @@id([dateKey, type])
+  @@map("number_counters")
+}
+
+model BackupLog {
+  id           String   @id @default(uuid())
+  fileId       String   @map("file_id")
+  fileName     String   @map("file_name")
+  originalName String   @map("original_name")
+  fileSize     BigInt   @map("file_size")
+  r2Key        String   @map("r2_key")
+  backupPath   String   @map("backup_path")
+  companyId    Int?     @map("company_id")
+  status       String   @default("pending") // pending, success, failed
+  error        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([fileId])
+  @@map("backup_logs")
+}
+
+// 작업자 메모/이슈 노트 (contact당 최대 3개, 앱 레벨 제한)
+model WorkerNote {
+  id        Int      @id @default(autoincrement())
+  contactId String   @map("contact_id") @db.Uuid
+  type      String   @db.VarChar(10) // 'memo' | 'issue'
+  content   String
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@map("worker_notes")
+}
+
+model LaserOnlyMapping {
+  id         Int      @id @default(autoincrement())
+  folderName String   @unique @map("folder_name")
+  companyId  Int?     @map("company_id")
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @map("updated_at")
+
+  @@index([folderName])
+  @@index([companyId])
+  @@map("laser_only_mappings")
+}
+
+model CompanyFolderAlias {
+  id         Int       @id @default(autoincrement())
+  folderName String    @map("folder_name")
+  companyId  Int       @map("company_id")
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  status     String    @default("pending") @map("status")
+  approvedBy String?   @map("approved_by")
+  approvedAt DateTime? @map("approved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@unique([folderName, companyId])
+  @@index([folderName])
+  @@index([status])
+  @@map("company_folder_aliases")
+}

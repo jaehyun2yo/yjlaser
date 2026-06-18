@@ -1,0 +1,38 @@
+{
+  "project": "yjlaser-website",
+  "task": "contact-exclude",
+  "prompt": "1. http://localhost:3000/admin/integration/webhard 웹하드 관리에 문의 자동생성 설정 란 추가\n2. 특정 폴더 이름 포함되있으면 문의 자동생성 안하게 설정할수있는 기능 추가\n3. 기본값 : ㄱ 내리기전용\n4. 폴더이름 추가하면 해당 폴더이름포함되있으면 문의 자동생성하지않게 해줘",
+  "totalPhases": 4,
+  "created_at": "2026-04-14T22:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-14T13:34:09+0900",
+      "completed_at": "2026-04-14T13:37:00+0900"
+    },
+    {
+      "phase": 1,
+      "name": "backend-config",
+      "status": "completed",
+      "started_at": "2026-04-14T13:37:06+0900",
+      "completed_at": "2026-04-14T13:39:19+0900"
+    },
+    {
+      "phase": 2,
+      "name": "backend-filter",
+      "status": "completed",
+      "started_at": "2026-04-14T13:39:22+0900",
+      "completed_at": "2026-04-14T13:44:39+0900"
+    },
+    {
+      "phase": 3,
+      "name": "frontend-ui",
+      "status": "completed",
+      "started_at": "2026-04-14T13:47:05+0900",
+      "completed_at": "2026-04-14T13:56:45+0900"
+    }
+  ],
+  "completed_at": "2026-04-14T13:56:48+0900"
+}

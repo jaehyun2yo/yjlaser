@@ -1,0 +1,65 @@
+{
+  "project": "yjlaser-website",
+  "task": "drawing-workflow",
+  "prompt": "도면이 여러 워크플로우를 거치면서 다양하게 업데이트되는 과정을 한 문의에서 자동으로 관리. 상태별 최신 도면 다운로드, 도면 타임라인 관리, 거래처/Worker 도면 업로드, DXF 자동 매칭, 수정요청 통합, 웹하드 문의 연결 기능 구현.",
+  "totalPhases": 8,
+  "created_at": "2026-04-16T23:30:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-16T16:32:11+0900",
+      "completed_at": "2026-04-16T16:41:07+0900"
+    },
+    {
+      "phase": 1,
+      "name": "backend-revision-service",
+      "status": "completed",
+      "started_at": "2026-04-16T16:41:11+0900",
+      "completed_at": "2026-04-16T16:46:36+0900"
+    },
+    {
+      "phase": 2,
+      "name": "backend-automation",
+      "status": "completed",
+      "started_at": "2026-04-16T16:46:46+0900",
+      "completed_at": "2026-04-16T16:54:28+0900"
+    },
+    {
+      "phase": 3,
+      "name": "backend-company-api",
+      "status": "completed",
+      "started_at": "2026-04-16T16:54:37+0900",
+      "completed_at": "2026-04-16T17:09:07+0900"
+    },
+    {
+      "phase": 4,
+      "name": "frontend-admin-ui",
+      "status": "completed",
+      "started_at": "2026-04-16T17:09:16+0900",
+      "completed_at": "2026-04-16T17:22:40+0900"
+    },
+    {
+      "phase": 5,
+      "name": "frontend-company-portal",
+      "status": "completed",
+      "started_at": "2026-04-16T17:22:42+0900",
+      "completed_at": "2026-04-16T17:43:48+0900"
+    },
+    {
+      "phase": 6,
+      "name": "frontend-worker-portal",
+      "status": "completed",
+      "started_at": "2026-04-16T17:43:50+0900",
+      "completed_at": "2026-04-16T17:57:37+0900"
+    },
+    {
+      "phase": 7,
+      "name": "docs-sync",
+      "status": "completed",
+      "started_at": "2026-04-16T17:57:39+0900",
+      "completed_at": "2026-04-16T18:20:00+0900"
+    }
+  ]
+}

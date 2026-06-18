@@ -1,0 +1,2032 @@
+# Progress Log — YJ Laser 통합 웹 플랫폼
+
+## 최신 상태 (가장 위가 최신)
+
+### 세션 #136 — 2026-06-18
+
+- **작업 내용**: 포트폴리오 제외 신규 파일 업로드 Google Drive 전환
+- **반영 기준**:
+  - 포트폴리오 이미지는 R2를 유지한다.
+  - 공개 문의 첨부/도면/참고사진, 수정요청 첨부, Worker 납품증빙은 해당 업체의 해당 문의 폴더에 Drive 파일로 저장한다.
+  - 사업자등록증은 업체별 관리자 전용 Drive 폴더에 저장한다.
+  - 기존 R2 파일은 즉시 삭제하지 않고 dry-run 리포트로 후보를 먼저 확인한다.
+- **완료한 것**:
+  - 문의 생성 후 파일 업로드 전용 `POST /api/v1/contacts/:id/files/drive` 경로를 통해 문의 폴더를 보장하고 Drive/WebhardFile을 함께 생성하도록 변경했다.
+  - 도면 수정 업로드 URL과 수정요청 첨부 파일을 Drive 문의 폴더 기준으로 전환하고, Drive 파일 다운로드는 서버 stream proxy로 반환하도록 정리했다.
+  - 납품증빙은 납품완료 처리와 함께 각 문의 Drive 폴더에 `납품완료_YYYYMMDD_HHmmss.ext` 파일로 저장한다.
+  - 사업자등록증 업로드/수정은 `/외부웹하드/관리자전용/{업체명}` 아래 Drive 파일로 저장하고 업체 일반 세션 접근에서 숨기도록 구성했다.
+  - R2 삭제 후보 확인용 `webhard-api/scripts/dry-run-non-portfolio-r2-delete.ts`와 `npm run r2:dry-run-delete`를 추가했다.
+- **검증**:
+  - `cd webhard-api && npx tsc --noEmit --pretty false` 통과
+  - `npx tsc --noEmit --pretty false` 통과
+  - `npx jest src/__tests__/api/contact-route-auth.test.ts --runInBand` 통과
+  - `npx jest src/__tests__/actions/contacts-timeline.test.ts --runInBand` 통과
+  - `cd webhard-api && npx jest src/contacts/contacts.controller.spec.ts --runInBand` 통과
+  - `cd webhard-api && npx jest src/contacts/contacts.service.spec.ts --runInBand` 통과
+  - `cd webhard-api && npx tsx scripts/dry-run-non-portfolio-r2-delete.ts --help` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #135 — 2026-06-17
+
+- **작업 내용**: 공개 홈 화면 Spring/Summer 레퍼런스 기반 에디토리얼 리디자인
+- **반영 기준**:
+  - 사용자가 제공한 Spring/Summer design.md의 Sage Paper `#e5ebda`, Plum Ink `#44394c`, Paper White `#ffffff`, Stone/Ash border 팔레트를 홈 화면 공통 표면과 타이포그래피에 적용했다.
+  - 기존 YJ Laser 로고(`/mainLogo.svg`)를 유지하되, 상단 내비게이션은 배경/테두리/그림자 없는 고정 헤더와 모바일 전체 메뉴로 재구성했다.
+- **완료한 것**:
+  - `/` 홈 화면을 대형 압축 디스플레이 타이포그래피, 영상 카드, 프로젝트 가로 캐러셀, 클라이언트 그리드, 언더라인 뉴스레터 입력으로 재구성했다.
+  - 홈 화면에서는 기존 공통 Header/Footer/FloatingButtons를 숨기고 전용 Spring/Summer 스타일 헤더와 푸터를 사용하도록 분리했다.
+  - CSS module로 display scale, line-height, letter spacing, mobile menu typography를 고정해 Tailwind arbitrary clamp 의존을 제거했다.
+  - 프리로더, 스크롤 reveal, 가로 캐러셀 버튼, 모바일 메뉴, 뉴스레터 입력 상호작용을 로컬 브라우저에서 확인했다.
+- **검증**:
+  - `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+  - 데스크톱 1280x720, 모바일 390x844 캡처 및 상호작용 QA 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #134 — 2026-06-11
+
+- **작업 내용**: 웹하드 파일 업로드/삭제/이동 응답 지연 후처리 제거
+- **원인**:
+  - Google Drive/DB 반영이 끝난 뒤 알림 생성, 활동 로그, 자동 문의 보조 폴더 조회가 사용자 응답을 추가로 늦출 수 있었다.
+  - 파일 batch delete 권한 필터 후 `includes` 기반 재필터가 있어 대량 파일에서 불필요하게 O(n²) 비용이 날 수 있었다.
+- **완료한 것**:
+  - `confirmUpload`와 `batchConfirmUpload`의 file uploaded 알림 생성을 fire-and-forget으로 바꿔 업로드 확정 응답이 알림 저장 완료를 기다리지 않게 했다.
+  - `batchConfirmUpload`의 자동 문의 보조 폴더 조회와 hook 실행을 응답 후 백그라운드 작업으로 이동했다.
+  - 파일 이동/삭제 Server Action의 활동 로그 저장을 백그라운드 처리로 바꿔 API 성공 응답 뒤 로깅 지연이 사용자 응답을 막지 않게 했다.
+  - 파일 이동/삭제 server-side client가 HTTP 200 응답 안의 `success=false`, `failed`, `errors`도 실패로 해석하도록 보강했다.
+  - `batchDeleteFiles`의 authorized file 재필터를 `Set` 기반으로 변경했다.
+- **검증**:
+  - `cd webhard-api && pnpm test -- src/files/__tests__/files.service.spec.ts --runInBand` 통과 — 62 passed
+  - `cd webhard-api && npx tsc --noEmit` 통과
+  - `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+  - `cd webhard-api && $env:RUN_PERF_TESTS='1'; $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test:e2e -- performance.e2e-spec.ts --runInBand` 통과 — 6 passed, 100 file batch move 152.44ms, 100 file batch delete 98.30ms
+- **관련 커밋**: 미커밋
+
+### 세션 #133 — 2026-06-11
+
+- **작업 내용**: 웹하드 저장공간에 휴지통 사용량 반영
+- **완료한 것**:
+  - `GET /api/v1/storage` 응답에 `active`, `trash`, `current=active+trash`, `activePercentage`, `trashPercentage`를 추가
+  - 기존 `company_storage.used_bytes`는 활성 파일 용량으로 유지하고, 휴지통 용량은 `webhard_files.deletedAt IS NOT NULL` 파일 크기 합계로 별도 계산
+  - 웹하드 좌측 하단 저장공간 UI가 활성 파일과 휴지통 용량을 각각 표시하고 진행바에서 구분되도록 변경
+  - API/기능 스펙 문서에 휴지통 파일도 실제 저장공간을 차지해 전체 사용량에 포함된다는 계약 반영
+- **검증**:
+  - `cd webhard-api && pnpm test -- src/storage/__tests__/storage.service.spec.ts --runInBand` 통과 — 18 passed
+  - `cd webhard-api && npx tsc --noEmit` 통과
+  - `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #132 — 2026-06-11
+
+- **작업 내용**: 웹하드 Google Drive 업로드 confirm, 파일 batch 이동, 파일 batch 삭제 실제 처리속도 개선
+- **원인**:
+  - Drive proxy PUT 이후 `batch-complete`가 파일마다 Google Drive metadata GET을 다시 수행해 업로드 확정 시간이 Drive 왕복에 묶였다.
+  - Drive-backed 파일 일괄 이동/삭제는 파일별 Drive PATCH를 병렬로 보내지만 HTTP/API 경계는 여전히 파일 수만큼 발생했다.
+- **완료한 것**:
+  - Google Drive upload proxy가 Drive PUT 성공 응답의 `id`, `mimeType`, `parents`, `size`를 HMAC 서명한 `driveUploadProof`로 반환한다.
+  - `confirmUpload`/`batchConfirmUpload`는 유효한 `driveUploadProof`가 있으면 confirm-time Drive metadata GET 없이 storage file id와 대상 parent digest를 검증한다. proof가 없거나 구버전 client이면 기존 Drive API 검증으로 fail-closed fallback한다.
+  - Google Drive provider에 Drive multipart batch 기반 `moveFiles`/`trashFiles`를 추가하고, `batchMoveFiles`/`batchDeleteFiles`가 Drive 파일들을 한 번의 batch 요청으로 이동/휴지통 처리하도록 바꿨다.
+  - 업로드 proxy, batch confirm, Drive batch move/trash에 elapsedMs, 성공/실패 수, proof 사용 수를 sanitized 로그로 남긴다.
+- **재측정/검증**:
+  - `pnpm test -- --runTestsByPath src/__tests__/lib/utils/uploadQueue-security.test.ts --runInBand` 통과 — 5 passed
+  - `cd webhard-api && pnpm test -- src/storage/__tests__/google-drive-storage.provider.spec.ts src/files/__tests__/files.service.spec.ts src/storage/__tests__/storage.service.spec.ts --runInBand` 통과 — 79 passed
+  - `cd webhard-api && npx tsc --noEmit` 통과
+  - `npx tsc --noEmit` 통과
+  - `cd webhard-api && $env:RUN_PERF_TESTS='1'; $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test:e2e -- performance.e2e-spec.ts --runInBand` 통과 — 6 passed, ancestors 129.36ms, folder move 231.32ms, 100 child folder delete 157.56ms, 100 folder batch delete 168.94ms, 100 file batch move 177.58ms, 100 file batch delete 102.30ms
+  - `cd webhard-api && $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test:e2e -- files-crud.e2e-spec.ts folders-crud.e2e-spec.ts storage.e2e-spec.ts --runInBand` 부분 통과 — 33 passed, 6 failed, 4 skipped. files-crud/storage 통과, folders-crud는 Google Drive token acquisition `Unexpected Gaxios Error`로 `POST /folders` 500 실패
+- **남은 확인**:
+  - 현재 로컬 Google Drive service account/token 환경 문제 때문에 실제 Drive 폴더 생성 기능 E2E는 막혀 있다. 인증 환경을 복구한 뒤 `folders-crud.e2e-spec.ts`와 `e2e/google-drive-webhard-user-qa.spec.ts`를 재실행해야 한다.
+- **관련 커밋**: 미커밋
+
+### 세션 #131 — 2026-06-11
+
+- **작업 내용**: 웹하드 파일 작업 hook optimistic update 정합화 및 폴더 batch delete 추가 최적화
+- **원인**:
+  - 메인 웹하드 화면의 일부 이동/삭제 경로는 이미 optimistic update를 적용했지만, 재사용 파일 작업 hook 경로는 API 응답을 기다린 뒤 목록을 갱신했다.
+  - `batchDeleteFolders`는 삭제 대상 하위 폴더를 계산할 때 전체 `webhard_folders` parent map을 읽어 폴더 수가 늘수록 삭제 체감 시간이 커질 수 있었다.
+- **완료한 것**:
+  - `useFileOperations`의 파일 삭제/이동이 현재 폴더 React Query cache에서 대상 파일을 즉시 제거하고, 실패 시 `rollbackCache`로 복구하도록 변경했다.
+  - `batchDeleteFolders`는 선택 폴더의 indexed `path` prefix로 삭제 대상 하위 폴더만 조회한다. `path=null` 레거시 선택 폴더는 기존 parent BFS fallback을 유지한다.
+  - Drive-backed folder batch delete는 선택 Drive folder trash를 bounded concurrency로 처리하고, Drive 성공 후 DB update 실패 또는 Drive 일부 실패를 storage repair 로그로 남긴다.
+  - 폴더 batch delete 성능 계약을 단위 테스트로 고정했다.
+- **재측정/검증**:
+  - `cd webhard-api && npx tsc --noEmit` 통과
+  - `cd webhard-api && pnpm test -- src/folders/folders.service.spec.ts --runInBand` 통과 — 62 passed
+  - `npx tsc --noEmit` 통과
+  - `cd webhard-api && $env:RUN_PERF_TESTS='1'; $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test:e2e -- performance.e2e-spec.ts --runInBand` 통과 — 6 passed, ancestors 112.01ms, folder move 209.02ms, 100 child folder delete 142.88ms, 100 folder batch delete 152.30ms, 100 file batch move 137.53ms, 100 file batch delete 85.40ms
+- **남은 확인**:
+  - 완전한 즉시 완료 UX와 재시도 가능한 진행상태 화면은 전용 job 상태 저장소/마이그레이션이 필요한 별도 Lane 3 범위다.
+- **관련 커밋**: 미커밋
+
+### 세션 #130 — 2026-06-11
+
+- **작업 내용**: 웹하드 Google Drive batch upload session 및 batch file move 추가 최적화
+- **원인**:
+  - 5파일 업로드 추가 측정에서 upload session 생성이 4576ms로 가장 컸고, 같은 폴더 업로드에서도 폴더 권한 확인, 외부웹하드 routing 확인, Drive target 확인, Drive id 발급이 파일 단위로 반복될 수 있었다.
+  - Drive-backed batch move는 Drive 파일 이동 전 source parent를 넘기지 않아 provider가 파일마다 Drive metadata를 조회해 현재 parent를 확인할 수 있었다.
+- **완료한 것**:
+  - batch upload session 생성에서 폴더 권한 확인, routing, Drive target 조회를 request-local cache로 공유하도록 변경했다.
+  - Drive-backed batch upload session은 필요한 Drive file id를 `generateDriveIds(count)` 한 번으로 bulk 발급한 뒤 각 session 생성에 `storageFileId`로 주입한다.
+  - batch file move는 source folder의 `driveFolderId`를 DB에서 한 번에 조회해 `moveDriveFile`의 `fromParentStorageFolderId`로 넘기며, Drive provider의 per-file metadata 조회 fallback을 피한다.
+  - 새 단위 테스트로 같은 폴더 batch upload가 folder 조회 3회만 수행하고 Drive id를 bulk 발급하는 계약, batch move가 source Drive parent id를 넘기는 계약을 고정했다.
+- **재측정/검증**:
+  - `cd webhard-api && npx tsc --noEmit` 통과
+  - `cd webhard-api && pnpm test -- src/files/__tests__/files.service.spec.ts --runInBand` 통과 — 60 passed
+  - `cd webhard-api && $env:RUN_PERF_TESTS='1'; $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test:e2e -- performance.e2e-spec.ts --runInBand` 통과 — 6 passed, ancestors 125.72ms, folder move 237.74ms, 100 child delete 144.99ms, 100 folder batch delete 149.55ms, 100 file batch move 201.63ms, 100 file batch delete 91.78ms
+- **남은 확인**:
+  - 실제 Google Drive upload session/move 시간은 최신 backend source 서버를 재기동한 뒤 `codex-perf-*` 실측을 다시 해야 한다.
+  - 사용자가 업로드/이동/삭제를 “즉시 완료”로 느끼게 하려면 별도 비동기 작업 큐와 진행 상태 UI가 필요하다. 이 작업은 성공 전 완료 처리 계약을 바꾸므로 별도 설계/승인 범위로 남긴다.
+- **관련 커밋**: 미커밋
+
+### 세션 #129 — 2026-06-11
+
+- **작업 내용**: 웹하드 폴더 트리 중복 요청 제거 및 Drive-backed 업로드/이동/삭제 추가 측정
+- **원인**:
+  - `FolderTree`가 선택 폴더의 ancestors와 children을 직접 `fetch()`로 다시 조회해 `useWebhardFoldersQuery`/breadcrumb 쪽 React Query 캐시와 공유하지 못했다.
+  - 폴더 진입 시 같은 ancestors 요청이 5회, children 요청이 2회까지 중복되어 목록 API 자체가 빠른 상황에서도 체감 진입이 느려졌다.
+- **완료한 것**:
+  - `FolderTree`의 children/ancestors 조회를 `queryClient.fetchQuery()`와 `queryKeys.webhard.folders.children/ancestors`로 통일해 이미 진행 중이거나 캐시된 요청을 공유하도록 변경했다.
+  - children/ancestors 응답 실패를 빈 데이터로 캐시하지 않고 오류로 처리해 잘못된 빈 트리를 고정하지 않게 했다.
+  - `codex-perf-*` 테스트 폴더를 만들어 5개 파일 업로드, 이동, 삭제, cleanup까지 실제 NestJS 웹하드 API 경계에서 측정했다.
+- **재측정/검증**:
+  - 폴더 진입 요청 수: 개선 전 9회(`/files` 1, `/folders` 1, `/folders/children` 2, `/ancestors` 5) → 개선 후 4회(`/files` 1, `/folders` 1, `/folders/children` 1, `/ancestors` 1)
+  - 개선 후 초기 진입 API는 6회(`/settings`, `/storage`, `/files`, `/folders`, `/folders/children`, `/badge-counts`)로 유지
+  - 5개 32KB 파일 기준 직접 NestJS 측정: upload session 4576ms, Google Drive proxy PUT 1663ms, batch confirm 911ms, batch move 2846ms, batch delete 1075ms
+  - 테스트 폴더 cleanup 2건 모두 성공
+- **남은 확인**:
+  - `http://localhost:3101`/`3102` Next dev 서버는 upload route 측정 중 `.next` webpack cache `EPERM` 이후 `/api/webhard/upload/batch`가 404로 흔들려, 업로드/이동/삭제 시간은 직접 NestJS API로 분리 측정했다.
+  - 직접 측정한 `localhost:4000`은 현재 떠 있는 built Nest 서버 기준이다. 최신 backend source 최적화는 성능 E2E/단위 테스트로 별도 검증했다.
+- **관련 커밋**: 미커밋
+
+### 세션 #128 — 2026-06-11
+
+- **작업 내용**: 웹하드 폴더 진입 중복 호출 제거 및 폴더 업로드 완료 UX 개선
+- **원인**:
+  - `useWebhardFoldersQuery`가 현재 폴더의 children을 받은 직후 하위 폴더 5개의 파일 목록을 자동 prefetch했다. 이로 인해 폴더 진입 시 실제로 필요한 현재 폴더 `/files` 요청 외에 추가 `/files` 요청이 병렬로 발생할 수 있었다.
+  - 폴더 업로드 완료 콜백은 파일/폴더/뱃지 cache invalidation을 `await Promise.all(...)`로 기다려 후속 refetch가 업로드 완료 UX를 붙잡을 수 있었다.
+- **완료한 것**:
+  - children 조회 직후 자식 폴더 파일 목록 자동 prefetch를 제거하고, 사용자가 실제로 hover하거나 진입할 때만 기존 `prefetchFolder`/현재 폴더 query가 파일 목록을 가져오도록 변경했다.
+  - 폴더 업로드 완료 후 캐시 갱신을 background invalidation으로 전환하고 실패 시 project logger warning만 남기도록 했다.
+  - `src/app/webhard/__tests__/webhard-folder-query-performance.test.tsx`를 추가해 children 조회 후 `/api/webhard/files` 자동 prefetch가 발생하지 않는 계약을 고정했다.
+- **재측정/검증**:
+  - `pnpm test -- --runTestsByPath src/app/webhard/__tests__/webhard-folder-query-performance.test.tsx --runInBand` 통과 — 1 passed
+  - `pnpm test -- --runTestsByPath src/app/webhard/__tests__/audit07-folder-loading.test.ts src/app/webhard/__tests__/webhard-folder-query-performance.test.tsx src/app/webhard/__tests__/webhard-infinite-loading.test.tsx --runInBand` 통과 — 5 passed
+  - `npx tsc --noEmit` 통과
+  - 별도 Next dev 서버 `http://localhost:3101`에서 인증 상태로 `/webhard` 초기 진입 확인: 2441ms, 웹하드 API 6회, `/api/webhard/files` 1회
+- **남은 확인**:
+  - 현재 fixture의 루트 화면에 `data-testid="folder-item"` 폴더가 없어 폴더 내부 진입 네트워크 재측정은 생략했다. 폴더가 있는 계정/fixture에서 추가 측정 필요.
+- **관련 커밋**: 미커밋
+
+### 세션 #127 — 2026-06-11
+
+- **작업 내용**: 웹하드 폴더 접속·업로드·이동·삭제 성능 측정 및 1차 최적화
+- **측정 결과**:
+  - Chromium E2E 기준 5파일 업로드 흐름 28.1초, 5파일 업로드 후 일괄 삭제 흐름 23.2초, 폴더 생성 10.8초, 하위 폴더 포함 삭제 15.0초, 폴더 진입 7.9초, 최초 웹하드 로딩 4.5초, 폴더 전환 측정 1.4초
+  - 로컬 Next/Nest 로그 기준 목록성 `/files` 응답은 보통 90~270ms였지만 폴더 진입 시 `/folders`, `/folders/children`, `/folders/:id/ancestors`, `/files/badge-counts`, `/files`가 병렬·중복 호출되어 체감 대기 시간이 커졌다.
+  - Google Drive 업로드는 batch upload session 1.6~1.8초, batch-complete 2.5~3.3초가 주요 병목이었다.
+  - 파일 일괄 삭제는 Drive 경계 포함 6.6초, 폴더 삭제는 일반적으로 0.8~1.2초이나 업로드 fixture 폴더 삭제에서 16.8초 사례가 있었다.
+- **완료한 것**:
+  - `batchConfirmUpload`의 Drive metadata 확인을 순차 처리에서 제한 병렬 처리로 바꾸고, 같은 폴더의 Drive readiness 조회를 캐시한다.
+  - 업로드 성공 후 UI가 파일/폴더/배지 refetch 완료까지 업로드 중 상태를 붙잡지 않도록 후속 캐시 갱신을 background invalidation으로 전환했다.
+  - 폴더 이동에서 이미 조회한 target parent 정보를 재사용하고, R2/DB-only 이동에는 불필요한 Drive parent 조회를 하지 않도록 줄였다.
+  - 성능 fixture가 실제 운영 materialized path 조건을 반영하도록 R2 provider와 `path`를 명시해 성능 테스트의 오탐을 제거했다.
+- **재측정/검증**:
+  - `cd webhard-api && $env:RUN_PERF_TESTS='1'; $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test:e2e -- performance.e2e-spec.ts --runInBand` 통과 — 6 passed, ancestors 117.58ms, 폴더 이동 229.16ms, 100 child folder delete 162.00ms, 100 folder batch delete 162.43ms, 100 file batch move 156.99ms, 100 file batch delete 107.95ms
+  - `cd webhard-api && npx tsc --noEmit` 통과
+  - `npx tsc --noEmit` 통과
+  - `cd webhard-api && pnpm test -- src/files/__tests__/files.service.spec.ts --runInBand` 통과 — 58 passed
+  - `cd webhard-api && pnpm test -- src/folders/folders.service.spec.ts --runInBand` 통과 — 61 passed
+- **남은 확인**:
+  - 현재 떠 있는 `localhost:3000`/`localhost:4000`은 빌드된 서버 조합이라 수정 소스를 반영한 브라우저 E2E 재측정은 서버 rebuild/restart 후 다시 실행해야 한다.
+  - Google Drive 삭제/이동 자체는 외부 API 성공을 기다리는 fail-closed 계약이므로 즉시 성공 처리로 바꾸려면 별도 비동기 작업 큐/진행 상태 설계가 필요하다.
+- **관련 커밋**: 미커밋
+
+### 세션 #126 — 2026-06-10
+
+- **작업 내용**: Google Drive 웹하드 보안·정합성·고성능 운영 보강
+- **완료한 것**:
+  - 자체웹하드 일반 목록/검색은 PostgreSQL metadata fast path로 유지하고 Drive API를 호출하지 않는 계약을 테스트로 고정
+  - `GET /api/v1/storage/webhard-consistency`에 `lastCheckedAt`, `quotaBackoffCount`, 최근 `storage_repair` 이벤트를 추가
+  - Drive API 진단 중 404/403/429가 정상 성공처럼 묻히지 않도록 `drive_api_404`, `drive_quota_or_backoff` repair 이벤트 기록
+  - `POST /api/v1/storage/drive-change-webhook` 추가: Google Drive channel token과 optional channel id 검증 후 reconciliation queue 기록
+  - `StorageReconciliationService` 추가: 백그라운드에서 최근 Drive-backed folder/file을 bounded limit로 점진 검증하고 404/429/오류를 repair log로 남김
+  - API/spec/features/changelog 문서에 fast path, webhook, reconciliation, 진단 응답 필드 반영
+- **검증**:
+  - `cd webhard-api && pnpm test -- storage/__tests__/webhard-consistency.spec.ts storage/__tests__/storage-reconciliation.service.spec.ts files/__tests__/files.service.spec.ts folders/folders.service.spec.ts --runInBand`는 storage 2개 suite 통과 후 files/folders 대형 suite 로딩 중 Node heap OOM으로 중단
+  - `cd webhard-api && pnpm test -- files/__tests__/files.service.spec.ts --runInBand --testNamePattern="DB-only fast path"` 통과 — 2 passed
+  - `cd webhard-api && pnpm test -- folders/folders.service.spec.ts --runInBand --testNamePattern="DB-only fast path"` 통과 — 1 passed
+  - `cd webhard-api && npx tsc --noEmit` 통과
+- **남은 확인**:
+  - 실제 Google Drive `changes.watch` 채널 생성/갱신 작업은 운영 배포 환경의 공개 webhook URL과 token 설정 후 수동 검증 필요
+- **관련 커밋**: 미커밋
+
+### 세션 #125 — 2026-06-04
+
+- **작업 내용**: Google Drive 웹하드 남은 QA 항목 Chromium E2E 자동화 및 회귀 수정
+- **완료한 것**:
+  - `e2e/google-drive-webhard-user-qa.spec.ts` 추가: 업체 A/B 생성·승인, Drive provisioning, 업체별 화면/API 격리, 폴더 생성/이름변경/이동, 실제 Google Drive 프록시 업로드, 다운로드, 파일 이름변경/이동, 검색, 새 파일 확인처리, 공유 링크, ZIP, 파일 휴지통/복구, 업체 루트 삭제 차단, 업체 삭제/복구, 최종 Drive 정합성 진단까지 자동화
+  - 공유 링크 생성 Next 라우트가 NestJS DTO와 맞지 않던 문제 수정: token/expiresAt 생성, createdBy numeric 보정, company 세션의 `company_id` 조작과 직접 Nest `webhardFileId` 위조는 세션 업체와 DB 파일 소유권 검증으로 차단
+  - NestJS `share-links` API key 허용 범위를 token validate/download stream 전용으로 축소하고 raw 목록/생성 API와 직접 파일 다운로드 API의 API key-only 접근을 차단
+  - API Key 기반 공개 공유 다운로드는 전용 `POST /api/v1/share-links/download/stream`에서 토큰 검증과 Drive/R2 stream을 함께 처리하도록 보강
+  - 공유 링크 `maxDownloads`를 조건부 atomic increment로 변경해 병렬 다운로드 제한 초과를 차단
+  - ZIP 다운로드가 CommonJS 환경의 `archiver` default import 문제로 500이 나던 문제 수정
+  - `docs/reports/google-drive-webhard-user-qa-checklist-2026-06-02.md`에 Codex가 E2E로 통과시킨 항목을 체크하고, 남은 수동 QA 항목을 분리
+- **검증**:
+  - `npx playwright test e2e/google-drive-webhard-user-qa.spec.ts --project=chromium --reporter=list` 통과 — 1 passed
+  - `npx tsc --noEmit` 통과
+  - `cd webhard-api && npx tsc --noEmit` 통과
+  - `cd webhard-api && npx tsx scripts/audit-google-drive-webhard-consistency.ts` 통과 — missing Drive folder/file id 0, duplicate active root 0
+  - `cd webhard-api && pnpm test -- share-links.service.spec.ts` 통과 — 12 passed
+  - `git diff --check` 통과
+- **남은 수동 QA**:
+  - 로그인 폼 자체, 일반 폴더 단독 삭제/복구, 정렬 UI, 작업자 다운로드, 폴더/다중 ZIP, 의도적 Drive 404 주입은 브라우저/운영자 수동 확인 대상으로 유지
+- **관련 커밋**: 미커밋
+
+### 세션 #124 — 2026-06-02
+
+- **작업 내용**: Google Drive 웹하드 사용자 QA 체크리스트 문서 추가
+- **완료한 것**:
+  - 나중에 사용자가 브라우저에서 직접 확인할 수 있는 수동 QA 항목을 `docs/reports/google-drive-webhard-user-qa-checklist-2026-06-02.md`에 정리
+  - 관리자 진단, 업체 등록/격리, 폴더/파일 CRUD, 휴지통/복구, 업체 삭제/복구, 문의/도면/납품 연동, 검색/배지, 공유/ZIP, Drive 실체 일치성 회귀 확인 기준 포함
+  - Codex가 자동 테스트/DB 검증으로 통과시킨 항목은 `[x]`로 표시하고, 브라우저 수동 확인이 필요한 항목은 미체크로 유지
+- **검증**:
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #123 — 2026-06-02
+
+- **작업 내용**: Google Drive 웹하드 DB metadata 정합성 규칙 보강
+- **원인**:
+  - 기본 seed/E2E fixture가 실제 Google Drive 객체 없이 `storageProvider=GOOGLE_DRIVE` folder/file row를 만들 수 있었다.
+  - 웹하드 목록은 DB metadata를 source of truth로 사용하기 때문에 Drive id 없는 row가 화면에 정상 폴더처럼 보일 수 있었다.
+- **완료한 것**:
+  - 개발 DB의 Drive id 없는 Google Drive folder/file row를 cleanup script로 삭제하고, 업체별 active root 중복 count를 0으로 정리
+  - `webhard_folders`/`webhard_files`에 Google Drive id 필수 CHECK constraint와 업체별 active root partial unique index migration 적용
+  - 기본 seed에서 legacy webhard DB fixture를 제외하고, 옵션으로 실행하더라도 `R2` provider를 명시하도록 보정
+  - 폴더/파일 생성 경로에서 Google Drive row는 Drive id가 있을 때만 저장하고, legacy parent 아래 생성은 `R2`로 명시
+  - 웹하드 목록/트리/검색 API에서 invalid Google Drive row를 정상 목록으로 내려주지 않도록 방어 필터 추가
+  - 관리자용 `GET /api/v1/storage/webhard-consistency` 진단과 `scripts/audit-google-drive-webhard-consistency.ts` dry-run/apply 경로 추가
+- **검증**:
+  - `cd webhard-api && npx prisma migrate deploy` 통과 — `20260602110000_google_drive_webhard_consistency` 적용
+  - `cd webhard-api && npx tsx scripts/audit-google-drive-webhard-consistency.ts --apply` 후 invalid folder/file/root duplicate count 0 확인
+  - 실제 DB constraint 확인: `GOOGLE_DRIVE + null driveFolderId` 차단, `GOOGLE_DRIVE + null driveFileId` 차단, `R2 + null driveFolderId` 허용 후 삭제
+  - `cd webhard-api && npx tsc --noEmit` 통과
+  - `cd webhard-api && pnpm test -- folders.service.spec.ts --runInBand` 통과 — 60 passed
+  - `cd webhard-api && pnpm test -- contacts.service.spec.ts --runInBand` 통과 — 67 passed
+  - `cd webhard-api && pnpm test -- drawing-revision.service.spec.ts --runInBand` 통과 — 26 passed
+  - `cd webhard-api && pnpm test -- files.service.spec.ts --runInBand` 통과 — 73 passed
+  - `cd webhard-api && pnpm test -- webhard-consistency.spec.ts --runInBand` 통과 — 3 passed
+- **관련 커밋**: 미커밋
+
+### 세션 #122 — 2026-06-02
+
+- **작업 내용**: 업체 삭제/복구 시 Google Drive 폴더 누락으로 흐름이 중단되는 문제 수정
+- **원인**:
+  - `드로잉일관성테스트거래처`에 매칭된 업체 루트 폴더가 2개 있었고, 그중 하나는 `driveFolderId=null` 상태였다.
+  - 기존 `deleteCompany()`는 매칭 루트 폴더 중 하나라도 Google Drive id가 없거나 Drive API 404를 반환하면 업체 삭제 DB 트랜잭션까지 실행하지 않았다.
+- **완료한 것**:
+  - 업체 삭제/복구 시 Drive 폴더 id가 없거나 Drive 폴더가 이미 없어 404가 나는 경우, storage repair 로그를 남기고 DB 업체 삭제/복구와 웹하드 휴지통 이동/복구는 계속 진행하도록 변경
+  - Google Drive 권한/설정 문제 같은 비-404 오류는 계속 실패로 유지
+  - 중복 업체 루트 폴더 중 일부 Drive id가 누락된 케이스와 Drive 404 케이스를 삭제/복구 단위 테스트로 고정
+- **검증**:
+  - `cd webhard-api && npx tsc --noEmit` 통과 (`shamefully-hoist` npm 경고만 출력)
+  - `cd webhard-api && $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test -- companies.service.spec.ts --runInBand` 통과 — 7 passed
+- **관련 커밋**: 미커밋
+
+### 세션 #121 — 2026-06-02
+
+- **작업 내용**: 업체 매칭 웹하드 폴더 삭제 차단 안내를 공통 모달로 전환
+- **완료한 것**:
+  - 브라우저 기본 `alert()` 대신 공통 `Modal` 기반 안내 UI를 사용하도록 변경
+  - 차단 안내에 매칭된 폴더명과 업체명을 표시
+  - 선택 삭제에 업체 매칭 루트 폴더와 일반 항목이 섞인 경우, 매칭 폴더를 제외하고 나머지 항목만 삭제하는 흐름 추가
+  - NestJS 차단 payload에 `companyName`을 포함해 프론트가 정확한 매칭 정보를 표시하도록 보강
+- **검증**:
+  - `npx tsc --noEmit` 통과 (`node-linker` npm 경고만 출력)
+  - `cd webhard-api && npx tsc --noEmit` 통과 (`shamefully-hoist` npm 경고만 출력)
+  - `pnpm test -- --runTestsByPath src/app/webhard/components/__tests__/CompanyRootFolderDeleteBlockedModal.test.tsx --runInBand` 통과 — 3 passed
+  - `cd webhard-api && $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test -- folders.service.spec.ts --runInBand` 통과 — 59 passed
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #120 — 2026-06-02
+
+- **작업 내용**: 업체 삭제/복구와 매칭 웹하드 업체 루트 폴더 휴지통 이동 구현
+- **완료한 것**:
+  - `companies`에 30일 복구용 soft delete 메타(`deleted_at`, `deleted_by`, 이전 상태/웹하드 권한)를 추가
+  - `webhard_folders.deleted_by`를 추가해 업체 삭제로 휴지통 이동된 폴더/파일만 복구 대상으로 구분
+  - 관리자 웹하드에서 업체 루트 폴더 직접 삭제를 차단하고 업체 상세 페이지로 이동하도록 처리
+  - 업체 상세 페이지에서 업체 삭제 대기/복구 액션을 제공하고, 삭제 시 매칭 웹하드 루트 폴더와 하위 항목을 휴지통으로 이동
+  - 휴지통 보관 기간을 30일로 정렬
+- **검증**:
+  - `cd webhard-api && npx prisma generate` 통과 (`shamefully-hoist`, Prisma config deprecation 경고만 출력)
+  - `cd webhard-api && npx tsc --noEmit` 통과 (`shamefully-hoist` npm 경고만 출력)
+  - `npx tsc --noEmit` 통과 (`node-linker` npm 경고만 출력)
+  - `cd webhard-api && $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test -- folders.service.spec.ts --runInBand` 통과 — 59 passed
+  - `cd webhard-api && $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test -- companies.service.spec.ts --runInBand` 통과 — 3 passed
+  - `cd webhard-api && $env:NODE_OPTIONS='--max-old-space-size=8192'; pnpm test -- trash.service.spec.ts --runInBand` 통과 — 19 passed
+  - `pnpm test -- --runTestsByPath src/__tests__/actions/companies.test.ts --runInBand` 통과 — 7 passed
+  - 참고: `folders/companies/trash`를 한 번에 실행한 Jest 명령은 Windows/Node heap OOM으로 실패해, 위처럼 heap 옵션을 올리고 분리 실행함
+- **관련 커밋**: 미커밋
+
+### 세션 #119 — 2026-05-29
+
+- **작업 내용**: 자체 웹하드 저장소를 Google Shared Drive provider로 교체하는 1차 구현
+- **완료한 것**:
+  - Prisma schema/migration에 `StorageProvider`, `DriveProvisioningStatus`, 업체 Drive provisioning 상태, 파일/폴더 Drive id 필드를 추가
+  - Google Drive API provider, storage reference, storage repair log 경계를 추가하고 `StorageService`에서 R2/Drive provider를 분기
+  - 업체 승인/활성화 시 Drive 루트/템플릿 폴더를 생성하고 실패 사유를 업체 상태에 남기는 provisioning service와 retry endpoint 추가
+  - 웹하드 업로드 presign/confirm/batch-confirm, 파일 rename/move/delete, 폴더 create/rename/move/delete, ZIP, trash, backup, share link, worker/webhard 다운로드 proxy를 Drive-aware로 전환
+  - 문의/도면 revision/납품 증빙이 웹하드에 등록될 때 Drive 폴더가 준비된 경우 R2 원본을 Drive로 복사해 `WebhardFile`에 Drive metadata를 저장
+  - 개발 초기화 스크립트 `webhard-api/scripts/reset-webhard-for-google-drive.ts` 추가
+- **검증**:
+  - `cd webhard-api && npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+  - `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+- **이슈**:
+  - 실제 Google Shared Drive 연동은 `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_DRIVE_SHARED_DRIVE_ID`, Shared Drive 멤버 권한 설정 후 통합/E2E 검증 필요
+- **관련 커밋**: 미커밋
+
+### 세션 #118 — 2026-05-28
+
+- **작업 내용**: `/test` R3F 패키지 히어로 스크롤 전개 프로토타입 수정
+- **완료한 것**:
+  - 스크롤 진행값을 `HeroSection`에서 계산해 R3F 씬에 전달하고, sticky hero 영역에서 progress 0→1이 생성되도록 보정
+  - 절차형 `FoldingBox`를 제거하고 첨부 GLB를 `public/models/c-type-box.glb`로 배치해 C형 박스 모델로 교체
+  - GLB의 8개 Blender animation clip을 `AnimationMixer.setTime()`으로 스크롤 progress에 맞춰 scrub 처리
+  - `/test` 페이지의 공통 헤더/푸터/카피를 제거하고, 화면 중앙의 R3F 박스만 보이는 sticky 실험 화면으로 전환
+  - 패널 이동 방식을 임의 위치 보간에서 실제 모서리 힌지 회전으로 변경하고, 뚜껑은 뒷면 패널의 자식 힌지로 연결
+  - R3F용 progress는 ref로 전달해 스크롤 중 React reconciliation을 줄이고, `data-fold-progress`만 낮은 빈도로 갱신
+  - `prefers-reduced-motion`에서는 전개 progress를 끄지 않고 보간만 제거하도록 수정
+  - `/test` hero 스크롤 높이를 desktop 520vh, mobile 480vh로 늘려 휠 입력 대비 전개 progress가 더 천천히 진행되도록 조정
+  - GLB 안의 제품 라벨, 바코드, 접힘선, 잠금 슬롯, tuck tab, side dust flap 구조를 그대로 사용
+  - GLB material 이름은 갈색 계열이나 baseColorFactor가 회색이라, 로드 후 material clone에 판지/접힘선 색을 입히도록 보정
+  - 스크롤 전개 중 모델 root를 Y축으로 360도 회전시키고, 전개 완료 시 화면 축에 맞게 정렬되도록 보정
+  - GLB animation 마지막 프레임에서 패널이 겹쳐 보이는 문제를 피하기 위해 시각적으로 열린 94% 구간까지만 scrub하고 끝 상태를 고정
+  - Canvas shadow, directional/hemisphere/fill light, contact shadow, 판지 grain/bump texture를 추가해 실제 박스 재질감과 바닥 그림자를 보강
+- **검증**:
+  - `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - Playwright headless `/test` 확인: 일반 모션 및 reduced-motion 모두 progress 0→1, desktop/mobile에서 Canvas sticky y=0 유지, body visible text 없음, 스크롤 전후 픽셀 변화 확인, browser error 없음
+  - Playwright fresh context `/test` 재확인: desktop 1440x900 섹션 4680px(520vh), 1000px 스크롤 후 progress 0.235, mobile 390x844 섹션 4051px(480vh)
+  - Playwright fresh context 제품 박스 렌더 재확인: closed/open 상태 모두 Canvas 표시, header/footer 미노출, body text 없음, browser error 없음
+  - Playwright desktop/mobile 재확인: GLB 200 로드, progress 0→1, 중간 회전/전개 상태와 최종 정렬 상태 렌더, browser error 없음
+- **이슈**:
+  - GLB 모델의 치수, UV, 재질, 애니메이션 타이밍은 Blender 원본에서 관리 필요
+- **관련 커밋**: 미커밋
+
+### 세션 #117 — 2026-05-27
+
+- **작업 내용**: E2E 반복 경고 후속 정리 — notifications 400, sessions 403, folders/config 403
+- **완료한 것**:
+  - NestJS notifications controller의 optional `userId` 쿼리를 수동 파싱으로 전환해 admin 전체 알림 조회가 `userId` 없이도 400을 내지 않도록 보정
+  - Next.js NestJS operations client의 active session heartbeat/list/count/delete 호출을 API key principal이 아니라 session cookie 경로로 전환
+  - NestJS sessions endpoint에서 API key principal을 heartbeat/delete에서 차단하고, admin/company 세션이 자기 세션만 갱신·삭제하도록 보강
+  - Next.js NestJS webhard client의 folder template/config 조회·수정 호출을 API key principal이 아니라 admin session cookie 경로로 전환
+  - NestJS folder template 조회·수정 endpoint에 AdminGuard를 추가해 글로벌 템플릿을 관리자 전용으로 고정
+  - sessions endpoint 문서의 Auth 표기를 조회는 `Admin session`, heartbeat/delete는 `Admin/company session`으로 정정
+- **검증**:
+  - `pnpm test -- --runTestsByPath src/__tests__/lib/api/nestjs-domain-clients.test.ts --runInBand` 통과 — 8 passed
+  - `cd webhard-api && pnpm test -- notifications.controller.spec.ts --runInBand` 통과 — 3 passed
+  - `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `cd webhard-api && npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+  - `pnpm exec playwright test e2e/laser-only-company.spec.ts --project=chromium --grep '웹하드 관리 페이지에 "레이저가공 업체 관리" 섹션이 표시된다|백업 현황 섹션에 데이터가 표시된다' --reporter=line` 통과 — 2 passed
+  - E2E 로그 검색에서 기존 `notifications` numeric-string 400, `sessions/upsert` 403, `folders/config` 403 패턴 매칭 없음
+- **이슈**:
+  - Prisma/Sentry instrumentation `Critical dependency` 및 Prisma config deprecation 경고는 별도 후속으로 남음
+- **관련 커밋**: 미커밋
+
+### 세션 #116 — 2026-05-27
+
+- **작업 내용**: 웹하드 E2E 업로드/삭제/이름변경 실패 원인 분리 및 테스트 하네스 보강
+- **완료한 것**:
+  - 업로드 완료 helper가 batch-complete HTTP status뿐 아니라 응답 body의 `success:false`와 `failed > 0`을 실패로 처리하도록 보강
+  - 업로드 직후 현재 폴더 API에서 실제 fileId를 수집하고, reload 없이 live DOM `[data-file-id]` 행을 확인하도록 변경
+  - 삭제와 파일명 변경 helper가 reload fallback 없이 API persisted state와 live row state를 모두 검증하도록 변경
+  - 중복 폴더 E2E의 항상 참 조건 제거 및 API folder count 검증 추가
+  - `POST /api/webhard/upload/batch-complete` Next route가 metadata partial failure를 502로 노출하도록 수정
+- **검증**:
+  - `pnpm exec playwright test --reporter=list` 통과 — 594 passed, 168 skipped
+  - `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `pnpm test -- --runTestsByPath src/__tests__/api/webhard-upload-batch-complete-route.test.ts` 통과 — 4 passed
+  - 독립 리뷰 에이전트 재검수 GO — 남은 Critical/Important 없음
+- **이슈**:
+  - E2E stderr에 notification numeric-string 400, admin/session 403, Prisma instrumentation 경고가 남아 있으나 이번 수정 범위의 실패로 이어지지는 않음
+  - 일부 drag/drop 및 권한 negative-path 케이스는 기존 skip 상태
+- **관련 커밋**: 미커밋
+
+### 세션 #115 — 2026-05-25
+
+- **작업 내용**: 전수 개선 GOAL — 보안/성능/디자인/유지보수 회귀 테스트와 핵심 수정
+- **완료한 것**:
+  - 보안 경계 테스트/구현 보강: edge session 검증, API key principal 분리, mutation route fail-closed, worker ACL, realtime gateway session 검증, secret fallback gate
+  - 성능 개선: Worker dashboard payload 축소, 웹하드 75+ 파일 pagination/infinite loading, 폴더 최신 metadata summary, 최신 도면 ranked query
+  - 폴더 업로드 개선: Server Action buffer 업로드 경로 제거, browser direct-to-R2 배치 업로드, folderId 그룹 bounded concurrency, `uploadFilesBatch` O(n) 파일 매칭, abort signal 전파
+  - 디자인/A11Y 개선: 폴더 업로드 모달 dialog/focus/Escape 계약 추가, raw brand hex/literal class interpolation 정적 게이트 통과
+  - 유지보수 정적 게이트: 변경 production line 기준 상대 import, raw React Query key, explicit `any` 신규 유입 차단
+  - 프로젝트 표준/독립 리뷰 피드백 반영: integration principal의 generic folder listing 차단, 외부웹하드 동기화 endpoint 명시 허용, integration `markAll` 전역 다운로드 상태 변경 차단, URL-encoded gateway session cookie 검증, R2 test mock 의존성명 정리
+- **검증**:
+  - `frontend`: `pnpm test -- --runInBand` 통과 — 137개 suite 통과, 2개 skipped, 1052개 테스트 통과, 6개 skipped
+  - `backend`: `pnpm --dir webhard-api test -- --runInBand` 통과 — 73개 suite 통과, 933개 테스트 통과, 1개 skipped
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `backend`: `cd webhard-api && npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+  - `audit`: frontend production high gate 통과, backend production high gate 통과. backend Moderate Nest SSE advisory 1건은 non-reachable 예외로 `docs/security/dependency-audit-2026-05-25.md`에 문서화
+  - `diff`: `git diff --check` 통과
+- **리뷰**:
+  - 성능 리뷰에서 발견된 folder upload 직렬화/O(n²)/abort signal 피드백 반영 완료
+  - 유지보수/프로젝트 표준 리뷰 Important 3건 반영 완료
+  - 최종 독립 리뷰 Important 1건 반영 완료: API key generic listing 차단과 외부웹하드 동기화 endpoint 허용을 라우트 메타데이터로 분리
+  - 최종 독립 재리뷰 Important 1건 반영 완료: integration API key의 `markAll` 전역 mutation 차단
+  - 독립 리뷰 에이전트 최종 재검수 결과 남은 Critical/Important 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #114 — 2026-05-25
+
+- **작업 내용**: 홈 제작 과정 스텝 숫자 제거
+- **완료한 것**:
+  - 홈 제작 과정 카드의 원형 숫자 배지 제거
+  - 제작 과정 제목 위 `STEP n` 라벨 제거
+- **검증**:
+  - `git diff --check` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `playwright`: `/` 제작 과정 섹션에서 `STEP 숫자` 라벨 미노출 확인
+- **관련 커밋**: 미커밋
+
+### 세션 #113 — 2026-05-22
+
+- **작업 내용**: 챗봇 시스템 구현 준비 문서 추가
+- **완료한 것**:
+  - 공개 `챗봇 상담` 버튼을 실제 상담 시스템으로 확장하기 위한 feature spec 추가
+  - 공개/업체/관리자 역할별 접근 범위, 대화 플로우, 문의 인계, 지식 소스, API 경계, 데이터 모델 초안, 보안/개인정보 기준 정리
+  - LLM/RAG 도입 시 prompt injection, source visibility, presigned URL/토큰 노출 금지 기준 명시
+- **검증**:
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #112 — 2026-05-22
+
+- **작업 내용**: 웹하드 저장 공간 사용량 실시간 반영 보정
+- **완료한 것**:
+  - 관리자 웹하드 저장 공간이 `company_storage.companyId=0`만 읽어 업체 파일이 있어도 `0 B`로 보일 수 있던 원인을 수정
+  - 관리자 전체 저장 공간은 모든 `company_storage.used_bytes` 합계로 계산하고, 테이블 조회 실패 시 전체 `webhard_files` aggregate로 fallback
+  - 파일 업로드/삭제/복원 및 웹하드 파일 realtime 이벤트 후 저장 공간 React Query 캐시를 즉시 무효화
+  - 저장 공간 표시 컴포넌트에 window focus refetch와 30초 polling fallback을 추가
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/lib/react-query/queryKeys.test.ts --runInBand` 통과
+  - `backend`: `cd webhard-api && pnpm test -- storage.service.spec.ts --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `backend`: `cd webhard-api && npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #111 — 2026-05-22
+
+- **작업 내용**: Worker 대시보드 예약 일정 메뉴 추가
+- **완료한 것**:
+  - Worker 대시보드 헤더에 `메뉴` 드롭다운 추가
+  - Worker 세션 검증 후 오늘부터 14일간 예약을 조회하는 read-only `/api/worker/bookings` 경로 추가
+  - 예약 메뉴에서 일자별 시간대, 업체명, 연결 문의명/문의번호, 상태 표시
+  - 메뉴 내 새로고침 버튼으로 예약 일정을 즉시 재조회하도록 구현
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `playwright`: `김테스트/1234` worker 세션으로 `/worker/dashboard` 진입 후 `메뉴` 드롭다운과 `예약일정` 패널 표시 확인
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #110 — 2026-05-22
+
+- **작업 내용**: 업체/관리자 로그인 아이디 저장 및 자동로그인 추가
+- **완료한 것**:
+  - 로그인 폼에 `아이디 저장`과 `자동로그인` 체크박스 추가
+  - `아이디 저장`은 비밀번호/토큰 없이 아이디 문자열만 `localStorage`에 저장하고 다음 방문 시 복원하도록 구현
+  - `자동로그인` 선택 시 성공한 관리자/거래처 세션 쿠키 maxAge를 30일로 설정하도록 `loginAction`/`createSession` 확장
+  - 선택하지 않은 로그인은 기존 4시간 세션 만료 정책 유지
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/auth/login-form-account-recovery.test.tsx src/__tests__/actions/auth-login.test.ts --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `playwright`: `/login`에서 `아이디 저장`/`자동로그인` 체크박스 렌더링 및 FormData name 확인
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #109 — 2026-05-22
+
+- **작업 내용**: Worker 긴급 배치/해제 타임라인 감사 이력 추가
+- **완료한 것**:
+  - Worker/Admin 긴급 토글 API가 현재 세션 actor를 서비스로 전달하도록 변경
+  - 긴급 배치/해제 시 `contacts` 업데이트와 `ContactStatusHistory` `urgent_toggle` 기록을 같은 트랜잭션에서 처리
+  - Worker/Admin 공통 타임라인에서 `긴급 처리 — 작업자명`, `긴급 해제 — 작업자명` 라벨을 표시하도록 변경
+  - Worker 대시보드에서 긴급 토글 직후 열린 문의 카드의 타임라인 쿼리를 즉시 refetch하도록 보정
+  - 기존에 `is_urgent=true`/`urgent_at`만 있고 `urgent_toggle` 이력이 없는 문의도 타임라인에서 긴급 처리 fallback 이력으로 표시
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/components/ContactTimeline.test.tsx --runInBand` 통과
+  - `backend`: `cd webhard-api && pnpm test -- contacts.service.spec.ts contacts.controller.spec.ts contact-timeline.service.spec.ts --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `backend`: `cd webhard-api && npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+  - `playwright`: `김테스트/1234` 로그인 후 `260520(5633)` 문의 카드 확장 시 `긴급 처리` 타임라인 표시 확인
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #108 — 2026-05-22
+
+- **작업 내용**: Worker 납품완료 검색 클릭 이동/강조 안정화
+- **완료한 것**:
+  - 완료 탭 검색 결과에 URL `highlight` 대상이 없으면 납품완료 단건을 보강 조회해 렌더 목록에 포함하도록 변경
+  - 완료 탭 highlight 대상이 실제 DOM에 렌더된 뒤 스크롤되도록 재시도 로직을 추가해 검색 클릭 직후 이동/강조 실패를 방지
+  - Playwright 별도 브라우저에서 `김테스트/1234` 로컬 작업자 세션 생성 후 대시보드 `테스트` 검색 → 납품완료 결과 클릭 → 완료 탭 이동 → `data-highlighted="true"` 대상 카드 표시까지 확인
+- **검증**:
+  - `playwright`: `테스트` 검색 납품완료 결과 3건 확인, 첫 납품완료 결과 클릭 후 `highlight=af8d5f5d-796d-4681-9fe0-55b03100ae9d` 카드 강조 표시 확인
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #107 — 2026-05-22
+
+- **작업 내용**: Worker 납품완료 검색 이동 카드 강조 표시 보강
+- **완료한 것**:
+  - 납품완료 검색 결과 클릭 후 완료 탭의 대상 카드가 명확히 보이도록 `DeliveredItemCard` highlight 상태의 배경/테두리 class 충돌을 분리
+  - highlight 대상 카드에 brand ring, ring offset, 왼쪽 brand bar, shadow를 적용해 스크롤 이동 후 강조가 눈에 띄도록 변경
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #106 — 2026-05-22
+
+- **작업 내용**: Worker 통합 검색 납품완료 파일명 검색 누락 보정
+- **완료한 것**:
+  - Worker 대시보드 검색어가 있을 때 납품 완료 목록을 검색어 없는 원본 소스로 조회한 뒤, 대시보드의 통합 검색식으로 업체명/문의번호/파일명을 다시 필터링하도록 변경
+  - NestJS 완료 목록 검색 조건이 파일명을 포함하지 않아 납품완료 파일명 검색 결과가 누락될 수 있던 경로를 보정
+  - 납품완료 결과 클릭 후 이동하는 완료 탭도 서버 검색어 필터 대신 로컬 공통 검색식으로 파일명을 필터링해 대상 카드가 날짜/서버 검색 조건에 가려지지 않도록 보정
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #105 — 2026-05-22
+
+- **작업 내용**: Worker 통합 검색 납품완료 결과 포함
+- **완료한 것**:
+  - Worker 대시보드 검색어가 있을 때 납품 완료 목록 API를 함께 조회해 통합 검색 결과에 합산
+  - 납품 완료 문의는 검색 드롭다운 scope 태그를 `납품완료`로 표시
+  - 납품 완료 검색 결과 선택 시 `/worker/delivery?tab=completed&highlight=...&search=...`로 이동하고 완료 탭에서 대상 카드를 검색·스크롤·강조하도록 연결
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #104 — 2026-05-22
+
+- **작업 내용**: Worker 통합 검색 드롭다운 키보드 탐색 및 결과 무한 렌더링
+- **완료한 것**:
+  - Worker 대시보드 검색 결과 드롭다운에서 `ArrowDown`/`ArrowUp`으로 결과 항목을 선택할 수 있게 변경
+  - `Enter`로 선택 항목 이동, `Escape`로 검색 닫기 동작 추가
+  - 검색 결과를 전체 계산하되 화면에는 12개씩 렌더하고, 드롭다운 스크롤 하단 접근 시 다음 묶음을 추가 렌더링하도록 변경
+  - 선택 항목이 키보드 이동에 맞춰 드롭다운 내부에서 자동으로 보이도록 보정
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #103 — 2026-05-22
+
+- **작업 내용**: Worker 타임라인 로딩 스켈레톤 shimmer 강조
+- **완료한 것**:
+  - Worker 문의 카드 확장 타임라인 로딩 스켈레톤에 전용 shimmer 클래스를 추가
+  - 타임라인 스켈레톤만 더 빠르고 밝은 이동 highlight를 사용하도록 전역 CSS 보강
+  - 로딩 컨테이너에 은은한 pulse를 더해 타임라인이 로딩 중임을 더 명확히 표시
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/components/ContactTimeline.test.tsx --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #102 — 2026-05-21
+
+- **작업 내용**: Worker 대시보드 헤더 날짜/시간 레이아웃 조정
+- **완료한 것**:
+  - 헤더 중앙 시계를 날짜와 시간 두 줄로 분리
+  - 날짜는 요일까지 포함해 위쪽의 큰 볼드 텍스트로, 시간은 아래쪽의 작은 보조 텍스트로 표시
+  - 기존 분 단위 자동 갱신과 작은 화면 숨김 정책 유지
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #101 — 2026-05-21
+
+- **작업 내용**: Worker 대시보드 통합 검색 결과 드롭다운과 대상 이동 강조
+- **완료한 것**:
+  - Worker 대시보드 검색 입력 아래에 결과 드롭다운을 애니메이션으로 표시하도록 변경
+  - 검색 결과 소스를 현재 탭에 한정하지 않고 사무실 작업, 현장 작업, 납품관리 대기 건까지 통합
+  - 사무실/현장 검색 결과 클릭 시 해당 탭·필터로 이동하고 대상 문의 카드를 스크롤·강조하도록 연결
+  - 납품관리 검색 결과 클릭 시 `/worker/delivery?tab=pending&highlight=...`로 이동하고 납품 대기 카드를 스크롤·강조하도록 연결
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #100 — 2026-05-21
+
+- **작업 내용**: Worker 납품/문의 확장 영역 shimmer 스켈레톤 로딩
+- **완료한 것**:
+  - 공용 `Skeleton` 컴포넌트를 pulse 대신 좌우로 흐르는 shimmer 애니메이션으로 변경
+  - Worker 문의 카드 확장 타임라인 스켈레톤이 shimmer 애니메이션을 사용하도록 변경
+  - 납품 완료 목록 로딩을 회전 아이콘 대신 카드형 shimmer 스켈레톤으로 변경
+  - 납품 완료 카드 확장 시 타임라인과 납품 증빙 이미지가 모두 준비되기 전까지 확장 패널 전체 shimmer 스켈레톤을 보여주고, 준비 후 실제 콘텐츠를 함께 표시하도록 변경
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/components/ContactTimeline.test.tsx src/__tests__/components/DownloadButton.test.tsx --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #99 — 2026-05-21
+
+- **작업 내용**: Worker 문의 카드 리스트 무한 스크롤형 렌더링
+- **완료한 것**:
+  - Worker 대시보드의 사무실/현장 문의 카드 리스트를 최초 20개 렌더 후 하단 접근 시 20개씩 추가 렌더링하도록 변경
+  - 탭, 공정 필터, 검색어가 바뀌면 렌더 배치를 초기화해 현재 조건의 첫 묶음부터 표시
+  - 새 문의 알림 클릭으로 이동할 카드가 아직 렌더되지 않은 배치에 있으면 해당 카드 위치까지 먼저 렌더링한 뒤 스크롤하도록 보강
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #98 — 2026-05-21
+
+- **작업 내용**: Worker 타임라인 파일 다운로드 행 UX 정리
+- **완료한 것**:
+  - 타임라인 도면 파일 행의 별도 `다운로드` 텍스트 버튼 제거
+  - 파일 행 전체를 클릭 가능한 다운로드 컨트롤로 변경하고, 파일명 뒤에는 다운로드 아이콘 1개만 표시
+  - 기존 `DownloadButton`의 blob 다운로드/파일명 보정 로직은 유지하면서 커스텀 children과 aria label을 받을 수 있게 확장
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/components/ContactTimeline.test.tsx src/__tests__/components/DownloadButton.test.tsx --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #97 — 2026-05-21
+
+- **작업 내용**: Worker 대시보드 우하단 새로고침 floating 버튼 제거
+- **완료한 것**:
+  - Worker 대시보드 우하단에 고정 표시되던 원형 `새로고침` 버튼 제거
+  - 버튼 전용 refresh handler와 `RefreshCw` icon import 제거
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+  - `rg -n 'RefreshCw|새로고침|Refresh FAB|handleRefresh' src\app\worker\dashboard\page.tsx` 결과 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #96 — 2026-05-21
+
+- **작업 내용**: Worker 대시보드 헤더 현재 날짜/시각 표시
+- **완료한 것**:
+  - Worker 대시보드 상단 헤더 중앙에 현재 날짜와 시각을 `26년 M월 D일 오전/오후 H시 m분` 형식으로 표시
+  - 페이지를 열어둔 상태에서도 분 경계에 맞춰 자동 갱신되도록 타이머 cleanup 포함 구현
+  - 작은 화면에서는 납품관리/로그아웃 액션과 겹치지 않도록 현재 시각 표시를 숨김
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/worker/formatWorkerContactMeta.test.ts --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #95 — 2026-05-21
+
+- **작업 내용**: Worker 로그인 실패 안내 위치/노출 조건 조정
+- **완료한 것**:
+  - 원인 확인: 관리자 문의 안내가 로그인 실패 전 기본 안내 박스로 PIN 입력 영역 아래에 항상 표시되어 로그인 전 화면 밀도를 높이고, 실패 맥락과 분리되어 보였음
+  - 관리자 문의 안내를 최초 화면에서는 숨기고, 로그인 실패 후에만 실패 메시지와 함께 표시하도록 변경
+  - 실패 안내 위치를 `이름과 PIN을 입력해주세요` 문구 바로 아래와 작업자 이름 입력 영역 위로 이동
+  - `WorkerLoginPage` 회귀 테스트를 추가해 최초 숨김과 실패 후 위치를 고정
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/worker/WorkerLoginPage.test.tsx --runInBand` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #94 — 2026-05-21
+
+- **작업 내용**: Worker 새 문의 알림 읽음 상태 및 무한 스크롤형 렌더링 보정
+- **완료한 것**:
+  - 원인 확인: 새 문의 알림은 storage 목록 존재 여부만으로 카드 빨간 점과 드롭다운 미확인을 표시했고, 알림 항목 클릭 시 목록에서 제거하면서 드롭다운도 닫아 읽음 상태를 표현할 수 없었음
+  - Worker 알림 항목에 `readAt`을 추가하고 legacy storage 항목은 `readAt=null`로 복구하도록 보강
+  - 카드 클릭, 카드 액션 클릭, 작업상태 변경, 알림 항목 클릭 시 contactId 기준으로 읽음 처리해 카드의 빨간 새 문의 UI를 제거
+  - 알림 항목 클릭 시 드롭다운을 유지한 채 대상 문의로 이동하고, 읽음 항목은 빨간 점 없이 밝은 회색 텍스트로 표시
+  - 읽음 처리 직후에는 현재 목록 위치를 유지하고, 새 문의 드롭다운을 닫을 때 미확인 알림은 위로, 확인된 알림은 아래로 재정렬하도록 보강
+  - 읽은 지 3일이 지난 알림은 페이지 로드 또는 새 문의 드롭다운 close 시점에 제거하고, 미확인 알림은 오래돼도 유지하도록 보강
+  - `모두 확인`은 삭제가 아닌 읽음 처리로 변경하고, `비우기`만 목록을 제거하도록 분리
+  - 새 문의 알림 목록은 처음 12개만 렌더하고 스크롤 하단 접근 시 다음 묶음을 추가 렌더링하도록 변경
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/worker/workerNotifications.test.ts src/__tests__/worker/WorkerNewContactNotifications.test.tsx src/__tests__/worker/OfficeContactCard.test.tsx src/__tests__/worker/StaffContactCard.test.tsx --runInBand` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #93 — 2026-05-21
+
+- **작업 내용**: 타임라인 도면 수정 파일 다운로드명 규칙 적용
+- **완료한 것**:
+  - 원인 확인: `/api/drawing-revisions/:revisionId/download` route는 이미 `문의번호 - 업체명 - 파일명`을 반환하지만, `DownloadButton`이 presigned R2 URL을 직접 `<a href>`로 열어 cross-origin 상황에서 브라우저가 `download` 속성을 무시하고 R2 원본 파일명을 저장했음
+  - `DownloadButton`의 `apiUrl` 다운로드 경로를 presigned URL fetch → blob → object URL 다운로드로 변경해 API가 반환한 파일명을 실제 저장명으로 적용
+  - Worker 타임라인 다운로드 route 테스트에 `[F번호]` prefix 제거와 `현장번호 - 업체명 - 파일명` 응답 계약 추가
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/components/DownloadButton.test.tsx src/__tests__/components/ContactTimeline.test.tsx src/__tests__/api/drawing-revisions-route-auth.test.ts --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #92 — 2026-05-21
+
+- **작업 내용**: Worker 메모/이슈 모달 `Invalid Date` 표시 보정
+- **완료한 것**:
+  - 원인 확인: NestJS `findAll(includeWorkerNotes)` 응답에서 `worker_notes` 배열 이름만 snake_case로 바뀌고 내부 항목의 `createdBy`/`createdAt`은 camelCase 그대로 내려와 Worker 모달이 `created_by`를 비워 두고 `created_at=undefined`를 날짜 포맷해 `Invalid Date`를 표시했음
+  - WorkerNote 응답 DTO 변환을 추가해 `findAll`, `getWorkerNotes`, `addWorkerNote` 모두 `created_by`/`created_at`/`updated_at` snake_case로 반환하도록 수정
+  - `contacts.service.spec.ts`에 추가/목록/findAll worker notes 응답 계약 회귀 테스트 추가
+- **검증**:
+  - `backend`: `pnpm test -- contacts.service.spec.ts --runInBand` 통과
+  - `backend`: `npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+- **관련 커밋**: 미커밋
+
+### 세션 #91 — 2026-05-21
+
+- **작업 내용**: Worker 메모/이슈 보고 제출 403 및 API 회귀 테스트 보정
+- **완료한 것**:
+  - 원인 확인: Worker 로그인은 `erp-session`만 발급하고 `csrf-token`은 발급하지 않아, NestJS의 session 기반 POST/PATCH/DELETE 요청이 `CSRF token missing` 403으로 실패할 수 있었음
+  - `/api/erp/session` 로그인 성공 시 `csrf-token`을 함께 발급하고, GET 검증에서도 누락된 csrf cookie를 보강하도록 수정. 로그아웃 시 csrf cookie도 삭제
+  - `nestjsFetch` worker/session mutation과 worker route proxy가 csrf cookie가 없을 때 upstream NestJS 요청용 matching `csrf-token` cookie/header를 생성하도록 보강
+  - `addWorkerNote` 성공 회귀 테스트를 추가해 메모/이슈 보고가 검증된 worker session 이름으로 저장되고 body의 `workerName`은 신뢰하지 않도록 고정
+  - API 전체 점검 중 실패한 `drawing-revisions-route-auth` 2건은 최신 다운로드명 보정 계약에 맞게 테스트 mock/기대값을 갱신
+- **검증**:
+  - `frontend`: worker/API/action/lib-api 관련 Jest 19개 suite / 140개 테스트 통과
+  - `backend`: `contacts.controller.spec.ts`, `contacts.service.spec.ts` 70개 테스트 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #90 — 2026-05-21
+
+- **작업 내용**: Worker 문의 카드 파일명 라인 글자 두께 조정
+- **완료한 것**:
+  - Worker 문의 카드의 `업체명 - 파일명` 표시를 업체명 span과 파일명 span으로 분리
+  - 업체명은 `font-bold`, 구분자와 파일명은 `font-normal`로 렌더되도록 Office/Staff 카드 양쪽에 반영
+  - 카드 파일명 formatter가 업체명/파일명을 분리 반환하는 helper를 제공하도록 보강
+- **검증**:
+  - `frontend`: `contactDownloadFilename`, `OfficeContactCard`, `StaffContactCard` Jest 3개 suite / 34개 테스트 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #89 — 2026-05-21
+
+- **작업 내용**: Worker 도면 업로드 403 회귀 보정
+- **완료한 것**:
+  - 원인 확인: `/api/worker/drawing-revisions`와 `/api/worker/drawing-revisions/upload-urls`가 `getErpWorkerSession()` 검증 후에도 요청의 전체 Cookie 헤더를 NestJS로 전달해, 브라우저에 남은 `admin-session`/`company-session` 때문에 backend guard가 worker actor를 `Verified worker session required`로 거부할 수 있었음
+  - Worker proxy 공통 `buildWorkerSessionHeaders` helper를 추가해 NestJS에는 `erp-session`/`csrf-token`만 전달하도록 수정
+  - Worker 도면 업로드, upload URL 발급, 파일 목록, 파일 다운로드 proxy가 같은 worker cookie scope를 사용하도록 정리
+  - `worker-auth-boundary` 회귀 테스트에 admin/company 쿠키가 함께 있을 때 worker 쿠키만 전달되는 케이스 추가
+- **검증**:
+  - `frontend`: `worker-auth-boundary` Jest 11개 테스트 통과
+- **이슈**:
+  - 첫 테스트 실행은 Jest CLI 옵션명이 `--testPathPattern`에서 `--testPathPatterns`로 바뀐 설정 오류로 중단됐고, 올바른 옵션으로 재실행해 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #88 — 2026-05-21
+
+- **작업 내용**: Worker 카드 파일명 표시/다운로드명 중복 및 공개 문의 업로드 웹하드 누락 보정
+- **완료한 것**:
+  - 원인 확인: 최신 도면 다운로드 route가 이미 `문의번호 - 업체명 - 파일명`으로 내려준 값을 Worker 클라이언트가 다시 prefix 처리해 중복 다운로드명이 생성됐음
+  - `contactDownloadFilename` formatter를 idempotent하게 보강해 `[O]`/`[F]`, 전체 다운로드 prefix, 짧은 `O-001`/`F-001` prefix를 제거하고 다운로드명을 한 번만 조립하도록 수정
+  - Worker 문의 카드 표시명은 화면에서만 `업체명 - 파일명`으로 정리하고, 패키지명/문의번호 prefix를 표시명에 섞지 않도록 변경
+  - 원인 확인: 공개 문의 폼은 첨부/도면/참고사진을 R2에는 업로드하지만, 초기 도면 revision은 `skipInitial=true`라 `WebhardFile`을 만들지 않고 첨부/참고사진은 WebhardFile 등록 경로가 없어 자체웹하드 문의 폴더에 파일이 보이지 않았음
+  - Contact 생성 후 도면, 일반 첨부, 참고 사진을 문의 폴더의 `WebhardFile`로 등록하도록 보강. 실제 R2 key와 WebhardFile 표시명은 재작성하지 않음
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, worker/webhard/drawing workflow specs 동기화
+- **검증**:
+  - `frontend`: `contactDownloadFilename`, `downloadFiles`, `OfficeContactCard` Jest 3개 suite / 26개 테스트 통과
+  - `backend`: `contacts.service.spec.ts` 61개 테스트 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `backend`: `npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **이슈**:
+  - 인증/운영 데이터가 필요한 실제 Worker 다운로드와 웹하드 폴더 열기는 자동 브라우저 E2E로 확인하지 못했고, formatter/backend 단위 테스트와 typecheck로 회귀를 고정
+- **관련 커밋**: 미커밋
+
+### 세션 #87 — 2026-05-21
+
+- **작업 내용**: Worker mutation 403 회귀 및 문의 파일 다운로드명 보정
+- **완료한 것**:
+  - 새 브랜치 `codex/worker-download-auth-fix`에서 작업
+  - 원인 확인: Worker Server Action이 `erp-session`을 검증했더라도 NestJS로 전달되는 Cookie 헤더에 `admin-session`/`company-session`이 함께 있으면 NestJS `ApiKeyGuard`가 admin/company 세션을 먼저 채택하고, body의 `actorType='worker'`를 `Verified worker session required`로 거부할 수 있었음
+  - `nestjsFetch`에 forwarded cookie allow-list 옵션을 추가하고, worker actor mutation은 `erp-session`/`csrf-token`만 NestJS로 전달하도록 변경
+  - Worker 긴급 토글, 작업자 노트 추가/삭제, 단계 완료 토글도 actor 정보를 NestJS client에 전달해 같은 worker cookie 제한 경로를 사용하도록 보정
+  - Worker와 관리자 문의 카드 다운로드 파일명을 `문의번호 - 업체명 - 파일명` 형식으로 통일하고, 기존 `[O]`/`[F]` prefix와 동일 다운로드 prefix 중복을 제거
+  - 관리자 문의 카드의 최신 DrawingRevision 다운로드 route도 contact metadata를 조회해 문의번호/업체명 기반 파일명으로 내려받게 변경
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, worker/drawing workflow specs 동기화
+- **검증**:
+  - `frontend`: `nestjs-core-client`, `nestjs-worker-actor-client`, `downloadFiles`, `contactDownloadFilename` Jest 4개 suite / 17개 테스트 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **이슈**:
+  - 인증 쿠키가 필요한 실제 `/worker/dashboard` 브라우저 mutation은 로컬 세션 정보가 없어 자동 E2E로 재현하지 못함. 회귀는 Cookie forwarding unit test로 고정
+- **관련 커밋**: 미커밋
+
+### 세션 #86 — 2026-05-20
+
+- **작업 내용**: gstack 디자인 리뷰 2차 후속 — 공개 화면/로그인 게이트 UI 개선
+- **완료한 것**:
+  - 새 브랜치 `fix/design-review-round2`에서 작업
+  - 홈 모바일 hero의 와이어프레임 위치/불투명도/크기를 조정해 H1/CTA와 겹치지 않도록 분리
+  - 홈 dark scroll 구간의 `BoxNetSection` 높이와 모바일 정보 패널 배치를 줄이고, `ProcessSection`/`InquirySection`을 정적 정보 섹션으로 정리해 검은 빈 구간과 늦은 스크롤 보상을 완화
+  - 홈 `대표 제작 유형` 카드 6개를 동일 placeholder 아이콘 대신 유형별 구조 도면 예시, 구조 설명, 용도 설명으로 구분
+  - 포트폴리오 0건 상태에서 `전체 (0)` 필터를 숨기고 대표 제작 유형/제작 상담 CTA를 함께 제공
+  - 공지사항 0건 상태에 운영 안내, 문의 안내, 제작 문의 CTA를 추가
+  - 소개 페이지 본문 max-width를 줄여 데스크톱 문단 폭을 완화
+  - 문의하기 모바일 stepper를 현재 단계 중심 compact 표시로 변경하고 모바일 폼 외곽 card 부담을 줄임
+  - `/admin`, `/company/dashboard`, `/webhard` 비인증 접근 시 `/login?next=...`로 이동하고 로그인 화면에서 관리자/업체/웹하드 목적별 문구를 표시
+  - 로그인 실패/차단/승인대기/서버오류 후에도 허용된 `next` 목적지를 보존해 게이트 문맥이 유지되도록 보완
+  - Worker 로그인 이름 입력에 고정 label `작업자 이름`을 추가하고 PIN 실패/잠금/관리자 문의 help 영역을 추가
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, gstack follow-up 보고서 동기화
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+- **이슈**:
+  - 인증 정보가 없어 `/admin`, `/company/dashboard`, `/webhard`, `/worker` 인증 이후 본문은 이번에도 미검증. 로그인 게이트와 worker 로그인 화면만 검증 대상
+- **관련 커밋**: 미커밋
+
+### 세션 #85 — 2026-05-20
+
+- **작업 내용**: gstack 디자인 리뷰 1차 후속 — 공개 화면 모바일/콘텐츠 신뢰 개선
+- **완료한 것**:
+  - gstack `design-review` 1차 리뷰 후 사용자가 요청한 우선순위 수정 반영
+  - 모바일 `/contact`에서 폼 시작부를 가리던 작은 화면 경고 토스트 제거
+  - 공개 화면 모바일 플로팅 CTA를 단일 `상담` 버튼으로 축약하고, 펼침 메뉴에서 `문의하기`/`업체등록`/`챗봇 상담`을 선택하도록 변경
+  - 홈 placeholder 패키지 카드는 실제 포트폴리오처럼 보이지 않도록 `대표 제작 유형`으로 재명명하고 상담 CTA로 연결
+  - `/portfolio` 빈 상태를 실제 작업 사례 준비 중 안내와 제작 상담 CTA로 변경
+  - 홈의 긴 검은 스크롤 섹션과 전환 그라데이션 높이를 줄여 과도한 공백 완화
+  - 홈 CTA 연락처를 footer와 같은 `02-2264-8070`으로 통일
+  - React Query Devtools와 react-grab/Claude Code 브라우저 스크립트는 명시 env가 있을 때만 개발 화면에 표시되거나 주입되도록 변경
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md` 동기화
+- **검증**:
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+- **이슈**:
+  - 작업 시작 전 `.lazyweb/` untracked 상태는 사용자 소유로 유지
+  - 로컬 gstack browse는 이전 리뷰 때 `server-node.mjs` 문법 오류로 기동 실패했으므로, 수정 후 리뷰는 Playwright 기반 캡처로 대체 예정
+- **관련 커밋**: 미커밋
+
+### 세션 #84 — 2026-05-19
+
+- **작업 내용**: Worker auth 남은 후속 — NestJS worker actor guard 분리
+- **완료한 것**:
+  - NestJS `AuthService`에 Next.js `erp-session` cookie 검증 경로를 추가하고, `ApiKeyGuard`는 `@AllowWorkerSession()`이 붙은 endpoint에서만 worker session을 허용하도록 제한
+  - Contacts worker mutation endpoint(`process-stage`, `status`, `inquiry-type`, `complete-laser`, batch delivery, worker notes, split/stage toggle/advance, drawing revision create/upload URLs)는 company session을 거부하고, API key 요청이 `actorType=worker`를 위조하면 `ForbiddenException`으로 차단
+  - 검증된 worker session 요청은 DTO의 `actorName` 대신 session의 `workerName`으로 actor를 확정
+  - Next.js worker 파일 목록/다운로드와 drawing revision 프록시는 backend `X-API-Key` 대신 `erp-session` cookie를 NestJS에 전달하도록 변경. 상태 변경이 있는 drawing revision 호출은 CSRF token도 함께 전달
+  - NestJS Files read endpoint(`GET /files`, `GET /files/:id/download`)는 `@AllowWorkerSession()` route에서만 worker session을 허용하고, 파일 mutation endpoint는 worker session을 계속 허용하지 않음
+  - worker/admin actor mutation client는 NestJS 호출 시 API key가 아니라 session cookie 경로를 사용하고, system actor 자동 처리만 기존 API key 경로를 유지
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, worker/API/webhard specs 동기화
+- **검증**:
+  - `frontend`: `worker-auth-boundary`, `contacts-timeline`, `nestjs-worker-actor-client` Jest 통과
+  - `backend`: `contacts.controller.spec.ts`, `contacts.gateway.spec.ts` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `backend`: `npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+- **이슈**:
+  - 작업 시작 전 `.lazyweb/` untracked 상태는 사용자 소유로 유지
+  - Worker 파일 목록/다운로드는 backend에서도 worker session actor로 처리하되, worker별 세부 file scope 모델은 아직 없음. 현재 권한 범위는 기존 worker UI와 동일하게 검증된 worker가 전달받은 folder/file id를 조회하는 read-only 경계
+- **관련 커밋**: 미커밋
+
+### 세션 #83 — 2026-05-19
+
+- **작업 내용**: Worker auth 경계 보안 보강
+- **완료한 것**:
+  - 원인 확인: Next.js `/api/erp/session`이 PIN proof 없이 `workerId`/`workerName`만으로 signed `erp-session`을 발급했고, worker 전용 API/Server Action/socket auth가 검증된 worker actor 대신 쿠키 존재 또는 backend API key 경로에 기대고 있었음
+  - `/api/erp/session`을 Worker PIN 로그인 프록시로 변경해 이름/PIN을 NestJS `pin-login`에서 검증한 성공 응답으로만 httpOnly `erp-session`을 발급하도록 수정
+  - `/api/worker/files`, `/api/worker/files/:id/download`, `/api/worker/drawing-revisions`, `/api/worker/drawing-revisions/upload-urls`, `/api/socket-auth`는 `getErpWorkerSession()` 성공 전 backend 호출/token 발급을 하지 않도록 fail closed 처리
+  - Worker-facing Server Action(`getProcessBoardContacts`, 공정 변경, 납품, worker note/urgent/split-group 계열)은 검증된 worker session 또는 admin session이 없으면 backend API key 호출 전에 실패하도록 수정
+  - Worker dashboard/delivery/office/tasks route에 server-side `WorkerRouteGuard`를 추가하고, React Query hook은 Zustand hydration + worker session 전까지 실행하지 않도록 `enabled` 조건 추가
+  - `ContactsGateway`의 `erp-session` fallback worker room join과 unknown socket token role의 room join을 제거
+  - Worker login의 PIN localStorage 자동 로그인 저장 경로를 제거하고 `/api/erp/session` 중심 로그인으로 변경
+  - `/api/debug/backend-health`는 production 404 + 비운영 admin-only로 제한하고 API key prefix 노출을 제거
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, worker/API/webhard specs 동기화
+- **검증**:
+  - `frontend`: worker auth boundary / contacts Server Action / process board auth Jest 통과
+  - `backend`: `contacts.gateway.spec.ts` 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `backend`: `npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+- **이슈**:
+  - 작업 시작 전 `.lazyweb/` untracked 상태는 사용자 소유로 유지
+  - NestJS ContactsController 자체 worker actor guard 분리는 후속 구조 개선 후보. 이번 변경은 Next worker 경계에서 backend API 호출 전 검증된 actor를 강제하는 방식으로 P0 경로를 차단
+- **관련 커밋**: 미커밋
+
+### 세션 #82 — 2026-05-19
+
+- **작업 내용**: 알림 React Query key 계약 테스트 실패 원인 확인 및 수정
+- **완료한 것**:
+  - 원인 확인: `queryKeys.notifications.count()`가 `['notifications', 'count', 'all']`을 반환하고 `list()`가 `undefined` segment를 붙여, 실시간 알림 이벤트의 broad invalidation이 카테고리별 count/list cache까지 포괄하지 못할 수 있었음
+  - `count()`/`count('all')`은 전체 count prefix `['notifications', 'count']`를 반환하고, 실제 카테고리 값만 세부 segment를 붙이도록 수정
+  - `list()`는 필터 없는 전체 list prefix `['notifications', 'list']`를 반환하고, 필터가 있을 때만 필터 segment를 붙이도록 수정
+  - `queryKeys` 회귀 테스트에 all/category/list prefix 계약을 추가
+  - `docs/changelog/CHANGELOG.md` 동기화
+- **검증**:
+  - `frontend`: `queryKeys`, `useNotifications` Jest 2개 suite / 36개 테스트 통과
+  - `frontend`: admin API/auth/worker middleware/webhard frontend stability/useContactTimeline 관련 Jest 5개 suite / 49개 테스트 통과
+- **이슈**:
+  - 작업 시작 전 `.lazyweb/` untracked 상태는 사용자 소유로 유지
+- **관련 커밋**: 미커밋
+
+### 세션 #81 — 2026-05-18
+
+- **작업 내용**: 관리자/업체 대시보드 및 웹하드 전수조사 후속 보안/동작 수정
+- **완료한 것**:
+  - 새 브랜치 `fix/dashboard-webhard-security-audit`에서 작업
+  - 원인 확인: 일부 Next.js contacts/bookings 라우트가 세션 타입과 업체 소유권을 검증하지 않은 채 NestJS에 서버 API key로 위임해 company 경계를 우회할 수 있었음
+  - `src/app/api/_lib/route-authorization.ts` 공통 helper를 추가해 admin session, company session 업체명, 레코드 `company_name` 소유권을 검증
+  - `/api/contacts/:id` 읽기/다운로드/타임라인/웹하드 정보/도면 URL 계열은 admin 또는 해당 업체 문의만 허용하고, 삭제/status/restore/ack/merge/admin drawing revision 생성은 admin 전용으로 제한
+  - Company timeline 조회는 NestJS API key가 아니라 browser session cookie로 전달해 backend의 company-facing private revision/note 마스킹 필터를 유지
+  - 수정요청 첨부파일은 문의 소유권 검증 후에만 R2 업로드를 시작하도록 순서 수정
+  - `/api/contacts/by-company`는 company session에서 query `companyName`을 무시하고 세션 업체명으로만 조회하며, `/api/contacts/cleanup`은 `CLEANUP_API_KEY` 또는 admin session을 요구
+  - `/api/bookings`와 `/api/bookings/:id`에 인증과 업체 소유권 검증을 추가하고, 연결 문의 `contactId`의 업체 소유권도 같은 company scope로 검증. 예약 변경 정원 비교는 backend `maxCapacity` 기반으로 변경
+  - standalone `/api/drawing-revisions/:revisionId/download`는 revision 소유 업체와 공개 여부 메타데이터 확인 후 presigned URL을 발급하고, `/visibility` 변경은 admin 전용으로 제한
+  - NestJS에 `/api/v1/contacts/drawing-revisions/:revisionId` 접근 제어 메타데이터 endpoint 추가
+  - 업체 웹하드 접근 정보 조회 실패/null 응답은 fail closed 안내 화면으로 처리하고, 백업 프록시는 `MIGRATION_API_KEY` 대신 검증된 admin cookie를 NestJS로 전달
+  - 백업 프록시는 NestJS `Set-Cookie` 응답을 보존해 CSRF cookie bootstrap이 끊기지 않도록 수정
+  - 예약 조회/예약 가능 조회 실패가 빈 데이터로 흡수되지 않도록 `serverGetBookings`, `serverGetAvailableSlots` 실패를 오류로 전파
+  - 웹하드 `className` 오타와 `FilePreviewTooltip` 토큰 공백 누락 수정, 업체 예약 변경 모달의 실패 시 가용 표시를 마감 처리로 변경, Jest 기본 ignore에 `/.worktrees/` 추가
+- **검증**:
+  - `frontend`: 신규 `contact-route-auth`, `contacts-timeline`, `bookings-route-auth`, `drawing-revisions-route-auth`, `backup-proxy-route` 및 기존 `bookings-available-route` 포함 관리자/업체/웹하드 타깃 Jest 26개 suite / 124개 테스트 통과
+  - `backend`: `drawing-revision.service.spec.ts`, `contacts.controller.spec.ts` Jest 30개 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `backend`: `npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **이슈**:
+  - 백업 프록시 실제 200 여부는 운영 NestJS가 동일 admin cookie secret/domain을 받는 배포 환경에서 브라우저 QA 필요
+- **관련 커밋**: 미커밋
+
+### 세션 #80 — 2026-05-18
+
+- **작업 내용**: 업체 대시보드 예약 액션 버튼 스타일 통일
+- **완료한 것**:
+  - 새 브랜치 `fix/company-dashboard-action-buttons`에서 작업
+  - 원인 확인: `웹하드`, `메모`는 `CardActionButton` 공통 스타일을 쓰지만 `예약변경`, `예약취소`만 `DashboardButtons`의 별도 회색 스타일을 직접 사용하고 있었음
+  - `BookingChangeButton`, `BookingCancelButton`을 `CardActionButton` 기반으로 변경해 예약일정 카드와 문의카드 양쪽 액션 버튼 스타일을 통일
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: `DashboardButtons`, `BookingSection`, `ContactCardToggle` Jest 7개 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **이슈**:
+  - 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #79 — 2026-05-18
+
+- **작업 내용**: 업체 대시보드 납품완료 사진 조회 보정
+- **완료한 것**:
+  - 커밋 직전 사용자가 제보한 납품 증빙 사진 조회 문제를 추가 처리
+  - 원인 확인: 업체 대시보드 문의 카드가 납품 증빙 사진을 raw R2 URL로 직접 렌더링해 private R2 환경에서 사진을 불러오지 못할 수 있었음
+  - `ContactCardToggle`의 납품 증빙 사진 렌더링을 기존 `DeliveryProofImage` 기반 presigned URL 조회로 변경
+  - 기존 backend 계약대로 납품 증빙 사진은 해당 문의 폴더에 `납품완료_YYYYMMDD_HHmmss.ext` 웹하드 파일로 저장됨을 문서에 명시
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: 업체 대시보드/문의 제출 관련 Jest 55개 통과
+  - `webhard-api`: `ContactsService` Jest 60개 통과
+  - `webhard-api`: `BookingsService` Jest 21개 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `webhard-api`: `npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **이슈**:
+  - 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #78 — 2026-05-18
+
+- **작업 내용**: 업체 대시보드 예약/문의 카드 제목 표시 보정
+- **완료한 것**:
+  - 기존 브랜치 `fix/contact-booking-payload`에서 업체 대시보드 후속 표시 버그 수정
+  - NestJS `BookingsService`가 예약 목록/단건 조회 시 `contact_id`로 연결된 문의 요약(`contacts`)을 함께 반환하도록 보강
+  - 업체 대시보드 문의 진행상황과 예약 일정 카드 제목은 저장된 `inquiry_title`을 변경하지 않고 화면 표시 시에만 앞쪽 업체명 접두사를 제거하도록 `getCompanyInquiryDisplayTitle` helper 추가
+  - 예약 일정 카드가 연결 문의의 패키지명을 표시해 `문의명 없음`으로 떨어지던 문제 수정
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/visit-booking-admin.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: 업체 대시보드 제목 formatter/문의 카드 Jest 8개 통과
+  - `webhard-api`: `BookingsService` Jest 21개 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `webhard-api`: `npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` npm 경고만 출력)
+  - `git diff --check` 통과
+- **이슈**:
+  - 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #77 — 2026-05-18
+
+- **작업 내용**: 공개 문의 폼 최종 제출 버튼 전송중 애니메이션 추가
+- **완료한 것**:
+  - 기존 브랜치 `fix/contact-booking-payload`에서 문의 폼 후속 UX 작업
+  - `ContactSubmitButton` 컴포넌트 추가
+  - `/contact` 마지막 단계의 `문의하기` 클릭 후 제출 진행 중 버튼을 비활성화하고 `aria-busy="true"`, 회전 spinner, `전송중...` 라벨을 표시하도록 변경
+  - 제출 중 중복 클릭은 disabled 상태와 handler guard로 차단
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/contact-form-submission-split.md` 동기화
+- **검증**:
+  - `frontend`: 문의 제출/방문 슬롯/데이터 처리 관련 Jest 47개 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+  - `browser smoke`: `localhost:3000/contact`에서 최종 `문의하기` 클릭 후 버튼 disabled, `aria-busy="true"`, `전송중...`, spinner 표시 확인
+- **이슈**:
+  - 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #76 — 2026-05-18
+
+- **작업 내용**: 문의 제출 후 방문 예약 자동 생성 400 오류 수정
+- **완료한 것**:
+  - 새 브랜치 `fix/contact-booking-payload`에서 작업
+  - 원인 확인: `submitContact`가 문의 저장용 snake_case 필드(`visit_date`, `visit_time_slot`, `company_name`)를 NestJS `/bookings` 생성 API에 그대로 전달해 `CreateBookingDto`의 `visitDate`, `visitTimeSlot`, `companyName` 문자열 검증을 통과하지 못했음
+  - 예약 생성 호출을 `visitDate`, `visitTimeSlot`, `companyName`, `contactId`, `createdBy` camelCase body로 변경
+  - `serverCreateBooking` 입력 타입을 `CreateBookingPayload`로 좁혀 snake_case 예약 payload 재유입을 타입 체크에서 잡도록 보강
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/visit-booking-admin.md` 동기화
+- **검증**:
+  - `frontend`: 문의 제출/방문 슬롯/데이터 처리 관련 Jest 45개 통과
+  - `frontend`: `npx tsc --noEmit` 통과 (`Unknown project config "node-linker"` npm 경고만 출력)
+- **이슈**:
+  - 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #75 — 2026-05-18
+
+- **작업 내용**: 거래처 아이디 찾기 이메일 안내형 전환 및 비밀번호 찾기 보안 보강
+- **완료한 것**:
+  - 새 브랜치 `codex/account-recovery-design`에서 작업
+  - 아이디 찾기 설계 문서 `docs/superpowers/specs/2026-05-18-account-recovery-design.md` 작성 및 독립 문서 리뷰 Important 지적 반영
+  - Next.js `/api/auth/find-id`가 업체 목록 조회/아이디 반환을 하지 않고 NestJS `POST /api/v1/auth/find-id/request`로 위임하도록 변경
+  - `/api/auth/find-id`, `/api/auth/find-password`에 계정 복구 전용 IP/fingerprint rate limit과 production fail-closed 정책 추가
+  - NestJS `RecoveryApiKeyGuard`, `FindIdService`, `AccountRecoveryMailDispatcher`, `AccountRecoveryRateLimitService`, `AccountRecoveryTiming` 추가
+  - 비밀번호 reset-link request가 raw username 로그와 동기 메일 실패 503 경로를 만들지 않도록 보강
+  - reset link를 `/reset-password#token=...` fragment 방식으로 발급하고 `/reset-password` 폼이 mount 직후 fragment 또는 legacy query token을 memory state로 보관한 뒤 주소창 token을 제거하도록 변경
+  - development localhost/loopback 비밀번호 찾기 요청은 현재 Next.js dev origin으로 reset link를 만들고, production은 request origin을 무시하고 설정 URL을 사용하도록 변경
+  - Sentry event URL/query_string/breadcrumb redaction과 계정 복구 메일 실패 로그 분류 코드를 추가해 reset token, recipient email, SMTP 원문 오류가 telemetry/log metadata에 남지 않도록 보강
+  - 개발 환경의 localhost/loopback 호출에서는 `ACCOUNT_RECOVERY_API_KEY`가 없어도 Next.js와 NestJS가 dev-only 기본 recovery key를 공유하고, staging/test/production 또는 non-loopback 호출에서는 공개 dev key를 거부하도록 보강
+  - `password_reset_tokens` 테이블 누락 시 reset token 저장 실패를 generic success로 흡수해 비밀번호 찾기 500과 계정 존재 여부 노출을 차단
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, API specs 동기화
+- **검증**:
+  - `frontend`: account recovery/monitoring 관련 Jest 24개 통과
+  - `webhard-api`: auth/csrf/mail 관련 Jest 31개 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - `browser smoke`: dev env의 `ACCOUNT_RECOVERY_API_KEY` 누락 상태에서 `/login?view=find-id` 제출 시 generic success `200` 반환 및 `CSRF token missing`/`Account recovery API key is missing` 미노출 확인
+  - `browser smoke`: migration 적용 전 `password_reset_tokens` 테이블 누락 상태에서 `/login?view=find-password` 제출 시 500 없이 generic success `200` 반환 확인
+  - `db`: `prisma migrate deploy`로 `20260506090000_add_password_reset_tokens`, `20260518120000_add_nesting_tasks` 적용. Prisma status up to date 및 `password_reset_tokens`, `nesting_tasks` 테이블 존재 확인
+- **이슈**:
+  - 작업 시작 전 `codex/nesting-task-api` 관련 미커밋 변경은 사용자 소유로 유지
+  - 실제 reset link 메일 수신/링크 왕복은 실메일 발송을 피하기 위해 자동 QA에서 제외
+- **관련 커밋**: 미커밋
+
+### 세션 #74 — 2026-05-18
+
+- **작업 내용**: 레이저네스팅프로그램 작업 큐 Integration API 추가
+- **완료한 것**:
+  - 새 브랜치 `codex/nesting-task-api`에서 작업
+  - `nesting_tasks` Prisma 모델과 migration 추가. 주문과 cascade relation을 맺고 pending 조회용 `(status, priority, created_at)` index를 추가
+  - `GET /api/v1/integration/nesting-tasks/pending?limit=10` 추가. pending 작업을 priority/createdAt 순으로 반환하고 응답 필드는 레이저네스팅프로그램 계약에 맞춰 snake_case로 제공
+  - `PATCH /api/v1/integration/nesting-tasks/:taskId/status` 추가. `pending -> in_progress -> completed/failed` 상태 전이를 검증하고 없는 task는 404, 동시 워커 충돌은 409 반환
+  - `POST /api/v1/integration/nesting-tasks/:taskId/result` 추가. 총 시트 수, 총 사용률, 미배치 수와 결과 보고 시각을 저장
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/nestjs-endpoints.md`, `docs/specs/api/endpoints/integration.md`, `docs/specs/db/prisma-tables.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- nesting-tasks` 통과
+  - `webhard-api`: `pnpm test -- integration` 통과 (136개)
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - `webhard-api`: dummy `DATABASE_URL`/`DIRECT_URL` 기반 `npx prisma validate` 통과
+- **이슈**:
+  - 작업 시작 전 `docs/superpowers/specs/2026-05-18-account-recovery-design.md` untracked 파일은 사용자 소유로 유지
+- **관련 커밋**: 미커밋
+
+### 세션 #73 — 2026-05-15
+
+- **작업 내용**: 업체 승인 필요 알림 강화 및 통합관리 불필요 화면 제거
+- **완료한 것**:
+  - 업체 등록 후 승인 대기 상태이면 `company_approval_pending` admin notification을 생성하고 제목을 “업체 승인 필요”로 표시
+  - `company_approval_pending`을 통합관리 알림 카테고리에 포함
+  - 통합관리 탭에서 대시보드, 현장작업, 재고관리, 납품관리 제거
+  - `/admin/integration` 기본 route는 `/admin/integration/companies`로 redirect하도록 유지하고, `/admin/integration/workshop`, `/admin/integration/inventory`, `/admin/integration/deliveries` admin page와 재고 알림 컴포넌트 제거
+  - 관리자 상단/모바일 통합관리 링크를 `/admin/integration/companies`로 변경
+- **검증**:
+  - `frontend`: IntegrationNav/AdminDashboardNotifications/useNotifications Jest 9개 통과
+  - `webhard-api`: companies/notifications Jest 4개 통과
+- **이슈**:
+  - 작업 시작 전 공개 홈 화면 v1 복원 관련 미커밋 변경은 계속 사용자 소유로 유지
+- **관련 커밋**: 미커밋
+
+### 세션 #72 — 2026-05-15
+
+- **작업 내용**: 관리자 대시보드 알림 시스템 및 컴팩트 개편
+- **완료한 것**:
+  - 새 브랜치 `codex/admin-dashboard-notifications`에서 작업
+  - 기존 `notifications` 테이블/API를 확장해 `webhard`, `integration`, `work-management` 카테고리 필터와 unread summary 추가
+  - 웹하드 파일 업로드, 방문 예약 생성/변경/취소, 신규 업체 가입/승인/상태 변경, 신규 문의, 작업자 메모/이슈/요청, 긴급 지정 시 관리자 알림 생성
+  - 관리자 상단 알림 센터에 카테고리 탭 추가
+  - 관리자 대시보드에 최근 알림 패널과 카테고리별 unread 요약 배치
+  - 대시보드 통계 카드를 더 컴팩트하게 조정하고 하단 바로가기 섹션 제거
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/nextjs-routes.md`, `docs/specs/api/nestjs-endpoints.md`, `docs/specs/features/admin-dashboard-notifications.md` 동기화
+- **검증**:
+  - `frontend`: 알림 훅/대시보드 알림 Jest 8개 통과
+  - `webhard-api`: notifications/files/bookings/contacts Jest 144개 통과
+- **이슈**:
+  - 작업 시작 전 공개 홈 화면 v1 복원 관련 미커밋 변경이 이미 있었고 본 작업에서 되돌리지 않음
+- **관련 커밋**: 미커밋
+
+### 세션 #71 — 2026-05-15
+
+- **작업 내용**: 공개 홈 화면 v1 복원
+- **완료한 것**:
+  - 새 브랜치 `codex/homepage-v1-restore`에서 작업
+  - `/` 홈 화면을 `HomePageV2`에서 보존되어 있던 `HomePageV1Backup`으로 전환
+  - v1의 `HeroBoxSection`, `BoxNetSection`, `ProcessSection`, `PortfolioSection`, `InquirySection` 흐름 복원
+  - build-time NestJS API 호출 회피 정책을 유지하기 위해 홈 라우트에서 `portfolioItems={[]}`를 전달하고 기존 placeholder fallback을 사용
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/PRD.md` 동기화
+- **검증**:
+  - `frontend`: `HomePageRoute` Jest 1개 통과
+  - `frontend`: home Jest 6개 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+  - `localhost:3000` HTML 검사에서 v1 히어로 문구 표시 및 `Shape It Right` 제거 확인
+  - Playwright desktop screenshot 캡처 통과
+- **이슈**:
+  - 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #70 — 2026-05-14
+
+- **작업 내용**: 공개 홈 화면 v2 히어로 디자인 전환
+- **완료한 것**:
+  - 새 브랜치 `codex/hero-package-structure`에서 작업
+  - 기존 홈 구성은 `HomePageV1Backup`과 기존 `HeroBoxSection`으로 보존
+  - `/` 홈 화면을 `HomePageV2`로 교체
+  - 히어로 배경을 밝은 아이보리 계열로 변경하고, 대형 영문 카피 `Shape It Right`를 배경 타이포로 배치
+  - 중앙 비주얼을 `public/images/box-shapes/*` 도안 이미지 에셋 슬라이드로 구성
+  - 좌우 화살표/자동 전환으로 A형, B형, Tuck, Shopping, Folder 도안을 전환하도록 구현
+  - 히어로 하단 한국어 카피, 슬라이드명/설명, 인디케이터, CTA 버튼을 제거해 히어로 텍스트는 `Shape It Right`만 남김
+  - 사용자 캡처에서 `Shape It Right`가 기본 텍스트처럼 보이고 도안 이미지가 사라진 것처럼 보이는 문제를 방지하기 위해 핵심 타이포 위치/크기와 도안 이미지 렌더링을 inline critical style + 원본 로컬 이미지 src로 고정
+  - 히어로 슬라이드 도안과 뒷배경 그리드에 마우스 위치 기반 3D tilt 효과를 추가하고, `Shape It Right` 글자는 움직이지 않게 고정
+  - 홈페이지 진입 시 1.5초 강제 퍼센트 로딩 오버레이를 표시하고, 로딩 종료 후 히어로 도안 영역이 opacity/translate/scale 전환으로 자연스럽게 들어오도록 구현
+  - HomeHeader가 현재 섹션의 `data-header-theme`를 읽어 밝은 배경에서는 어두운 글자, 어두운 배경에서는 밝은 글자로 실시간 반전되도록 변경
+  - v2 후속 밴드를 `data-header-theme="dark"`와 충분한 높이로 조정해 실제 스크롤에서 헤더 반전을 확인 가능하게 변경
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/PRD.md` 동기화
+- **검증**:
+  - `frontend`: `HeroPackageStructureSection` Jest 4개 통과
+  - `frontend`: `HomePageV2` Jest 1개 통과
+  - `frontend`: `HomeHeader` Jest 1개 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+  - Playwright desktop/mobile screenshot으로 히어로 렌더링 확인
+  - Playwright screenshot으로 1.5초 로딩 오버레이와 로딩 종료 후 히어로 진입 상태 확인
+  - Playwright 계산 스타일/DOM 검사로 히어로 내부 CTA/인디케이터/하단 카피 제거 확인
+  - Playwright 계산 스타일/DOM 검사로 도안/그리드 3D tilt 적용 및 `Shape It Right` 글자 고정 확인
+  - Playwright 계산 스타일로 상단 밝은 히어로의 어두운 네비게이션, 어두운 밴드의 밝은 네비게이션 전환 확인
+- **이슈**:
+  - 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #69 — 2026-05-14
+
+- **작업 내용**: Railway production 재로그인 후 migration/env/deploy 경로 확인
+- **완료한 것**:
+  - Railway CLI 재로그인 확인: `Project=yjlaser-webhard-api`, `Environment=production`, `Service=webhard-api`
+  - 운영 DB에 `20260506090000_add_password_reset_tokens` migration 적용
+  - `railway run -- npx prisma migrate status` 재확인 결과 `Database schema is up to date!`
+  - 운영 health endpoint `https://webhard-api-production.up.railway.app/api/v1/health` 확인: `status=ok`
+  - Railway production env/config 이름 확인: DB, R2, SMTP, session, CORS 관련 변수 이름 존재. secret 값은 출력하지 않음
+  - 최근 Railway runtime log에서 heartbeat/health/public-data 요청이 정상 처리되는 것 확인
+  - `webhard-api` 로컬 `pnpm build` 통과
+  - Vercel 로컬 linked project는 `.vercel/project.json` 기준 `yjlaser`이나 현재 CLI context에서는 project list/inspect가 실패하는 것을 확인
+  - Docker Desktop service는 설치되어 있으나 중지 상태이고 현재 권한으로 시작 불가 확인
+  - Worker PIN brute-force와 외부웹하드 classify_failed dedupe backend 변경을 Railway production에 수동 배포
+  - 첫 `railway up`은 `webhard-api` 디렉터리에서 실행해 rootDirectory mismatch로 실패 (`3ac97315-3a22-4314-8b4b-ba8336970fdf`)
+  - repo root에서 `railway up --detach --service webhard-api --environment production`로 재배포해 `aa505252-66fb-4ee5-b87f-8013aa2ad0a3` 성공
+  - `docs/guides/railway-deploy.md`의 수동 배포 실행 위치를 repo root 기준으로 보정
+- **검증**:
+  - `railway run -- npx prisma migrate deploy` 통과
+  - `railway run -- npx prisma migrate status` 통과
+  - `webhard-api`: `pnpm build` 통과
+  - `webhard-api`: Worker PIN brute-force/whitelist + AutoContactService Jest 79개 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - Railway deployment `aa505252-66fb-4ee5-b87f-8013aa2ad0a3` SUCCESS
+  - 운영 backend health check 통과
+- **이슈**:
+  - Worker PIN brute-force와 외부웹하드 classify_failed dedupe backend 변경은 production에 배포됨. 수동 운영 QA는 아직 미실행
+  - Vercel production project 접근은 현재 CLI 계정 context에서 확인 불가
+  - Docker Desktop service 시작은 권한 부족으로 실패해 로컬 Docker build는 미실행
+  - 비밀번호 reset 실제 메일 왕복 QA는 아직 미실행
+- **관련 커밋**: 미커밋
+
+### 세션 #68 — 2026-05-13
+
+- **작업 내용**: task-board 남은 작업 처리 — release QA 문서화, Worker PIN brute-force, 외부웹하드 미분류 알림 dedupe
+- **완료한 것**:
+  - 새 브랜치 `codex/task-board-remaining-work`에서 작업
+  - `docs/task-board.md` 기준 REL/SEC/WH/WRK/ADM/DES/OPS 남은 항목을 로컬에서 처리 가능한 작업과 운영 인증/수동 QA 차단 항목으로 분리
+  - Worker PIN 로그인 brute-force 방어를 `worker_access_logs` 기반으로 구현: 동일 IP 최근 5분 `login_failed` 5회 이상이면 worker lookup 전에 차단하고 `reason='rate_limited'`, `retry_after_seconds`를 반환
+  - 잘못된 PIN과 IP whitelist 차단 응답에 각각 `invalid_credentials`, `ip_blocked` reason 추가
+  - 외부웹하드 AutoContact 미분류 경로의 `webhard_classify_failed` admin notification을 같은 `folderPath` 기준 1시간 dedupe하도록 보정
+  - `docs/release-readiness.md`에 로컬 배포 경로 확인 결과와 추가 pending deploy 항목을 반영
+  - `docs/guides/release-qa-runbook.md`, `docs/guides/operations-monitoring-routine.md`, `docs/specs/features/worker-hardening-roadmap.md`, `docs/specs/features/invoice-system-planning.md`, `docs/reports/company-site-visual-audit-2026-05-13.md` 추가
+  - Worker/Webhard/API/PRD/features/changelog 문서 동기화
+- **검증**:
+  - `webhard-api`: Worker PIN brute-force/whitelist Jest 11개 통과
+  - `webhard-api`: AutoContactService Jest 68개 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과 (`Unknown project config "shamefully-hoist"` 기존 npm 경고 출력)
+  - `git diff --check` 통과
+  - untracked 신규 문서는 `git diff --check --no-index` 기준 공백 오류 없음
+- **이슈**:
+  - Railway CLI가 인증 만료(`Unauthorized. Please run railway login again.`) 상태라 운영 배포/로그/migration status 확인은 미실행
+  - 로컬 Docker Desktop daemon이 꺼져 있어 Railway Docker build의 로컬 검증은 미실행
+  - Vercel CLI는 로그인되어 있으나 현재 account context의 project list가 비어 있어 production project 연결 확인 필요
+- **관련 커밋**: 미커밋
+
+### 세션 #67 — 2026-05-13
+
+- **작업 내용**: Worker 새 문의 알림 클릭 대상 카드 강조 표시
+- **완료한 것**:
+  - 새 브랜치 `codex/worker-notification-highlight`에서 작업
+  - 알림 항목 클릭 시 기존 탭/필터 이동과 스크롤 동작에 더해 대상 문의 카드 id를 강조 상태로 저장하도록 Worker 대시보드 상태를 추가
+  - `OfficeContactCard`와 `StaffContactCard`에 `isNotificationHighlighted` prop을 추가해 대상 카드가 `border-brand`/`ring-brand`/`bg-brand-light`로 잠시 강조 표시되도록 변경
+  - 강조 상태는 일정 시간 뒤 자동 해제하고, 수동 탭 전환 시 기존 강조를 초기화하도록 정리
+  - Worker 카드 단일 문의번호에서 앞뒤 `/` 구분자를 제거하고 번호만 표시하도록 보정
+  - 생성시간을 다운로드 아이콘 왼쪽으로 이동하고 `26년 5월 12일 오전 10시 57분` 형식으로 표시해 가시성 개선
+  - Worker 카드의 기존 flex 헤더 구조를 유지하고 오른쪽 생성시간/아이콘/펼치기 표시의 중심선을 가운데 제목 줄에 맞춤
+  - 같은 Worker 카드 파일의 기존 brand hex 버튼 클래스를 디자인 시스템 토큰으로 정리
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/worker-portal.md` 동기화
+- **검증**:
+  - `frontend`: Worker 알림 유틸/드롭다운/Office 카드/Staff 카드 Jest 35개 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+- **이슈**:
+  - 없음
+- **관련 커밋**: 미커밋
+
+### 세션 #66 — 2026-05-12
+
+- **작업 내용**: Railway webhard-api Docker 빌드 pnpm/Node 호환성 실패 보정
+- **완료한 것**:
+  - 새 브랜치 `fix/railway-pnpm-node20`에서 작업
+  - 원인 확인: `webhard-api/Dockerfile`이 Node 20 이미지에서 `pnpm@latest`를 설치했고, 최신 pnpm 11이 Node 22.13+ 및 `node:sqlite`를 요구해 `pnpm install --frozen-lockfile` 단계에서 실패했음
+  - Dockerfile의 Corepack pnpm 버전을 Node 20 호환 버전인 `pnpm@10.23.0`으로 고정
+  - `docs/guides/railway-deploy.md`, `docs/changelog/CHANGELOG.md` 동기화
+- **검증**:
+  - `webhard-api`: `npx pnpm@10.23.0 --version` → `10.23.0`
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+- **이슈**:
+  - 로컬 Docker Desktop 데몬이 꺼져 있어 `docker build`는 미실행. Railway 재배포에서 Docker build 경로를 최종 확인해야 함
+- **관련 커밋**: 미커밋
+
+### 세션 #65 — 2026-05-12
+
+- **작업 내용**: Worker 새 문의 알림 유지/확인 처리 및 카드 빨간점 통일
+- **완료한 것**:
+  - 새 브랜치 `codex/worker-new-contact-persistence`에서 작업
+  - 원인 확인: Worker 새 문의 알림 목록과 읽음 상태가 React state에만 있어 새로고침 시 알림창 상태가 초기화됐음
+  - 새 문의 알림 목록을 브라우저 storage에 보존해 새로고침 후에도 유지되도록 변경
+  - 알림 항목 클릭 시 해당 문의로 이동한 뒤 확인한 알림을 목록에서 제거하고, `모두 확인`/`비우기`는 전체 알림을 제거하도록 정리
+  - 알림 목록에 남아 있는 문의 카드는 빨간점을 표시하도록 하고, 알림창/문의카드/기존 미분류·접수 카드 빨간색을 `bg-error` 토큰으로 통일
+  - 새 문의 알림 드롭다운의 header/list/empty 내부 padding과 collision 여백을 키움
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/worker-portal.md` 동기화
+- **검증**:
+  - `frontend`: Worker 새 문의 알림 유틸/컴포넌트/Office 카드/Staff 카드 Jest 33개 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+- **이슈**:
+  - 실제 Worker 로그인 브라우저에서 새 문의 수신 → 새로고침 → 알림 확인 제거까지의 수동 QA는 미실행. 자동 테스트로 저장/제거/카드 표시 계약을 검증
+- **관련 커밋**: 미커밋
+
+### 세션 #64 — 2026-05-12
+
+- **작업 내용**: Worker 새 문의 알림 및 외부웹하드 자동문의 실시간/속도 개선
+- **완료한 것**:
+  - 새 브랜치 `codex/worker-notifications-realtime`에서 작업
+  - 원인 확인: 일반 문의 생성은 `ContactsGateway.emitContactCreated`를 호출하지만 외부웹하드 AutoContact 경로는 생성 직후 `contact:created` 이벤트를 발행하지 않아 Worker 페이지가 새로고침 전까지 빠르게 반영되지 않았음
+  - Worker 대시보드 헤더의 `납품관리` 왼쪽에 새 문의 알림 버튼을 추가하고, `contact:created` payload를 알림 항목으로 정규화
+  - 알림 목록에서 항목 클릭 시 사무실/현장 탭과 하위 필터를 자동 선택하고 해당 문의 카드로 스크롤하며, 알림 비우기 기능을 추가
+  - 새 문의 알림 드롭다운을 더 넓게 조정하고, 미확인 빨간 점 애니메이션/항목 클릭 읽음 처리/`모두 읽기` 기능을 추가
+  - 외부웹하드 자동문의 생성 직후 admin/worker 룸에 `contact:created` 이벤트를 발행하도록 AutoContact 경로 보정
+  - batch 자동문의 생성은 폴더 경로/업체명 조회를 캐시하고 서로 다른 파일은 제한 병렬로 시작하되, 동일 업체+파일명 그룹은 기존 중복 생성 방지를 위해 순차 처리
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/worker-portal.md`, `docs/specs/features/webhard-system.md`, `docs/specs/api/endpoints/integration.md` 동기화
+- **검증**:
+  - `frontend`: Worker 새 문의 알림 유틸/컴포넌트 Jest 4개 통과
+  - `webhard-api`: AutoContactService + FilesService batch 자동문의 Jest 112개 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 실제 LGU+ 외부웹하드 동기화 프로그램과 Worker 로그인 세션 브라우저를 연결한 수동 실시간 QA는 미실행. 자동 테스트로 이벤트 발행, 알림 이동, batch 병렬 시작 계약을 검증
+- **관련 커밋**: 미커밋
+
+### 세션 #63 — 2026-05-12
+
+- **작업 내용**: Worker 문의 카드 최신 도면 다운로드 및 작업번호 prefix 보정
+- **완료한 것**:
+  - 새 브랜치 `codex/worker-download-latest-number`에서 작업
+  - 원인 확인: Worker 카드 버튼은 `latest-drawing/download`를 호출하고 있었지만 NestJS `latest-drawing-url`이 현재 공정 기준 리비전을 고르며, 파일명 prefix 유틸은 office stage에서 O 번호를 우선해 F 번호가 있어도 `[O]`가 붙을 수 있었음
+  - `DrawingRevisionService.getLatestUploaded`를 추가하고 `GET /api/v1/contacts/:id/latest-drawing-url`이 마지막 업로드 DrawingRevision을 다운로드 대상으로 사용하도록 변경
+  - DrawingRevision이 없을 때의 원본 도면 fallback에도 작업번호 prefix 규칙을 적용
+  - 다운로드/WebhardFile 파일명 prefix는 `workNumber`가 있으면 공정 단계와 무관하게 F 번호를 우선하고, 없을 때만 `inquiryNumber`를 사용하도록 통일
+  - 이미 `[O]`/`[F]` prefix가 붙은 파일명은 기존 prefix를 제거한 뒤 선택된 작업번호 하나만 붙여 중복 prefix를 방지
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/integration.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/api/nextjs-routes.md`, `docs/specs/features/drawing-workflow.md`, `docs/specs/features/drawing-revision-history.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: Worker download filename Jest 통과
+  - `frontend`: Worker Office/Staff 카드 Jest 22개 통과
+  - `webhard-api`: inquiry filename util + ContactsController latest drawing URL Jest 45개 통과
+  - `webhard-api`: DrawingRevision/ContactsService 다운로드 prefix Jest 82개 통과
+  - `webhard-api`: AutoContactService WebhardFile prefix Jest 5개 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+- **이슈**:
+  - 실제 브라우저에서 worker 세션으로 다운로드 버튼을 눌러 R2 파일 저장명을 확인하는 수동 QA는 미실행. 자동 테스트로 endpoint 선택과 파일명 계약을 검증
+- **관련 커밋**: 미커밋
+
+### 세션 #62 — 2026-05-12
+
+- **작업 내용**: workNumber 기반 레이저 전용 문의 완료 배치 API 추가
+- **완료한 것**:
+  - 새 브랜치 `codex/laser-completions-worknumber`에서 작업
+  - `POST /api/v1/integration/laser-completions` 추가. 레이저네스팅프로그램이 DXF 파일명에서 추출한 `workNumber` 목록으로 레이저 전용 문의를 완료 처리할 수 있음
+  - 요청 `workNumbers` trim + 중복 제거, 항목별 `completed`/`already_completed`/`not_found`/`not_laser_only`/`failed` 결과와 summary 반환
+  - 레이저 전용 문의 완료는 기존 `completeLaserOnlyContact`를 재사용해 `status=completed`, `processStage=null`, 타임라인, socket/event emit, 문의 폴더 완료 이동 정책을 유지
+  - 요청 `message`를 완료 타임라인 note로 전달하되, 기존 contactId 기반 `POST /contacts/:id/complete-laser`는 message 없이 기존 기본 note 유지
+  - 새 endpoint는 기존 외부 연동 API와 동일하게 `ApiKeyGuard` 인증 적용
+  - `docs/specs/api/endpoints/integration.md`, `docs/EXTERNAL_API_REFERENCE.md`, `docs/changelog/CHANGELOG.md`, `docs/features-list.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- src/integration/laser-completions --runInBand` 통과
+  - `webhard-api`: `pnpm test -- src/integration/laser-completions src/contacts/contacts.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+- **이슈**:
+  - 실제 레이저네스팅프로그램에서 API key를 사용한 운영 호출 수동 QA는 미실행. 자동 테스트로 인증 실패, 배치 처리, 멱등성, partial failure, 기존 폴더 이동 호출 회귀를 검증
+- **관련 커밋**: 미커밋
+
+### 세션 #61 — 2026-05-12
+
+- **작업 내용**: 납품증빙 사진 문의 폴더 저장 및 업체 대시보드 표시 보정
+- **완료한 것**:
+  - 새 브랜치 `fix/delivery-proof-photo-webhard`에서 작업
+  - 원인 확인: Worker 납품완료 사진 업로드는 R2 URL만 `Contact.deliveryProofImage`에 저장하고, 문의 폴더 `WebhardFile`을 생성하지 않아 웹하드 문의 폴더에 증빙 파일이 남지 않았음
+  - `batch-start-delivery` DTO/API에 증빙 파일 원본명·크기·MIME 메타데이터를 추가하고, 납품 완료 시각(KST) 기준 `납품완료_YYYYMMDD_HHmmss.ext` 파일명으로 해당 inquiry 폴더에 `WebhardFile` 생성
+  - 납품증빙 WebhardFile 생성 전 inquiry 폴더를 확보하고 납품 완료 폴더(`문의/완료/`) 이동을 재시도하며, 생성 후 해당 폴더에 `file:created` realtime 이벤트 발행
+  - Worker `DeliveryPhotoCapture` → server action → NestJS API 경로가 업로드 URL과 파일 메타데이터를 함께 전달하도록 연결
+  - 업체 대시보드 Contact 타입과 revalidate 경로에 `delivery_proof_image`/`delivery_complete_image`를 포함해 납품 완료 카드에서 증빙 사진을 표시하도록 보정
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/delivery-photo.md`, `docs/specs/features/contact-webhard-folder.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: delivery proof server action + 업체 대시보드 카드 증빙 사진 Jest 6개 통과
+  - `webhard-api`: ContactsService 납품증빙 웹하드 동기화 포함 Jest 59개 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+- **이슈**:
+  - 실제 모바일 카메라 촬영 후 웹하드 문의 폴더/업체 대시보드 수동 QA는 미실행. 자동 테스트로 저장 계약과 렌더링 계약을 검증
+- **관련 커밋**: 미커밋
+
+### 세션 #60 — 2026-05-11
+
+- **작업 내용**: 테스트업체 웹하드 업로드 후 자동 문의 생성 누락 보정
+- **완료한 것**:
+  - 새 브랜치 `fix/inquiry-webhard-autocreate`에서 작업 시작
+  - 원인 확인: `companyId=null`인 최상위 업체 폴더에 파일이 들어온 경우 `resolveCompanyFolder`가 `parentId=null`만 보고 업체명이 아니라고 판단해 AutoContact를 스킵했음
+  - 최상위 폴더라도 `외부웹하드`/구조 폴더가 아니고 등록 업체명 또는 승인 alias로 lookup되면 업체 폴더로 인정하도록 보정
+  - `테스트업체` 루트 폴더 업로드가 `auto contact dispatched`로 이어지는 회귀 테스트 추가
+  - 문의 생성 후 원본 도면 이동(`ContactFolderSyncService`/`FoldersService.relocateContactFiles`)과 문의 추가 도면 업로드(`DrawingRevisionService`) 경로는 기존 단일 진입점 테스트로 재확인
+  - 피드백 반영: Worker 추가 도면 업로드 후 타임라인 server action의 60초 revalidate 캐시를 제거하고, contact/process board/webhard 파일·폴더·뱃지·신규 파일 캐시를 함께 무효화
+  - `DrawingRevisionService`가 추가 도면 WebhardFile 생성 직후 해당 폴더에 `file:created` realtime 이벤트를 emit해 웹하드 화면이 새 파일을 즉시 반영하도록 보정
+  - 문의 폴더명을 업체/문의명/파일명 없이 번호 전용으로 정규화: 실제 폴더명은 `{O}`, `{F}`, `{O}_{F}`, Worker 카드와 웹하드 UI 표시는 `O /`, `/ F`, `O / F`
+  - Worker 문의 카드의 생성 시간은 상단 메타에서 제거하고 웹하드 경로 줄 옆에 `생성시간 : ...` 형식으로 표시하되, 경로가 남은 폭을 모두 차지해 시간이 오른쪽 끝으로 밀리지 않도록 조정
+  - 납품 완료 시 문의 폴더를 업체 루트 `완료/`가 아니라 `문의/완료/` 하위로 이동하도록 변경. `문의/완료/`는 없으면 생성하고, 루트 `완료/` 하위 legacy 문의 폴더는 `문의/완료/`로 재배치
+  - Worker `웹하드에서 열기`와 카드 저장 위치가 최초 업로드 폴더가 아니라 최신 DrawingRevision 파일의 현재 폴더를 우선하도록 보정. inquiry 폴더 ensure 시 `Contact.webhardFolderId`도 inquiry 폴더 id로 동기화
+  - 업체 대시보드 문의 카드의 메모 버튼 왼쪽에 `웹하드` 버튼을 추가해 `webhard_folder_id`/`webhard_file_id` 기반으로 해당 문의 폴더를 열도록 변경. 폴더 id가 없으면 이동 버튼은 비활성화
+  - 업체 대시보드 `/contacts/by-company` 응답도 최신 DrawingRevision 파일의 현재 폴더를 우선하고, 최신 파일 연결이 비어 있으면 `contactId + folderKind='inquiry'` 폴더를 우선하도록 보정해 `Contact.webhardFolderId`가 업체 루트로 남아도 버튼은 해당 문의 폴더로 이동
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/contact-webhard-folder.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts --runInBand` 통과
+  - `webhard-api`: AutoContact/ContactFolderSync/Folders/DrawingRevision 관련 Jest 178개 통과
+  - `webhard-api`: inquiry filename/folders/drawing revision/contact-folder/files/migration Jest 213개 통과
+  - `frontend`: Worker upload/card/timeline action + 웹하드 문의 폴더 표시 유틸 + WebhardFolderItem/Breadcrumb + static gate Jest 통과
+  - `frontend`: Worker 카드 생성시간 배치 Jest 22개 통과
+  - `webhard-api`: FoldersService `moveInquiryFolderToCompleted` 포함 Jest 57개 통과
+  - `webhard-api`: ContactsService 최신 파일 위치 우선 응답 포함 Jest 56개 통과
+  - `webhard-api`: ContactsService by-company 문의 폴더 응답 포함 Jest 58개 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `frontend`: 업체 대시보드 문의 카드 웹하드 버튼 Jest 2개 통과
+  - `git diff --check` 통과
+- **이슈**:
+  - 실제 테스트업체 운영 데이터 기반 수동 업로드 QA는 미실행. 자동 테스트는 `companyId=null` 등록 업체 루트 폴더 재현 경로와 후속 문의 폴더/추가 도면 계약을 검증
+- **관련 커밋**: 미커밋
+
+### 세션 #59 — 2026-05-11
+
+- **작업 내용**: 웹하드 클릭 선택 정책 통일 + 폴더 삭제 Cookie ByteString 오류 수정
+- **완료한 것**:
+  - 원인 확인: 메인 목록 폴더 행의 `onClick`이 곧바로 `handleFolderSelect`를 호출해 단일 클릭만으로 폴더 진입과 URL 변경이 발생했음
+  - 파일의 기존 단일 클릭 선택/더블클릭 다운로드 동작은 유지
+  - 폴더 행은 단일 클릭 시 선택만 수행하고, 더블클릭 시 기존 폴더 진입을 수행하도록 분리
+  - 이미 파일/폴더가 선택된 상태에서 다른 파일이나 폴더를 단일 클릭하면 기존 선택을 유지한 채 추가 선택하도록 클릭 선택 정책을 통일
+  - `selectFolder` store action을 추가해 폴더 단일 선택 시 파일 선택과 마지막 파일 클릭 인덱스를 정리
+  - 폴더 삭제 실패 원인 확인: `batchSoftDeleteFolders` server action이 `nestjsFetch`로 NestJS API를 호출하기 전에 한글 쿠키 값을 그대로 `Cookie` 헤더에 넣어 Node `fetch`의 ByteString 검증에서 실패했음
+  - `src/lib/api/headerEncoding.ts`를 추가해 전달용 Cookie/header 값을 percent-encoding하고, `nestjsFetch`와 웹하드 프록시가 동일한 sanitizing 규칙을 사용하도록 통일
+  - CSRF 토큰 추출은 원본 쿠키 문자열 기준으로 유지해 기존 NestJS `CsrfGuard` double-submit cookie 계약을 보존
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: `nestjsFetch` Cookie ByteString, webhard proxy header, webhard selection store/FolderItem/main contract/static gate Jest 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 실제 로그인 브라우저에서의 단일 클릭/더블클릭 및 폴더 삭제 수동 QA는 미실행. 자동 테스트로 클릭 핸들러와 한글 쿠키 전달 계약을 검증
+- **관련 커밋**: 미커밋
+
+### 세션 #58 — 2026-05-11
+
+- **작업 내용**: 웹하드 장시간 미사용 세션 만료 UX 보정
+- **완료한 것**:
+  - 원인 확인: 웹하드 페이지가 이미 열린 상태에서 세션이 만료되면 `/api/webhard/files`/`folders`가 401을 반환하지만, 클라이언트 훅이 오류를 화면 상태로 전달하지 않아 `data 없음`이 빈 폴더 상태로 렌더링됐음
+  - 웹하드 API 401/419 응답을 `WebhardApiError`로 보존하고 인증 만료 상태로 판별
+  - 파일/새파일/폴더/ancestor 쿼리가 인증 만료 오류를 재시도하지 않고 `WebhardMain`에 전달하도록 보정
+  - 인증 만료 상태에서는 `업로드된 파일이 없습니다` 또는 `다시 로그인해주세요`를 웹하드 목록에 표시하지 않고 `/login`으로 리다이렉트
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: webhard auth error/empty state/main contract/static gate Jest 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 실제 장시간 방치 후 브라우저 세션 만료 수동 QA는 미실행. 자동 테스트는 401/419 응답 처리 계약을 검증
+- **관련 커밋**: 미커밋
+
+### 세션 #57 — 2026-05-11
+
+- **작업 내용**: 웹하드 QA 피드백 4차 — 폴더 이동 뱃지 합산/폴더 메타데이터/파일·폴더 정렬/뱃지 중앙 정렬 보정
+- **완료한 것**:
+  - 원인 확인: 폴더 이동 성공 경로와 폴더 realtime invalidate가 현재 통합 `badgeCounts` query key를 무효화하지 않아 이동 후 상위 뱃지 합산이 active 화면에 즉시 반영되지 않았음
+  - `GET /folders`, `GET /folders/children` 응답에 하위 파일 중 최신 업로드일/업로더 메타데이터를 추가하고, 파일이 없는 폴더는 프론트 표시 날짜를 폴더 생성일로 fallback
+  - 메인 폴더 행에 업로드날짜/업로더 컬럼을 추가하고, 파일명/업로드날짜/업로더 정렬을 폴더에도 동일하게 적용
+  - 폴더 행의 업로드날짜/업로더 텍스트를 파일 행 메타 텍스트와 같은 크기/색상 스타일로 통일
+  - 파일 업로더 정렬도 화면 표시명(`uploader_display_name` → manager/company fallback)을 기준으로 맞춤
+  - 한 자리 숫자 뱃지의 고정 원형 박스와 padding 0을 적용해 숫자가 중앙에 보이도록 보정
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: 웹하드 contract/cache/sort/FolderItem/Badge Jest 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `webhard-api`: `pnpm test -- src/folders/folders.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 브라우저 로그인 세션 수동 QA는 미실행. 실제 관리자/업체 동시 화면에서 폴더 drag/drop 후 뱃지 합산과 정렬 UI 시각 확인은 사용자 수동 QA 대상
+- **관련 커밋**: 미커밋
+
+### 세션 #56 — 2026-05-11
+
+- **작업 내용**: 웹하드 QA 피드백 3차 — 뱃지 전파/hover preview/DXF preview download/rename rollback/업체 폴더 이동 권한 보정
+- **완료한 것**:
+  - 원인 확인: 업체 scoped 뱃지 folder propagation이 `companyId=null` legacy bridge folder를 트리에서 제외해 child count가 최상위 업체 폴더까지 전파되지 않았음
+  - 파일 rename rollback 원인은 backend rename이 `name`만 갱신하고 응답/화면 표시 기준인 `originalName`을 갱신하지 않은 상태로 확인
+  - 파일 hover preview 연결을 제거하고, 미리보기는 우클릭 메뉴 전용 액션으로 유지
+  - DXF preview modal의 "원본 크기" 옆에 다운로드 버튼을 추가
+  - 업체 폴더 이동은 프론트 drag/drop 진입점과 backend `moveFolder` API 양쪽에서 차단
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: 웹하드 contract, file item hover, DXF preview modal Jest 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `webhard-api`: badge counts, files service, folders service Jest 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 브라우저 로그인 세션 수동 QA는 미실행. 자동 테스트와 타입체크로 계약은 검증했지만, 실제 계정/R2 데이터 기반 hover/preview/download 시각 검증은 사용자 수동 QA 대상
+- **관련 커밋**: 미커밋
+
+### 세션 #55 — 2026-05-11
+
+- **작업 내용**: 웹하드 QA 피드백 2차 — 업체 가시성/권한 메뉴/다운로드·미리보기/rename·폴더 이동 보정
+- **완료한 것**:
+  - 원인 확인: 관리자가 업체 폴더 아래 생성한 child folder가 `companyId=null`로 저장되어 업체 scoped `/folders` 조회에서 숨겨졌고, 파일 rename 프론트 payload가 backend DTO의 `name`이 아닌 `original_name`을 보내고 있었음
+  - 폴더 rename/move 500 원인은 descendant path prefix SQL의 `left(text, bigint)` 호출로 확인되어 raw parameter를 `integer`로 명시 cast
+  - 업체 사용자는 폴더 우클릭 메뉴를 열 수 없고, 파일/상단/행 삭제 버튼도 노출되지 않도록 UI 권한 계약을 보정
+  - 파일 다운로드와 DXF 미리보기를 분리해 더블클릭/다운로드 메뉴는 다운로드만 수행하고, 미리보기는 우클릭 메뉴의 별도 액션으로만 열리게 함
+  - 관리자 폴더 생성 시 부모 폴더의 `companyId`를 상속하고, 기존 legacy `companyId=null` child도 업체 부모 아래에서 조회 가능하게 보정
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/app/webhard/__tests__/audit14-webhard-main-contracts.test.ts src/tests/unit/components/webhard/WebhardContextMenu.test.tsx src/app/webhard/__tests__/useFileRename.test.tsx src/tests/unit/components/webhard/WebhardFileItem.test.tsx src/tests/unit/components/webhard/WebhardToolbar.test.tsx src/__tests__/api/webhard-preview-dxf-route.test.ts src/__tests__/lib/styles/static-gate.test.ts` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `webhard-api`: `pnpm test -- src/folders/folder-path.service.spec.ts src/folders/folders.service.spec.ts` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 브라우저 로그인 세션 수동 QA는 미실행. 자동 테스트와 타입체크로 권한/DTO/SQL 계약은 검증했지만 실제 R2 객체가 없는 파일의 DXF 미리보기 404는 데이터 상태에 따라 별도 확인 필요
+- **관련 커밋**: 미커밋
+
+### 세션 #54 — 2026-05-11
+
+- **작업 내용**: 개발 환경 웹하드 API rate limit 우회
+- **완료한 것**:
+  - 원인 확인: 로그인 rate limit은 개발 환경에서 우회하지만 `checkWebhardRateLimit()`은 Upstash 설정이 있으면 `NODE_ENV=test/development`에서도 `/files/badge-counts` 요청을 제한했음
+  - `NODE_ENV !== 'production'`일 때 웹하드 API rate limit을 통과시키도록 보정해 로컬 업로드 후 badge-counts refetch가 429로 막히지 않게 함
+  - 프로덕션 Upstash `reset`은 이미 Unix timestamp(ms)이므로 `lockedUntil`에 그대로 저장하도록 보정해 비정상적인 2082년 잠금 로그를 제거
+  - `docs/changelog/CHANGELOG.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/lib/auth/webhard-rate-limit.test.ts --runInBand` 통과
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/lib/auth/rateLimit.test.ts src/__tests__/lib/auth/webhard-rate-limit.test.ts --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 실패 — 현재 별도 웹하드 테스트 타입 오류(`canOpenWebhardFolderContextMenu` export, `WebhardContextMenu` props mismatch)
+- **이슈**:
+  - 브라우저 수동 QA는 미실행. 변경 범위는 rate limit 분기와 timestamp 계산에 한정
+  - 타입체크 실패 지점은 이번 변경 파일(`rateLimit.ts`, `webhard-rate-limit.test.ts`) 밖의 기존 웹하드 테스트 계약 불일치
+- **관련 커밋**: 미커밋
+
+### 세션 #53 — 2026-05-11
+
+- **작업 내용**: 웹하드 QA 피드백 — 렌더링/실시간 이동/권한 안내/DXF 프리뷰/폴더 UX 보정
+- **완료한 것**:
+  - 원인 확인: 파일 목록 loading만 skeleton 기준으로 사용해 폴더 children 조회가 늦게 끝나면 파일이 먼저 렌더링됐고, 파일 batch move realtime event가 대상 폴더에만 emit되어 출발 폴더 화면은 새로고침 전까지 남은 파일을 유지했음
+  - 업체 삭제/폴더 생성은 backend 정책상 금지된 동작이지만 UI가 API 실패를 그대로 표시해 사용자 안내가 맞지 않았고, DXF 프리뷰는 호출 중인 Next route가 없어 404가 발생했음
+  - 파일/폴더 목록 렌더는 파일과 폴더 query가 모두 준비된 뒤 한 번에 표시하도록 loading gate를 고정
+  - 파일 batch move는 출발 폴더와 대상 폴더 모두에 `file:moved` realtime event를 emit하도록 보정
+  - 업체 사용자의 파일/폴더 삭제는 API 호출 전 "관리자에게 삭제 요청해주세요"로 안내하고, 폴더 생성은 관리자만 노출/실행 가능하게 보정
+  - `/api/webhard/preview-dxf` Next route를 추가해 DXF 미리보기/더블클릭 다운로드 경로가 NestJS download URL을 조회한 뒤 R2 내용을 서버에서 받아 반환하도록 보정
+  - 다운로드 프록시가 한글 `Content-Disposition`을 그대로 `NextResponse`에 넣어 ByteString 오류를 내지 않도록 헤더 값을 percent-encoding 처리
+  - 메인 파일 영역의 폴더에 드래그 이동과 우클릭 메뉴(이름변경/삭제)를 추가
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: `pnpm test -- --testPathPatterns="src/app/webhard/__tests__/audit14-webhard-main-contracts.test.ts|src/__tests__/api/webhard-preview-dxf-route.test.ts|src/__tests__/api/webhard-proxy-headers.test.ts"` 통과
+  - `frontend`: `pnpm test -- --runTestsByPath src/tests/unit/components/webhard/WebhardFolderItem.test.tsx src/tests/unit/components/webhard/WebhardContextMenu.test.tsx` 통과
+  - `frontend`: `pnpm test -- --runTestsByPath src/__tests__/lib/styles/static-gate.test.ts` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts` 통과
+  - `webhard-api`: `pnpm test -- src/folders/folders.service.spec.ts` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 브라우저 수동 QA는 미실행. 자동 테스트와 타입체크로 계약은 검증했지만 실제 로그인 세션에서의 시각적/조작 smoke는 남아 있음
+- **관련 커밋**: 미커밋
+
+### 세션 #52 — 2026-05-10
+
+- **작업 내용**: PR 14 AUDIT-18/AUDIT-19 — 디자인시스템 changed-file static gate
+- **완료한 것**:
+  - 원인 확인: 디자인 토큰은 존재하지만 관리자/웹하드/스타일 수정 파일에 `dark:`와 raw brand hex가 다시 들어와도 자동 차단하는 gate가 없었음
+  - changed/untracked 파일 중 `src/app/webhard`, `src/app/(admin)`, `src/lib/styles` 범위만 검사하는 static gate 추가
+  - 현재 수정된 `FolderTree.tsx`, `WebhardMain.tsx`, `WebhardSidebar.tsx`의 raw brand hex 및 prompt `dark:` 클래스를 semantic token으로 치환
+  - 전체 `rg` baseline에는 기존 legacy debt가 남아 있음을 `docs/specs/features/design-system.md`에 문서화
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/design-system.md` 동기화
+- **검증**:
+  - `frontend`: `pnpm test -- --testPathPatterns="src/__tests__/lib/styles/static-gate.test.ts" --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="tokens|styles" --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - static: `rg -n "dark:|#ED6C00|#d15f00|#ff8533" src/app/webhard src/app/(admin) src/lib/styles` 실행. 기존 baseline debt 출력 확인
+  - browser smoke: 로컬 Next dev 서버에서 `/contact` 200 렌더, `/webhard`와 `/admin/integration/webhard`는 비로그인 상태에서 `/login`으로 정상 리다이렉트 확인
+- **이슈**:
+  - 전체 scope의 legacy `dark:`/raw brand hex는 남아 있음. 이번 PR은 changed-file gate 기준으로 신규/수정 파일 재유입 차단까지만 수행
+- **관련 커밋**: 미커밋
+
+### 세션 #51 — 2026-05-10
+
+- **작업 내용**: PR 13 AUDIT-17 — 공개 문의 `ContactForm` 제출/검증/단계 경계 분리
+- **완료한 것**:
+  - 원인 확인: `ContactForm.tsx`가 제출 payload 작성, reference→drawing 자동 승격, 방문/배송/납품처 최종 검증, 단계 구조를 한 컴포넌트 내부 클릭 핸들러에서 직접 소유해 회귀 테스트 경계가 불명확했음
+  - `contactSubmission` helper로 최종 제출 `FormData` 작성과 파일 승격/stale reference 차단/portfolio payload 생성을 분리
+  - 방문 예약 slot, 택배/퀵 수령, 납품업체 필수값 최종 검증을 `validateContactSubmitState`로 고정
+  - `useContactSubmitAction` hook으로 `submitContact` 호출 경계를 분리
+  - 단계별 wrapper와 `CONTACT_FORM_SECTIONS`로 company info/file upload/visit booking/estimate method 순서 계약을 추가
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/contact-form-submission-split.md` 동기화
+- **검증**:
+  - `frontend`: `pnpm test -- --testPathPatterns="src/app/contact/__tests__/audit17-contact-submission.test.ts" --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/app/contact|src/__tests__/contact|src/__tests__/lib/utils/contactDataProcessor" --testPathIgnorePatterns=".worktrees" --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - playbook의 넓은 `contact|ContactForm` 패턴은 기존 `.worktrees/task-25-webhard-fix` 내부 테스트까지 실행되어 중복 React invalid hook call로 실패. 루트 작업 범위 검증은 `.worktrees` 제외 패턴으로 통과
+  - 브라우저 smoke는 PR14 static gate/최종 타입체크 후 일괄 수행 예정
+- **관련 커밋**: 미커밋
+
+### 세션 #50 — 2026-05-10
+
+- **작업 내용**: PR 12 AUDIT-16 — 웹하드 backend 대형 service use-case 분리
+- **완료한 것**:
+  - 원인 확인: `FoldersService`와 `FilesService`가 각각 folder path materialization/descendant 갱신, 미다운로드 badge count 전파 계산까지 직접 소유해 회귀 테스트 경계가 너무 컸음
+  - `FolderPathService`로 `computeFolderPath`, root path update, descendant prefix replacement helper를 추출하고 slash-boundary SQL 계약을 별도 테스트로 고정
+  - `BadgeCountsService`로 total count, folder direct groupBy, parent propagation, effective `companyId` folder scope를 추출하고 별도 테스트로 고정
+  - 기존 `FoldersService.computeFolderPath`/`updateDescendantPaths`와 `FilesService.getBadgeCounts` 공개 메서드는 유지하고 내부 위임만 변경
+  - `FoldersModule`/`FilesModule` provider/export와 `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/webhard-system.md`, `docs/specs/features/webhard-backend-use-case-services.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- folder-path.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- badge-counts.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- folders.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- files.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - `npx tsc --noEmit` 실행 시 기존 npm 경고 `Unknown project config "shamefully-hoist"`가 출력되지만 타입체크는 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #49 — 2026-05-10
+
+- **작업 내용**: PR 11 AUDIT-15 — `nestjs-server-client.ts` 도메인 client 분리
+- **완료한 것**:
+  - 원인 확인: `src/lib/api/nestjs-server-client.ts`가 공통 fetch/auth 처리와 웹하드/문의/업체/운영성 API helper를 한 파일에 모두 담고 있어 public export와 인증 계약을 유지한 채 도메인별 테스트를 붙이기 어려웠음
+  - `core.client.ts`로 `nestjsFetch`, cookie forwarding, CSRF, API key fallback, fetch cache/revalidate/tags, retry/error logging 계약을 이동
+  - `webhard.client.ts`, `contacts.client.ts`, `companies.client.ts`, `operations.client.ts`로 도메인 helper 분리
+  - 기존 `@/lib/api/nestjs-server-client` import 경로는 compatibility barrel로 유지
+  - 대표 도메인 함수의 endpoint/method/body/auth/cache/error shape를 `nestjs-domain-clients.test.ts`로 고정
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/nestjs-server-client-architecture.md` 동기화
+- **검증**:
+  - `frontend`: `pnpm test -- --testPathPatterns="src/__tests__/lib/api/nestjs-domain-clients.test.ts" --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="api|client|nestjs-server-client" --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 넓은 Jest 패턴 실행 중 일부 기존 테스트 setup에서 Windows 환경 `grep` 미설치 경고가 출력됐지만, 실행된 test suites는 모두 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #48 — 2026-05-10
+
+- **작업 내용**: PR 10 AUDIT-14 — `WebhardMain.tsx` 조회/프롬프트 hook 분리
+- **완료한 것**:
+  - 원인 확인: `WebhardMain.tsx`가 파일 목록 query, 새 파일 무한 스크롤 query, 폴더 children/breadcrumb query, 업로드 후 문의 연결 프롬프트, drag/context/virtual threshold 정책을 한 파일에서 직접 소유해 PR9 안정화 이후에도 회귀 기준이 불명확했음
+  - `webhardMainContracts`에 파일/새 파일/폴더 query key, drag payload, context menu selected-count, virtual list threshold(`> 50`), upload prompt 표시 조건을 고정
+  - `useWebhardFilesQuery`, `useWebhardFoldersQuery`, `useWebhardUploadPrompt`로 서버 데이터 조회와 프롬프트 상태를 분리
+  - `WebhardMain.tsx`는 추출한 훅과 계약 함수를 사용하도록 정리하고 public props/화면 흐름은 유지
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: `pnpm test -- --testPathPatterns="src/app/webhard/__tests__/audit14-webhard-main-contracts.test.ts" --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/app/webhard" --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - `src/app/webhard` 패턴은 기존 `.worktrees/task-25-webhard-fix/**`의 중복 테스트도 함께 실행됐지만 모두 통과
+  - 브라우저 smoke는 뒤쪽 UI/디자인 PR13/14 변경과 함께 일괄 실행 예정
+- **관련 커밋**: 미커밋
+
+### 세션 #47 — 2026-05-10
+
+- **작업 내용**: PR 9 AUDIT-11/AUDIT-12/AUDIT-13 — 웹하드 프론트 안정화 게이트
+- **완료한 것**:
+  - 원인 확인: 웹하드 production code에 raw React Query key literal, 미사용 local `VirtualFileList`, reload 기반 복구, 업체명 조회 silent catch가 남아 있어 캐시 일관성과 장애 진단 기준이 흔들릴 수 있었음
+  - raw `webhard` query key를 `queryKeys.webhard.*` factory로 통일하고, production path 정적 테스트를 추가
+  - 실제 화면에서 쓰는 `VirtualizedFileList`만 local component로 유지하고 미사용 `src/app/webhard/components/VirtualFileList.tsx` 삭제
+  - ErrorBoundary/WebhardErrorBoundary/offline/socket reconnect에서 `window.location.reload()` 제거: boundary reset, query invalidation, socket reconnect, dashboard navigation으로 대체
+  - 업체명 조회 실패 silent catch를 context 포함 warn log로 전환
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `frontend`: `pnpm test -- --testPathPatterns="src/__tests__/lib/react-query/webhard-frontend-stability.test.ts" --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/__tests__/lib/react-query/queryKeys.test.ts" --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/app/webhard" --runInBand` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+  - static `rg -n -F "['webhard'" src/app src/lib`, `rg -n -F '["webhard"' src/app src/lib`, `rg -n "window\\.location\\.reload\\(" src/app src/components src/lib` no matches
+- **이슈**:
+  - `queryKeys.test.ts`와 `src/app/webhard` 패턴은 기존 `.worktrees/task-25-webhard-fix/**`의 중복 테스트도 함께 실행됐지만 모두 통과
+  - `npx tsc --noEmit` 실행 시 기존 npm 경고 `Unknown project config "node-linker"`가 출력되지만 타입체크는 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #46 — 2026-05-10
+
+- **작업 내용**: PR 8 AUDIT-10 — 폴더 rename/move descendant path set-based prefix 갱신
+- **완료한 것**:
+  - 원인 확인: `renameFolder`, `moveFolder`, 문의 폴더 rename/완료 이동 경로가 descendant path를 재귀 `findMany` + 개별 `update`로 갱신해 대량 하위 폴더에서 쿼리 수가 선형 증가하고, 중간 실패 시 root와 descendant path 정합성이 깨질 수 있었음
+  - 루트 폴더 갱신과 descendant materialized path prefix 치환을 같은 transaction에 묶고, SQL은 `left(path, oldPath.length)`와 slash-boundary 조건으로 sibling prefix 오염을 차단
+  - descendant prefix 치환 실패 시 cache invalidation과 realtime event emit을 실행하지 않도록 회귀 테스트 추가
+  - 문의 폴더 rename/완료 이동 helper도 동일한 prefix 치환 helper를 사용하도록 정리
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- folders.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - `npx tsc --noEmit` 실행 시 기존 npm 경고 `Unknown project config "shamefully-hoist"`가 출력되지만 타입체크는 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #45 — 2026-05-10
+
+- **작업 내용**: PR 7 AUDIT-09 — 외부웹하드 미매칭/빈 husk 후보 bulk count 전환
+- **완료한 것**:
+  - 원인 확인: `getExternalUnmatchedFolders()`가 미매칭 root마다 subtree BFS와 파일/Contact count를 반복했고, `getEmptyExternalHusks()`도 후보 root마다 자식/파일 count를 반복했음
+  - 외부 subtree 폴더 관계를 한 번에 조회해 memory map으로 root별 folder id를 누적하고, `webhardFile.groupBy`/`contact.groupBy` 한 번씩으로 file/contact count를 계산
+  - 빈 husk 후보는 depth=2 root의 직접 자식/직접 파일 존재 여부를 bulk 조회하도록 변경하고, 후보 기준이 전체 subtree가 아니라 직접 조건임을 테스트명과 문서에 명시
+  - 500개 외부 root fixture에서 root별 count 반복이 발생하지 않는 회귀 테스트 추가
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/features/external-folder-migration.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- folders.service.cleanup-husk.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- folders.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - `npx tsc --noEmit` 실행 시 기존 npm 경고 `Unknown project config "shamefully-hoist"`가 출력되지만 타입체크는 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #44 — 2026-05-10
+
+- **작업 내용**: PR 6 AUDIT-08 — 웹하드 미다운로드 배지 scope/cache invalidation 보정
+- **완료한 것**:
+  - 원인 확인: `FilesService.getBadgeCounts()`의 관리자 `companyId` 조회가 파일 count는 제한하지만 folder tree 전파 계산은 전체 폴더를 조회했고, 프론트 배지 캐시 키는 admin/company 및 `includeFolderCounts` 옵션을 구분하지 않았음
+  - `GET /files/badge-counts`의 folder tree 조회를 effective `companyId`와 일치시켜 self/parent/root 전파 범위를 고정
+  - `queryKeys.webhard.badgeCounts({ companyId, includeFolderCounts })`를 표준화하고 `useUndownloadedCount`, `FolderTree`, `WebhardSidebar`, `WebhardMain`에서 scope-aware 키와 URL을 사용
+  - 다운로드 확인/업로드/삭제/이동 후 active badge cache를 prefix invalidation으로 갱신하고, 조상 폴더를 모르는 부분 optimistic folderCounts 보정을 제거
+  - batch download의 `mark-downloaded` 실패를 조용히 무시하지 않고 UI 캐시를 서버 상태로 되돌린 뒤 오류 표시
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- files.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- folders.service.spec.ts --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/__tests__/lib/react-query/queryKeys.test.ts" --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/app/webhard" --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 브라우저 smoke는 뒤쪽 프론트 PR9/10/13/14 변경과 함께 일괄 실행 예정
+- **관련 커밋**: 미커밋
+
+### 세션 #43 — 2026-05-10
+
+- **작업 내용**: PR 5 AUDIT-07 — 웹하드 `/folders` lazy loading 전환
+- **완료한 것**:
+  - 원인 확인: `FoldersService.getFolders()`가 `parentId` 미지정 시 `parentId` 조건을 생략해 전체 폴더 트리를 반환했고, `WebhardMain`도 전체 `folderMap`에 기대 breadcrumb와 하위 폴더를 계산했음
+  - `GET /folders` 기본 계약을 root/children 조회로 좁히고, 전체 목록 호환 호출은 `includeAll=true`를 명시하도록 분리
+  - `WebhardMain`은 현재 폴더의 직계 children만 조회하고, breadcrumb는 `/folders/:id/ancestors` 응답으로 계산
+  - `FolderTree`는 root children을 먼저 조회한 뒤 펼친 parent의 children만 lazy load하고, `has_children`으로 미로드 하위 폴더 표시를 유지
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/features/webhard-system.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- folders.service.spec.ts --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/app/webhard/__tests__/audit07-folder-loading.test.ts" --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/app/webhard" --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+  - `frontend`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - 브라우저 smoke는 뒤쪽 프론트 PR9/10/13/14 변경과 함께 일괄 실행 예정
+- **관련 커밋**: 미커밋
+
+### 세션 #42 — 2026-05-10
+
+- **작업 내용**: PR 4 AUDIT-06 — 웹하드 대량 fixture 성능 테스트 기반
+- **완료한 것**:
+  - 원인 확인: 대량 폴더/파일 조건을 재현할 deterministic helper와 기본 CI에서 제외되는 opt-in gate가 없었음
+  - `webhard-api/test/helpers/test-utils.ts`에 `buildWebhardFolderTreeFixture`, `buildWebhardFileFixture`, `buildWebhardFixtureCleanupWhere`, `shouldRunWebhardPerfTests` 추가
+  - `folders.service.spec.ts`, `files.service.spec.ts`에 소량 fixture 정확도 및 opt-in gate 테스트 추가
+  - `folders.performance-fixture.spec.ts`에 `RUN_PERF_TESTS=1`일 때만 10k folders / 100k files fixture를 생성하는 heavy 테스트 추가
+  - `docs/guides/webhard-performance-fixtures.md`, `docs/changelog/CHANGELOG.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- folders.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- files.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `$env:RUN_PERF_TESTS='1'; pnpm test -- folders --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - opt-in `folders` 패턴은 기존 관련 spec들도 함께 실행하며 `.env.local` 로드 메시지를 출력하지만 비밀 값은 출력하지 않음
+  - `npx tsc --noEmit` 실행 시 기존 npm 경고 `Unknown project config "shamefully-hoist"`가 출력되지만 타입체크는 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #41 — 2026-05-10
+
+- **작업 내용**: PR 3 AUDIT-20 — 웹하드 파이프라인 trace/backlog MVP
+- **완료한 것**:
+  - 원인 확인: 라우팅 실패와 자동문의 skip reason이 서비스별 문자열 로그에 흩어져 있고, 파일/폴더 단위 공통 조회 계약이 없었음
+  - DB migration 없이 기존 `sync_logs.metadata`에 `auditKind='webhard_pipeline'` 구조화 이벤트 저장
+  - presign/confirm/batch confirm 라우팅 실패를 `routing_failed`로 기록하고, 자동문의 제외 폴더와 업체 폴더 미해석 skip을 각각 `auto_contact_excluded_folder`, `company_folder_unresolved`로 기록
+  - `GET /integration/sync-logs/pipeline-backlog` 관리자 조회 API 추가 및 민감정보 context 필드 제거 정책 적용
+  - `/admin/integration` 대시보드에 최근 웹하드 파이프라인 backlog 섹션 추가
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/integration.md`, `docs/specs/api/endpoints/webhard.md`, `docs/specs/features/webhard-pipeline-observability.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- sync-log --runInBand` 통과
+  - `webhard-api`: `pnpm test -- files.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- auto-contact.service.spec.ts --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/__tests__/api/integration-pipeline-backlog-api.test.ts" --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - `npx tsc --noEmit` 실행 시 기존 npm 경고 `Unknown project config "shamefully-hoist"`가 출력되지만 타입체크는 통과
+  - 작업 시작 전 PR 1/PR 2 관련 변경과 감사 보고서 untracked 파일이 이미 있었으며 본 작업에서 stage/commit 하지 않음
+- **관련 커밋**: 미커밋
+
+### 세션 #40 — 2026-05-10
+
+- **작업 내용**: PR 2 AUDIT-03/AUDIT-04/AUDIT-05 — ActivityLog 날짜 필터, 성능 route 24시간 집계, Storage breakdown 업체 격리
+- **완료한 것**:
+  - 원인 확인: `src/app/api/webhard/performance/route.ts`는 `startDate`를 전달하지만 `ActivityLogsController`/`ActivityLogsService`가 날짜 query를 받거나 `createdAt` range를 적용하지 않았음
+  - `GET /activity-logs`에 `startDate`/`endDate` query와 invalid date 400 정책 추가
+  - `/api/webhard/performance`는 24시간 `startDate`를 계속 전달하고, 백엔드 응답에 오래된 로그가 섞여도 집계에서 제외
+  - `StorageService.getStorageBreakdown`의 company 사용자 조건을 `companyId=user.companyId`로 고정해 `companyId=null` 관리자/null 파일 포함 제거
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- activity-logs --runInBand` 통과
+  - `webhard-api`: `pnpm test -- storage.service.spec.ts --runInBand` 통과
+  - `frontend`: `pnpm test -- --testPathPatterns="src/__tests__/api/webhard-performance-route.test.ts" --runInBand` 통과
+- **이슈**:
+  - playbook의 넓은 frontend 패턴 `performance|webhard`는 기존 `.worktrees/task-25-webhard-fix/**` 테스트까지 잡아 중복 React 설치로 실패하므로 실제 추가 테스트 파일로 좁혀 검증
+  - 작업 시작 전 PR 1 관련 변경과 감사 보고서 untracked 파일이 이미 있었으며 본 작업에서 stage/commit 하지 않음
+- **관련 커밋**: 미커밋
+
+### 세션 #39 — 2026-05-10
+
+- **작업 내용**: PR 1 AUDIT-01/AUDIT-02 — Backup API 권한 회귀 테스트 및 백업 전용 권한 guard 적용
+- **완료한 것**:
+  - 원인 확인: `BackupController`가 `ApiKeyGuard`만 사용하고, API key 인증 시 `request.user.userType='admin'`으로 주입되어 백엔드 자체 백업 권한 경계가 프론트 프록시에 의존할 수 있었음
+  - `backup.controller.spec.ts`에 `PUT /backup/settings`, `POST /backup/execute` 권한 매트릭스 회귀 테스트 추가
+  - `BackupAdminGuard`와 `RequireBackupPermission` 적용: admin session은 허용, company session은 거부, API key는 `backup:read`/`backup:write`/`backup:execute` 명시 스코프가 있을 때만 허용
+  - `GET /backup/browse-directories`는 NAS/파일시스템 경로 정보를 노출할 수 있어 `backup:write` 권한으로 제한
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md`, `docs/specs/api/endpoints/webhard.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- backup --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - `npx tsc --noEmit` 실행 시 기존 npm 경고 `Unknown project config "shamefully-hoist"`가 출력되지만 타입체크는 통과
+  - 작업 시작 전 `docs/reports/project-audit-2026-05-08.md`, `docs/reports/project-audit-ticket-plan-2026-05-09.md`가 untracked 상태였으며 본 작업에서 stage/commit 하지 않음
+- **관련 커밋**: 미커밋
+
+### 세션 #38 — 2026-05-08
+
+- **작업 내용**: 웹하드 미분류 문의 칼선/목형 분류 시 원본 파일 이동 누락 수정
+- **완료한 것**:
+  - 원인 확인: `updateInquiryType` 의 폴더 생성 훅은 실행됐지만, `relocateContactFiles` 가 `DrawingRevision.webhardFileIds` 또는 `companyId + inquiryNumber` 로만 파일을 찾아 자동 문의 원본 파일을 놓칠 수 있었음
+  - `relocateContactFiles` 파일 후보에 `Contact.drawingFileUrl` 에서 추출한 R2 key(`webhard_files.path`) 를 추가
+  - 기존 자동 생성 미분류 문의도 분류 시점에 생성된 문의 폴더로 원본 파일이 이동되도록 회귀 테스트 추가
+  - `docs/changelog/CHANGELOG.md`, `docs/features-list.md` 동기화
+- **검증**:
+  - `webhard-api`: `pnpm test -- folders.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- contact-folder-sync.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- contacts.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **이슈**:
+  - `npx tsc --noEmit` 실행 시 기존 npm 경고 `Unknown project config "shamefully-hoist"` 가 출력되지만 타입체크는 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #37 — 2026-05-08
+
+- **작업 내용**: 업체 승인 대기 계정 로그인 오류 메시지 수정
+- **완료한 것**:
+  - `loginAction` 에서 `companies.is_approved=false` 검사를 `status !== 'active'` 검사보다 먼저 수행하도록 변경
+  - 업체 등록 직후 `status='pending'` / `is_approved=false` 계정이 일반 `invalid` 오류 대신 `pending_approval` 로 리다이렉트되도록 수정
+  - 로그인 페이지 `pending_approval` 문구를 "관리자 승인 대기 중입니다. 관리자에게 문의해주세요."로 변경
+  - 회귀 테스트 `src/__tests__/actions/auth-login.test.ts` 추가
+- **검증**:
+  - `pnpm test -- --testPathPatterns="src/__tests__/actions/auth-login.test.ts" --runInBand` 통과
+- **이슈**:
+  - Jest 실행 시 기존 `.worktrees/task-25-webhard-fix/**/package.json` 중복으로 haste module naming collision 경고가 출력되지만, 대상 테스트는 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #36 — 2026-05-08
+
+- **작업 내용**: 외부웹하드 batch confirm 자동문의 누락 진단 + 서버 로그 보강
+- **완료한 것**:
+  - `batchConfirmUpload` routing 후 실제 저장된 routed folderId 기준으로 AutoContact 훅 folder metadata 를 추가 조회·전달하도록 수정
+  - routed folder metadata 누락 시 warn 로그 추가
+  - presigned URL 발급, 단일/배치 confirm 저장, AutoContact queue/dispatch/detect/classify/company resolve/create/folder sync 단계 로그 추가
+  - AutoContact 생성 Contact 에 매칭된 `companyId` 저장 (미가입 업체는 null 유지)
+  - `files.service.spec.ts` BC3 회귀 테스트와 `auto-contact.service.spec.ts` companyId 저장 검증 추가
+- **검증**:
+  - `webhard-api`: `pnpm test -- files.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `pnpm test -- auto-contact.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `npx tsc --noEmit` 통과
+- **다음에 할 것**:
+  - 운영/개발 서버 로그에서 외부웹하드 sync 배치 업로드 시 `auto contact batch hook queued` → `auto contact batch dispatched` → `auto contact created` 순서 확인
+- **이슈**:
+  - 작업 시작 전 password reset 관련 파일 등 다수 미커밋 변경이 이미 존재했으며 본 작업에서 되돌리지 않음
+- **관련 커밋**: 미커밋
+
+### 세션 #35 — 2026-05-06
+
+- **작업 내용**: 거래처 비밀번호 찾기 reset-link 전환
+- **완료한 것**:
+  - 기존 `src/app/api/auth/find-password/route.ts` 의 임시 비밀번호 생성·hash·회사 비밀번호 즉시 업데이트·`tempPassword` 응답 경로 제거
+  - NestJS `PasswordResetService` / `PasswordResetController` 추가: request 는 hash-only reset token 저장 + 메일 발송, confirm 은 토큰 1회 사용 처리 + 새 bcrypt hash 저장
+  - Prisma `password_reset_tokens` 모델 및 migration 추가 (`20260506090000_add_password_reset_tokens`)
+  - `MailService.sendPasswordResetLink` 및 필수 메일 전송 실패 처리 추가
+  - `/api/auth/reset-password` 프록시 route 와 `/reset-password` 폼 추가, 로그인 모달 문구를 "재설정 링크"로 변경
+  - 관련 API/DB/features/changelog 문서 동기화
+- **검증**:
+  - `webhard-api`: `jest password-reset.service.spec.ts --runInBand` 통과
+  - `webhard-api`: `tsc --noEmit` 통과
+  - `webhard-api`: 더미 `DATABASE_URL`/`DIRECT_URL` 로 `prisma validate` 통과
+  - frontend 변경 파일 targeted TypeScript diagnostics 통과
+- **다음에 할 것**:
+  - 배포 대상 DB에 Prisma migration 적용 (`password_reset_tokens`)
+  - 운영 SMTP / `NEXT_PUBLIC_SITE_URL` 또는 `FRONTEND_URL` 설정 확인 후 실제 메일 링크 왕복 검증
+  - 기존 OneDrive ACL/Jest setup 문제 해결 후 frontend Jest 및 full root `tsc --noEmit` 재실행
+- **이슈**:
+  - `.claude/_backup/**` 삭제 표시는 권한/샌드박스/OneDrive ACL 문제로 판단, 본 작업에서 미수정
+  - root frontend `tsc --noEmit` 은 기존 health 관련 파일 접근 불가로 실패
+  - root Jest 는 `jest.setup.js` / transformer 해석 문제로 targeted frontend 테스트 실행이 막힘
+- **관련 커밋**: 미커밋 (사용자 승인 전 stage/commit 금지)
+
+### 세션 #34 — 2026-04-27
+
+- **작업 내용**: 남은 작업 인벤토리 + Worker 성능 최적화 사후 spec-code-sync 등재
+- **완료한 것**:
+  - 남은 작업 전체 인벤토리: `.omc/plans/` / `TODOS.md` / src 코드 TODO 주석 / e2e `.skip` / git status 종합
+  - `.omc/plans/worker-performance-optimization.md` 가 commit `2e683d95` (2026-04-09 by jaehyun2yo + Claude Opus 4.6) 시점에 이미 master 머지된 사실 확인. CHANGELOG/features-list 등재만 누락된 상태였음
+  - CHANGELOG.md 사후 등재 (L274~313): `nestjsFetch` 옵션 / Server Action ISR (목록·카운트·타임라인) / 선택적 invalidation / 낙관적 업데이트·롤백 / `useContactTimeline` React Query 전환 / Socket.IO Worker 룸 추가
+  - features-list.md 에 `worker-performance-optimization` 행 추가 (status: shipped, commit 2e683d95, 2026-04-09)
+  - `.omc/plans/worker-performance-optimization.md` → `.omc/plans/done/` 으로 archive
+- **검증**: docs grep 으로 신규 항목 정상 노출 확인. 본 세션은 코드 변경 없음 (문서 동기화 only).
+- **다음에 할 것**:
+  - PIN brute-force 방어 구현 (`webhard-api/src/erp/workers/`) + `pin-brute-force.spec.ts:250` 활성화 (보안 결함)
+  - 비밀번호 찾기 이메일 전송 구현 (`src/app/api/auth/find-password/route.ts:100,113` — 현재 응답만 성공)
+  - 외부 동기화 dedupe RFC (`webhard-api/src/integration/orders/auto-contact.service.ts:370` — 같은 folderPath 1시간 내 중복 발행 방지)
+  - Socket.IO ERP 세션 정식 검증 (`TODOS.md`, Low priority)
+- **이슈**:
+  - `getProcessBoardContacts` `revalidate: 0` vs 2e683d95 커밋 메시지 "문의 목록 15초" 불일치 — 후속 의도 변경으로 추정. 확정 필요 시 `git blame src/app/actions/process-board.ts | grep -n revalidate` 로 변경 시점 확인
+  - progress.txt 등재 갭 — 세션 #33 (2026-04-22) 이후 task 21·22·23·24 (4-23 ~ 4-27) 가 진행됐지만 progress 등재 누락. 본 세션부터 #34 로 재개
+  - WSL+tmux 셋업: 사용자 환경에 WSL2 + Ubuntu 24.04 + tmux 3.4 까지 설치 완료. Node/Claude Code 미설치 (메인 세션 직접 진행 선택). 추후 team 모드 활용 시 셋업 가이드 9단계 (memory/environment_team_mode.md 참조)
+- **관련 커밋**: (이 docs 커밋 + 후속 chore OMC 동기화 커밋)
+
+### 세션 #33 — 2026-04-22
+
+- **작업 내용**: task 20 webhard-folder-policy-unify — Contact 생성 5 경로 폴더 생성 룰 통합 + 중간 "문의" 폴더 구조 신설
+- **완료한 것**:
+  - PR #13 (task 19 worker-drawing-upload) squash 머지
+  - task 20 phase 파일 생성 (6 phase) + run-phases.py 자동 실행 (78 분)
+  - phase 0 docs-update — §W.1 저장 구조·불변 규칙 갱신, §W.3 deprecate 표기, followups §3.3 해결 표기, CHANGELOG skeleton
+  - phase 1 folder-service-refactor — `ensureInquiryRootFolder(companyId, tx?)` 헬퍼 신규, `ensureInquiryFolder` parent 를 중간 "문의" 폴더로 변경, `DEFAULT_FOLDER_TEMPLATE` 에 "문의" 추가 (신규 업체 eager)
+  - phase 2 web-form-path — `ContactsService.create` 트랜잭션 내부에 `ensureInquiryFolder + relocateContactFiles` 통합 (strict 롤백), `registerFilesToWebhard` 완전 삭제, `webhard_company_mismatch` Notification 인라인
+  - phase 3 auto-contact-path — `AutoContactService.createNewContact` 끝단에 분류 확정 시 폴더·파일 정착 훅 (best-effort, 미분류 원위치)
+  - phase 4 split-path — `splitContact` 자식별 `ensureInquiryFolder` (독립 동급 `문의-{O}-{i}`, 중간 "문의" 하위 배치)
+  - phase 5 docs-sync-changelog — CHANGELOG 본문, followups §3.3 해결됨 확정, 남은 task 21 후보 정리
+  - PR #14 생성 (https://github.com/jaehyun2yo/yjlaser/pull/14)
+- **검증**: webhard-api 552/552 테스트 통과, frontend `tsc --noEmit` 통과
+- **다음에 할 것**:
+  - PR #14 리뷰·머지
+  - Pre-existing frontend 회귀 hotfix PR (task 19 유래: Turbopack `PageNotFoundError`, `useTimelineRealtime.test.tsx` T6, `WorkerDrawingUpload.test.tsx` T3) — task 19 `refetchType: 'all'` 전환 시 테스트 갱신 누락이 원인
+  - task 21 후보: §3.1 기존 업체 루트 직하 `문의-{O}` → `문의/문의-{O}` 마이그레이션 스크립트 또는 §3.4 F 번호 rename 시 파일명 prefix 재계산
+- **이슈**: Pre-existing frontend 실패 2 건 + Turbopack build 실패 — task 19 merge (3b404e8a) 이후 회귀. `git diff 3b404e8a..HEAD -- 'src/'` 비어있어 task 20 무관 증명됨. 별도 fix PR 필요.
+- **관련 커밋**: 491e4f7c (task 파일) / 473d3998 ~ 474cc715 (phase 0~5 + task 완료, 13 개 커밋)
+
+### 세션 #32 — 2026-04-01
+
+- **작업 내용**: 납품 관리 V2 — 2단계 분리 + 탭 통합 UI
+- **완료한 것**:
+  - feat: 납품 2단계 분리 — 시작(status='delivering') → 완료(status='delivered')
+  - feat: 신규 API `POST /batch-complete-delivery` (delivering→delivered)
+  - feat: 탭 기반 통합 UI — /worker/delivery에 대기/납품 중/완료 3개 탭
+  - feat: DeliveryPhotoCapture에 start/complete 모드 분기 (출발/완료 사진 별도 저장)
+  - feat: Contact 모델에 deliveryCompleteImage 필드 추가 (완료 사진)
+  - fix: /worker/delivered → /worker/delivery?tab=completed 리다이렉트
+  - fix: 삼신도무송 테스트 데이터 삭제 (마이그레이션 SQL)
+  - fix: batchStartDelivery delivering 중복 호출 방어 코드 추가
+  - fix: ContactStatus 타입에 'delivering' 추가
+- **다음에 할 것**:
+  - 프로덕션 배포 후 납품 2단계 플로우 테스트 (시작→완료)
+  - 프로덕션 WebSocket 쿠키 인증 이슈 해결 (세션 #26 이슈)
+- **이슈**: NestJS 서버 실행 중 prisma generate DLL 잠금 (--no-engine으로 우회, 재시작 후 full generate 필요)
+- **관련 커밋**: 7bf8a93
+
+### 세션 #31 — 2026-04-01
+
+- **작업 내용**: 카카오맵 SDK 로드 실패 수정 + 납품 지도 UX 개선
+- **완료한 것**:
+  - fix: 카카오맵 SDK 로드 실패 — 카카오 개발자 콘솔에서 OPEN*MAP_AND_LOCAL 서비스 활성화 필요 확인, CSP에 카카오맵 전체 도메인 추가 (script-src: dapi.kakao.com + *.daumcdn.net, img-src: \_.daumcdn.net + \*.kakao.com, connect-src: dapi.kakao.com)
+  - feat: GPS 현재 위치 마커 표시 + 현재 위치로 이동 버튼
+  - feat: 납품처 0건이어도 현재 위치 기준 지도 표시
+  - feat: 카드 전체 영역 클릭으로 선택/해제 (체크박스만 → 카드 전체)
+  - style: 지도 최상단 배치, 기본 표시 (showMap 기본값 true)
+  - fix: Permissions-Policy camera/geolocation self 허용
+  - fix: webhard-proxy CSRF 토큰 자동 추출 및 X-CSRF-Token 헤더 전달
+- **다음에 할 것**:
+  - 프로덕션 배포 후 카카오맵 + 납품 페이지 테스트
+  - 프로덕션 WebSocket 쿠키 인증 이슈 해결 (세션 #26 이슈)
+- **이슈**: 없음
+- **관련 커밋**: 76925e8, e52c44e
+
+### 세션 #30 — 2026-03-31
+
+- **작업 내용**: Worker 납품 개선 3종 — 타이머 버그 + 납품완료 페이지 + 타임라인 작업자명
+- **완료한 것**:
+  - fix: 납품시작 클릭 시 카드 즉시 사라지는 버그 수정 — contacts.service.ts field 쿼리에 delivery+delivered OR 조건 추가. processStage=delivery이면서 status=delivered인 건(납품 진행중)이 목록에 유지됨
+  - feat: Worker 납품완료 조회 페이지 신규 생성 (/worker/delivered) — 관리자 delivered hooks 재사용, 일별/월별/업체 필터, Worker 모바일 UI, 대시보드에 네비게이션 링크 추가
+  - fix: 관리자 타임라인 작업자명 미표시 수정 — ContactDetailView.tsx showActor={false} → showActor (유형 변경 포함 모든 타임라인 항목에 작업자명 표시)
+  - feat: 레이저가공 전용 업체 문의 타입 + 자동 문의 생성 개선 (별도 커밋)
+- **다음에 할 것**:
+  - 프로덕션 배포 후 납품 타이머/납품완료 페이지/타임라인 작업자명 테스트
+  - 프로덕션 WebSocket 쿠키 인증 이슈 해결 (세션 #26 이슈)
+- **이슈**: 없음
+- **관련 커밋**: a51bd54, 66a6a21, a870786
+
+### 세션 #29 — 2026-03-27
+
+- **작업 내용**: 문의 제출 DB 저장 실패 버그 수정
+- **완료한 것**:
+  - 문의 폼 제출 시 DB 저장 실패 수정 — contactDataProcessor.ts에서 inquiryNumber 필드(null)가 NestJS DTO forbidNonWhitelisted에 걸려 400 에러. 서버가 자동 생성하는 필드이므로 클라이언트에서 제거
+- **다음에 할 것**:
+  - 프로덕션 배포 후 문의 제출 테스트 (DB 저장 + 이메일 + Integration Order 자동 생성)
+  - 프로덕션 WebSocket 쿠키 인증 이슈 해결 (세션 #26 이슈)
+- **이슈**: 없음
+- **관련 커밋**: c3b4e24
+
+### 세션 #28 — 2026-03-27
+
+- **작업 내용**: 관리자 첨부파일 다운로드 수정 + 업체 등록 버그 수정 + 보드 실시간 개선
+- **완료한 것**:
+  - 관리자 문의카드 첨부파일 다운로드 에러 수정 — presigned URL 직접 링크 → blob 다운로드 (Worker 패턴 통일)
+  - 업체 등록 Critical 버그 수정 — register.ts의 insertData가 snake_case 키 전송 → NestJS DTO camelCase와 불일치로 400 에러. camelCase로 수정
+  - 업체 등록 UX 개선 — redirect() → return 패턴으로 변경: 성공 시 SuccessModal, 실패 시 입력값 유지 + 인라인 에러
+  - 팩스 견적서 방법 선택 시 팩스번호 필수 검증 — 빨간 테두리 강조 + 스크롤 이동 + 인라인 메시지
+  - 웹하드 접근 제어 검증 완료 — 3중 보안(CompanyAccessGuard + verifyFolderAccess + WHERE 필터) 확인, 추가 수정 불필요
+  - 관리자 보드 소켓 이벤트 핸들러 useCallback 안정화 + socketStatus UI 표시
+  - 미분류/사무실/현장 카테고리에서 납품 완료(delivered/deleting) 건 제외
+- **다음에 할 것**:
+  - 프로덕션 환경 테스트 (업체 등록 + 첨부파일 다운로드 + 보드 실시간)
+  - 프로덕션 WebSocket 쿠키 인증 이슈 해결 (세션 #26 이슈)
+- **이슈**: 없음
+- **관련 커밋**: c875003, 944b96f, 2adf34d
+
+### 세션 #27 — 2026-03-26
+
+- **작업 내용**: Worker 페이지 타임라인 버그 수정 + 카드 레이아웃 변경 + UX 개선
+- **완료한 것**:
+  - 타임라인 NaN/NaN 날짜 버그 수정 — NestJS controller에서 camelCase→snake_case 변환 추가
+  - 타임라인에 작업자 이름 표시 — compact 모드 인라인 표시 ("레이저 — 홍길동")
+  - 유형 변경(inquiry_type) 시 로그인한 작업자 기록 — DTO/Controller/API route 전체 파이프라인 수정
+  - 카드 레이아웃 변경 — 업체명-파일명 / 파일 디렉토리 경로 표시 (inquiry_title 대체)
+  - 새로고침 시 로그인 페이지 깜빡임 수정 — Zustand hydration 상태 추적 (\_hydrated + onRehydrateStorage)
+  - 타임라인 펼침/접힘 애니메이션 — grid-template-rows 0fr↔1fr 트랜지션
+- **다음에 할 것**:
+  - 프로덕션 환경 테스트 (타임라인 날짜 표시, 작업자 기록 확인)
+  - 프로덕션 WebSocket 쿠키 인증 이슈 해결 (세션 #26 이슈)
+- **이슈**: 없음
+- **관련 커밋**: 81c6e29
+
+### 세션 #26 — 2026-03-26
+
+- **작업 내용**: 관리자 작업관리 보드(/admin/work-management/board) 실시간 업데이트 수정
+- **완료한 것**:
+  - SocketManager.connect() 레이스컨디션 수정 — 동일 namespace 동시 연결 시 첫 번째 소켓 파괴 방지
+  - 작업 목록/카운트 훅에 refetchInterval 10초 폴링 폴백 추가
+  - staleTime 30초 → 5초 단축
+- **다음에 할 것**:
+  - 프로덕션 환경에서 소켓 인증 문제 해결 (admin-session 쿠키 domain 속성 — 서브도메인 간 전송 불가)
+  - 다른 관리자 페이지(process-board, contacts, delivered)에도 동일 폴링 폴백 적용 검토
+- **이슈**: 프로덕션에서 WebSocket 쿠키 인증 실패 가능성 (쿠키 domain 미설정 → api 서브도메인 미전송)
+- **관련 커밋**: 54f5da6
+
+---
+
+> 세션 #1~#25 이력은 git history 참조 (2026-03-11 ~ 2026-03-26)

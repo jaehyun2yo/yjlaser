@@ -1,0 +1,80 @@
+{
+  "project": "yjlaser-website",
+  "task": "qa-contact-worker-v1",
+  "prompt": "QA 테스트 중 발견된 6가지 문제점 — (1) 공개 문의 폼에서 AI 파일 업로드 안 됨 + 자체 웹하드 {업체명}/문의/{패키지명-문의번호} 폴더 자동 생성 누락, (2) 방문 예약 슬롯 자리수 표시 + admin 승인/거절 UI 부재, (3) Worker 페이지에서 접수 Contact가 '미분류'로 떨어짐 + 카드에 패키지명·파일명 미표시 + 우클릭 정보 보기 없음, (4) 사무실→현장 전환 기능 silent fail(inquiryNumber/workNumber 조건 때문), (5) 대성목형 자동생성 Contact가 업체 대시보드에 안 보임 (findByCompany exact match + companyName 폴더명 원본 저장), (6) 외부웹하드 동기화 Contact의 자체 웹하드 폴더 생성 누락. Phase 5/6은 백엔드·프론트엔드 분리하여 총 10개 Phase.",
+  "totalPhases": 10,
+  "created_at": "2026-04-24T20:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-24T15:39:28+0900",
+      "completed_at": "2026-04-24T15:47:13+0900"
+    },
+    {
+      "phase": 1,
+      "name": "upload-ext-policy",
+      "status": "completed",
+      "started_at": "2026-04-24T15:47:17+0900",
+      "completed_at": "2026-04-24T15:56:43+0900"
+    },
+    {
+      "phase": 2,
+      "name": "contact-folder-hook",
+      "status": "completed",
+      "started_at": "2026-04-24T15:56:45+0900",
+      "completed_at": "2026-04-24T16:24:12+0900"
+    },
+    {
+      "phase": 3,
+      "name": "auto-contact-normalize",
+      "status": "completed",
+      "started_at": "2026-04-24T16:24:14+0900",
+      "completed_at": "2026-04-24T16:37:26+0900"
+    },
+    {
+      "phase": 4,
+      "name": "worker-ui",
+      "status": "completed",
+      "started_at": "2026-04-24T16:37:32+0900",
+      "completed_at": "2026-04-24T16:53:21+0900"
+    },
+    {
+      "phase": 5,
+      "name": "stage-transition-backend",
+      "status": "completed",
+      "started_at": "2026-04-24T16:53:24+0900",
+      "completed_at": "2026-04-24T17:06:54+0900"
+    },
+    {
+      "phase": 6,
+      "name": "stage-transition-frontend",
+      "status": "completed",
+      "started_at": "2026-04-24T17:06:56+0900",
+      "completed_at": "2026-04-24T17:27:50+0900"
+    },
+    {
+      "phase": 7,
+      "name": "booking-slot-ux",
+      "status": "completed",
+      "started_at": "2026-04-24T17:27:52+0900",
+      "completed_at": "2026-04-24T17:48:16+0900"
+    },
+    {
+      "phase": 8,
+      "name": "booking-admin-actions",
+      "status": "completed",
+      "started_at": "2026-04-24T17:48:19+0900",
+      "completed_at": "2026-04-24T18:01:44+0900"
+    },
+    {
+      "phase": 9,
+      "name": "docs-sync-wrap",
+      "status": "completed",
+      "started_at": "2026-04-24T18:01:47+0900",
+      "completed_at": "2026-04-24T18:11:15+0900"
+    }
+  ],
+  "completed_at": "2026-04-24T18:11:18+0900"
+}

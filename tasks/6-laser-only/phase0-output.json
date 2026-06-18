@@ -1,0 +1,7 @@
+{
+  "phase": 0,
+  "name": "docs-update",
+  "exitCode": 0,
+  "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"duration_ms\":265358,\"duration_api_ms\":262603,\"num_turns\":24,\"result\":\"\",\"stop_reason\":\"end_turn\",\"session_id\":\"471f598f-53ac-44ee-ac01-2a17b243bbf3\",\"total_cost_usd\":1.2701817499999999,\"usage\":{\"input_tokens\":80,\"cache_creation_input_tokens\":95751,\"cache_read_input_tokens\":607176,\"output_tokens\":14710,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":95751,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":95175,\"cache_creation_input_tokens\":576,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":576},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-opus-4-6[1m]\":{\"inputTokens\":80,\"outputTokens\":14710,\"cacheReadInputTokens\":607176,\"cacheCreationInputTokens\":95751,\"webSearchRequests\":0,\"costUSD\":1.2701817499999999,\"contextWindow\":1000000,\"maxOutputTokens\":64000}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"uuid\":\"df3d0cd7-cd39-4471-aae3-d169b39a0c9b\"}\n",
+  "stderr": ""
+}

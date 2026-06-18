@@ -1,43 +1,133 @@
-# 하위 프로젝트 제외 (각각 별도 저장소로 관리)
-yjlaser_website/
-외부웹하드동기화프로그램/
-유진레이저목형 관리프로그램/
-레이저네스팅프로그램/
-computeroff/
-도면자동화프로그램/
-현재 아직 사용안하는것들/
-yjlaser_api_client/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# generated 파일 (스크립트로 재생성 가능)
-**/generated/
+# dependencies
+/node_modules
+agent-office/node_modules
+.team-os/artifacts/.idle-tracker.json
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Node.js
-node_modules/
+# testing
+/coverage
+/.auth
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+*.pem
+
+# pipeline workspace (tickets, plans, reports)
+_workspace/
+
+# git worktrees (isolated branches for in-progress work)
+.worktrees/
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+!.env.example
+!webhard-api/.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# generated files
+/src/generated/prisma
+
+# Logs
+/logs
+*.log
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS specific files
+.DS_Store
+desktop.ini
+Thumbs.db
+nul
+
+# Temporary commit messages
+commit_message.txt
+COMMIT_EDITMSG.txt
+
+# Temporary documentation (add specific patterns if needed)
+*_DEBUGGING.md
+*_FIX*.md
+*_STATUS.md
+!/PROJECT_STATUS.md
+*_SUMMARY.md
+test-*.md
+TEST_*.md
+
+# Sentry Config File
+.env.sentry-build-plugin
+.playwright-mcp/
+
+# Claude Code temporary files
+tmpclaude-*
+**/tmpclaude-*
+
+# 도구 상태 (로컬 전용)
+.omc/
+.agent/
+.taskmaster/
+.mcp.json
+
+# 테스트 출력
+test-results/
+test-*.txt
+test-*.json
+folder-all-*.txt
+rename-*.txt
+playwright-report/
+playwright-*.txt
+playwright-*.log
+
+# SQL 스크립트
+*.sql
+!supabase-archived/**/*.sql
+!webhard-api/prisma/migrations/**/*.sql
+!webhard-api/scripts/*.sql
+
+# 중복 lock 파일
 package-lock.json
 
-# OS
-.DS_Store
-Thumbs.db
+# 플랜 파일
+yjlaser/
 
-# IDE
-.vscode/
-.idea/
+# Claude handoff (PreCompact 훅 생성 임시 파일)
+.claude/handoff.md
 
-# Claude 캐시
-.claude/
-.omc/
-
-# 로컬 에이전트/검증 캐시
-.serena/
-.superpowers/
+# 기타 임시 파일
+cookies.txt
+server.log
+downloads/
 .gstack/
-test-results/
 
-# 하위 프로젝트 복제본/임시 작업 폴더
-yjlaser_website_publish_refero/
-yjlaser_website_master_merge/
-yjlaser-classification-cancel-delete/
-yjlaser-master-hotfix/
-
-# 기타
-*.log
+.vercel

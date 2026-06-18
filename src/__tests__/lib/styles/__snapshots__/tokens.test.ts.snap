@@ -1,0 +1,42 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`Design System: Token Consistency new BG_COLOR keys snapshot 1`] = `
+{
+  "brand": "bg-brand",
+  "card": "bg-card",
+  "elevated": "bg-card",
+  "error": "bg-error-light",
+  "info": "bg-info-light",
+  "muted": "bg-muted",
+  "page": "bg-background",
+  "success": "bg-success-light",
+  "warning": "bg-warning-light",
+}
+`;
+
+exports[`Design System: Token Consistency new BORDER_COLOR keys snapshot 1`] = `
+{
+  "brand": "border-brand",
+  "default": "border-border",
+  "error": "border-destructive",
+  "info": "border-info",
+  "light": "border-border/50",
+  "strong": "border-border",
+  "success": "border-success",
+  "warning": "border-warning",
+}
+`;
+
+exports[`Design System: Token Consistency new TEXT_COLOR keys snapshot 1`] = `
+{
+  "brand": "text-brand",
+  "disabled": "text-muted-foreground/50",
+  "error": "text-destructive",
+  "info": "text-info",
+  "muted": "text-muted-foreground/70",
+  "primary": "text-foreground",
+  "secondary": "text-muted-foreground",
+  "success": "text-success",
+  "warning": "text-warning",
+}
+`;

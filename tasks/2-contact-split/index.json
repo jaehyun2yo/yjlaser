@@ -1,0 +1,52 @@
+{
+  "project": "yjlaser-website",
+  "task": "contact-split",
+  "prompt": "도면 확정 및 목형의뢰 단계 문의에서 논의할게있다.\n\n업체에서 한도면에 여러개의 도면파일을 합쳐서 보낼때가있다.\n이때 하나의 문의에 여러개의 작업도면이 나오는데\n이때 현장에 내리는 파일은 한 도면에 하나만 있게끔 보통 작업하는데\n그럼 한문의에 여러개의 문의번호가 필요하게된다.\n\n이걸 어떻게 처리할까 좋은방법있어?",
+  "totalPhases": 6,
+  "created_at": "2026-04-13T23:30:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-13T18:18:47+0900",
+      "completed_at": "2026-04-13T18:21:04+0900"
+    },
+    {
+      "phase": 1,
+      "name": "db-schema",
+      "status": "completed",
+      "started_at": "2026-04-13T18:21:10+0900",
+      "completed_at": "2026-04-13T18:25:34+0900"
+    },
+    {
+      "phase": 2,
+      "name": "split-api",
+      "status": "completed",
+      "started_at": "2026-04-13T18:25:37+0900",
+      "completed_at": "2026-04-13T18:33:28+0900"
+    },
+    {
+      "phase": 3,
+      "name": "group-query",
+      "status": "completed",
+      "started_at": "2026-04-13T18:33:31+0900",
+      "completed_at": "2026-04-13T18:38:29+0900"
+    },
+    {
+      "phase": 4,
+      "name": "split-modal",
+      "status": "completed",
+      "started_at": "2026-04-13T18:40:30+0900",
+      "completed_at": "2026-04-13T18:50:36+0900"
+    },
+    {
+      "phase": 5,
+      "name": "list-grouping",
+      "status": "completed",
+      "started_at": "2026-04-13T18:50:39+0900",
+      "completed_at": "2026-04-13T18:59:21+0900"
+    }
+  ],
+  "completed_at": "2026-04-13T18:59:24+0900"
+}

@@ -1,0 +1,50 @@
+{
+  "project": "yjlaser-website",
+  "task": "register-form-ux",
+  "prompt": "피드백 처리: 1. 업체등록 신청시 검증실패되는건이있을때 전체내용을 삭제해버지말고 유지하고 검증실패한곳에 강조되고 포커싱해줘 2. 업체등록 실패 - NestJS API connection error (check-username endpoint) 3. 검증실패시 실패되는곳 아래에 실패문구 띄워줘 4. 여러 실패시 작성했던 내용 사라지지않게해줘. + 클라이언트 실시간 검증 추가, 이메일 형식 검증, 사업자등록번호 형식 검증 추가.",
+  "totalPhases": 5,
+  "created_at": "2026-04-16T22:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-16T10:41:07+0900",
+      "completed_at": "2026-04-16T10:46:35+0900",
+      "note": "tsc --noEmit 통과. pnpm build는 기존 이슈(/_not-found, /admin/feedback 모듈 누락)로 실패하나, 이 phase의 변경사항(문서만 추가)과 무관함을 git stash 비교로 확인."
+    },
+    {
+      "phase": 1,
+      "name": "validation-module",
+      "status": "completed",
+      "started_at": "2026-04-16T10:46:38+0900",
+      "completed_at": "2026-04-16T10:56:27+0900",
+      "note": "tsc --noEmit 통과, pnpm build 통과, pnpm test 신규 20/20 통과. R2 테스트 2건 실패는 기존 이슈(phase 변경과 무관)."
+    },
+    {
+      "phase": 2,
+      "name": "controlled-form",
+      "status": "completed",
+      "started_at": "2026-04-16T10:56:29+0900",
+      "completed_at": "2026-04-16T11:04:23+0900",
+      "note": "tsc --noEmit 통과, pnpm build 통과, pnpm test 통과 (R2 테스트 2건 실패는 기존 이슈, phase 변경과 무관)."
+    },
+    {
+      "phase": 3,
+      "name": "realtime-validation",
+      "status": "completed",
+      "started_at": "2026-04-16T11:04:25+0900",
+      "completed_at": "2026-04-16T11:10:33+0900",
+      "note": "tsc --noEmit 통과, pnpm build 통과, pnpm test 통과 (R2 테스트 2건 실패는 기존 이슈, phase 변경과 무관)."
+    },
+    {
+      "phase": 4,
+      "name": "docs-sync",
+      "status": "completed",
+      "started_at": "2026-04-16T11:10:36+0900",
+      "completed_at": "2026-04-16T11:16:04+0900",
+      "note": "스펙 동기화 완료 (ValidationResult 타입, accountantFax 조건부 검증, onChange 재검증 동작 반영). CHANGELOG 추가. pnpm build 통과, tsc --noEmit 통과, pnpm test 통과 (R2 테스트 2건 실패는 기존 이슈, phase 변경과 무관)."
+    }
+  ],
+  "completed_at": "2026-04-16T11:16:06+0900"
+}

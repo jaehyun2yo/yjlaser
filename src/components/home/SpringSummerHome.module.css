@@ -1,0 +1,115 @@
+.homeSurface,
+.homeHeader {
+  font-family: Montreal, Inter, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 400;
+}
+
+.displayLoader {
+  color: #44394c;
+  font-family: Grotesk, Impact, sans-serif;
+  font-size: 88px;
+  font-weight: 400;
+  font-synthesis-weight: none;
+  letter-spacing: 0;
+  line-height: 0.82;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.displayHero {
+  color: #44394c;
+  font-family: Grotesk, Impact, sans-serif;
+  font-size: 88px;
+  font-weight: 400;
+  font-synthesis-weight: none;
+  letter-spacing: 0;
+  line-height: 0.82;
+  text-transform: uppercase;
+}
+
+.displaySection {
+  color: #44394c;
+  font-family: Grotesk, Impact, sans-serif;
+  font-size: 76px;
+  font-weight: 400;
+  font-synthesis-weight: none;
+  letter-spacing: 0;
+  line-height: 0.82;
+  text-transform: uppercase;
+}
+
+.displayEditorial {
+  color: #44394c;
+  font-family: Grotesk, Impact, sans-serif;
+  font-size: 72px;
+  font-weight: 400;
+  font-synthesis-weight: none;
+  letter-spacing: 0;
+  line-height: 0.82;
+  text-transform: uppercase;
+}
+
+.subheading {
+  color: #44394c;
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: 0.023em;
+  line-height: 1.1;
+}
+
+.mobileMenuDisplay {
+  color: #44394c;
+  font-family: Grotesk, Impact, sans-serif;
+  font-size: 56px;
+  font-weight: 400;
+  font-synthesis-weight: none;
+  letter-spacing: 0;
+  line-height: 0.82;
+  text-transform: uppercase;
+}
+
+@media (min-width: 768px) {
+  .displayLoader {
+    font-size: 170px;
+  }
+
+  .displayHero {
+    font-size: 170px;
+  }
+
+  .displaySection {
+    font-size: 132px;
+  }
+
+  .displayEditorial {
+    font-size: 132px;
+  }
+
+  .subheading {
+    font-size: 43px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .displayHero {
+    font-size: 260px;
+  }
+
+  .displaySection {
+    font-size: 170px;
+  }
+
+  .displayEditorial {
+    font-size: 180px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .displayHero {
+    font-size: 320px;
+  }
+
+  .displayEditorial {
+    font-size: 220px;
+  }
+}

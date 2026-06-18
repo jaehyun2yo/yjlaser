@@ -1,0 +1,213 @@
+{
+  "tasks": [
+    {
+      "id": 0,
+      "name": "drawing-revision",
+      "dir": "0-drawing-revision",
+      "status": "completed",
+      "created_at": "2026-04-13T15:30:00+0900",
+      "completed_at": "2026-04-13T16:00:00+0900"
+    },
+    {
+      "id": 1,
+      "name": "backup-fix",
+      "dir": "1-backup-fix",
+      "status": "completed",
+      "created_at": "2026-04-13T21:00:00+0900",
+      "completed_at": "2026-04-13T17:08:00+0900"
+    },
+    {
+      "id": 2,
+      "name": "contact-split",
+      "dir": "2-contact-split",
+      "status": "completed",
+      "created_at": "2026-04-13T23:30:00+0900",
+      "completed_at": "2026-04-13T18:59:24+0900"
+    },
+    {
+      "id": 3,
+      "name": "split-realtime-fix",
+      "dir": "3-split-realtime-fix",
+      "status": "completed",
+      "created_at": "2026-04-14T00:00:00+0900",
+      "completed_at": "2026-04-14T11:13:28+0900"
+    },
+    {
+      "id": 4,
+      "name": "contact-exclude",
+      "dir": "4-contact-exclude",
+      "status": "completed",
+      "created_at": "2026-04-14T22:00:00+0900",
+      "completed_at": "2026-04-14T13:56:48+0900"
+    },
+    {
+      "id": 5,
+      "name": "env-separation",
+      "dir": "5-env-separation",
+      "status": "completed",
+      "created_at": "2026-04-14T23:30:00+0900",
+      "completed_at": "2026-04-14T16:56:32+0900"
+    },
+    {
+      "id": 6,
+      "name": "laser-only",
+      "dir": "6-laser-only",
+      "status": "completed",
+      "created_at": "2026-04-15T22:00:00+0900",
+      "failed_at": "2026-04-15T11:44:40+0900",
+      "completed_at": "2026-04-15T12:54:53+0900"
+    },
+    {
+      "id": 7,
+      "name": "upload-cors-fix",
+      "dir": "7-upload-cors-fix",
+      "status": "completed",
+      "created_at": "2026-04-15T14:30:00+0900",
+      "completed_at": "2026-04-15T14:31:10+0900"
+    },
+    {
+      "id": 8,
+      "name": "laser-only-flow",
+      "dir": "8-laser-only-flow",
+      "status": "completed",
+      "created_at": "2026-04-15T15:00:00+0900",
+      "completed_at": "2026-04-15T18:00:30+0900"
+    },
+    {
+      "id": 9,
+      "name": "register-form-ux",
+      "dir": "9-register-form-ux",
+      "status": "completed",
+      "created_at": "2026-04-16T22:00:00+0900",
+      "completed_at": "2026-04-16T11:16:06+0900"
+    },
+    {
+      "id": 10,
+      "name": "company-link-fix",
+      "dir": "10-company-link-fix",
+      "status": "completed",
+      "created_at": "2026-04-16T19:00:00+0900",
+      "completed_at": "2026-04-16T13:17:30+0900"
+    },
+    {
+      "id": 11,
+      "name": "design-system",
+      "dir": "11-design-system",
+      "status": "completed",
+      "created_at": "2026-04-16T23:00:00+0900",
+      "failed_at": "2026-04-16T19:02:03+0900",
+      "completed_at": "2026-04-16T19:11:48+0900"
+    },
+    {
+      "id": 12,
+      "name": "drawing-workflow",
+      "dir": "12-drawing-workflow",
+      "status": "completed",
+      "created_at": "2026-04-16T23:30:00+0900",
+      "completed_at": "2026-04-16T18:20:00+0900"
+    },
+    {
+      "id": 13,
+      "name": "drawing-timeline-unify",
+      "dir": "13-drawing-timeline-unify",
+      "status": "completed",
+      "created_at": "2026-04-17T12:00:00+0900",
+      "completed_at": "2026-04-17T12:46:24+0900"
+    },
+    {
+      "id": 14,
+      "name": "timeline-reliability",
+      "dir": "14-timeline-reliability",
+      "status": "completed",
+      "created_at": "2026-04-17T14:00:00+0900",
+      "completed_at": "2026-04-17T14:06:52+0900"
+    },
+    {
+      "id": 15,
+      "name": "inquiry-classification-ux",
+      "dir": "15-inquiry-classification-ux",
+      "status": "completed",
+      "created_at": "2026-04-17T15:00:00+0900",
+      "completed_at": "2026-04-17T16:12:39+0900"
+    },
+    {
+      "id": 16,
+      "name": "classify-cta",
+      "dir": "16-classify-cta",
+      "status": "completed",
+      "created_at": "2026-04-20T12:00:00+0900",
+      "completed_at": "2026-04-20T15:00:00+0900"
+    },
+    {
+      "id": 17,
+      "name": "contact-feedback-pack",
+      "dir": "17-contact-feedback-pack",
+      "status": "completed",
+      "created_at": "2026-04-20T16:00:00+0900",
+      "completed_at": "2026-04-20T14:50:10+0900"
+    },
+    {
+      "id": 18,
+      "name": "drawing-consistency",
+      "dir": "18-drawing-consistency",
+      "status": "completed",
+      "created_at": "2026-04-20T19:15:00+0900",
+      "completed_at": "2026-04-20T19:09:02+0900"
+    },
+    {
+      "id": 19,
+      "name": "worker-drawing-upload",
+      "dir": "19-worker-drawing-upload",
+      "status": "completed",
+      "created_at": "2026-04-21T19:30:00+0900",
+      "completed_at": "2026-04-22T00:37:20+0900"
+    },
+    {
+      "id": 20,
+      "name": "webhard-folder-policy-unify",
+      "dir": "20-webhard-folder-policy-unify",
+      "status": "completed",
+      "created_at": "2026-04-22T14:00:00+0900",
+      "completed_at": "2026-04-22T19:03:47+0900"
+    },
+    {
+      "id": 21,
+      "name": "webhard-inquiry-folder-gap-fix",
+      "dir": "21-webhard-inquiry-folder-gap-fix",
+      "status": "completed",
+      "created_at": "2026-04-23T17:50:40+0900",
+      "completed_at": "2026-04-23T18:57:45+0900"
+    },
+    {
+      "id": 22,
+      "name": "contact-webhard-navigate",
+      "dir": "22-contact-webhard-navigate",
+      "status": "completed",
+      "created_at": "2026-04-24T19:00:00+0900",
+      "completed_at": "2026-04-24T12:19:24+0900"
+    },
+    {
+      "id": 23,
+      "name": "qa-contact-worker-v1",
+      "dir": "23-qa-contact-worker-v1",
+      "status": "completed",
+      "created_at": "2026-04-24T20:00:00+0900",
+      "completed_at": "2026-04-24T18:11:18+0900"
+    },
+    {
+      "id": 24,
+      "name": "external-sync-company-folder",
+      "dir": "24-external-sync-company-folder",
+      "status": "pending",
+      "created_at": "2026-04-27T15:30:00+0900"
+    },
+    {
+      "id": 29,
+      "name": "laser-only-folder-lifecycle",
+      "dir": "29-laser-only-folder-lifecycle",
+      "status": "completed",
+      "created_at": "2026-04-30T17:00:00+0900",
+      "completed_at": "2026-04-30T17:30:00+0900"
+    }
+  ]
+}

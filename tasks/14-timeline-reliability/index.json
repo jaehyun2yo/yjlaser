@@ -1,0 +1,47 @@
+{
+  "project": "yjlaser-website",
+  "task": "timeline-reliability",
+  "prompt": "문의 상세의 통합 타임라인이 일부 문의(예: 260417-F-002 레이저 가공)에서 '타임라인 기록이 없습니다.'로 표시된다. 원인은 auto-contact.service.ts의 createInitialRevision/recordChange가 fire-and-forget .catch()로 처리돼 조용히 실패하면 contact만 만들어지고 timeline/drawing_revision이 비어있기 때문이다. 해결: (A) API 응답에 contacts 테이블 기반 fallback 이벤트 제공, (C) fire-and-forget 제거 및 트랜잭션 내부로 이동.",
+  "totalPhases": 5,
+  "created_at": "2026-04-17T14:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-17T13:27:55+0900",
+      "completed_at": "2026-04-17T13:30:49+0900"
+    },
+    {
+      "phase": 1,
+      "name": "api-fallback",
+      "status": "completed",
+      "started_at": "2026-04-17T13:30:52+0900",
+      "completed_at": "2026-04-17T13:37:01+0900"
+    },
+    {
+      "phase": 2,
+      "name": "tx-guarantee",
+      "status": "completed",
+      "started_at": "2026-04-17T13:37:03+0900",
+      "completed_at": "2026-04-17T13:49:14+0900"
+    },
+    {
+      "phase": 3,
+      "name": "tests",
+      "status": "completed",
+      "started_at": "2026-04-17T13:49:16+0900",
+      "completed_at": "2026-04-17T14:02:02+0900",
+      "notes": "신규 테스트 14건 추가 완료. (F1~F7: contact-timeline fallback 7건, R1~R3: recordChange throw & tx 전파 3건, T1~T4: createNewContact 트랜잭션 보장 4건). 모두 통과. 빌드 통과. task 13의 18건(contact-timeline 6 + drawing-revision 12) 회귀 없음. 부수적으로 auto-contact.service.spec.ts의 컴파일 에러(task 13 이후 drawingRevisionService 생성자 파라미터 누락)를 해소하여 기존 pre-existing 실패 36건 중 34건이 다시 통과 상태가 됨. 남은 2건('의뢰번호 생성 형식')은 NumberService 포맷 변경 관련 기존부터의 실패로 본 task 범위 밖."
+    },
+    {
+      "phase": 4,
+      "name": "final-sync",
+      "status": "completed",
+      "started_at": "2026-04-17T14:02:04+0900",
+      "completed_at": "2026-04-17T14:06:48+0900",
+      "notes": "CHANGELOG에 timeline-reliability 엔트리 추가. spec 3개 파일(drawing-workflow/drawing-revision-history/nestjs-endpoints) 재검증 — 코드와 이미 정합 상태라 spec 수정 불필요. AC grep 3건 모두 통과. 최종 빌드/테스트: pnpm build OK, tsc --noEmit OK, webhard-api build OK. webhard-api test는 62/64 통과, 남은 2건은 Phase 3 노트에 기록된 기존 실패('의뢰번호 생성 형식', NumberService 포맷 관련, task 14 범위 밖)로 본 phase에서 재확인."
+    }
+  ],
+  "completed_at": "2026-04-17T14:06:52+0900"
+}

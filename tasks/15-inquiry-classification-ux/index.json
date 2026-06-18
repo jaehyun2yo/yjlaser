@@ -1,0 +1,54 @@
+{
+  "project": "yjlaser-website",
+  "task": "inquiry-classification-ux",
+  "prompt": "디자인\n- 미분류 카드는 분류 필요 버튼대신 칼선의뢰, 목형의뢰 버튼으로 쉽게 분류할수있게 해줘\n- 문의 생성시간 보여줘",
+  "totalPhases": 6,
+  "created_at": "2026-04-17T15:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-17T14:14:00+0900",
+      "completed_at": "2026-04-17T14:17:36+0900"
+    },
+    {
+      "phase": 1,
+      "name": "badge-refactor",
+      "status": "completed",
+      "started_at": "2026-04-17T14:17:41+0900",
+      "completed_at": "2026-04-17T14:38:22+0900"
+    },
+    {
+      "phase": 2,
+      "name": "admin-context-menu",
+      "status": "completed",
+      "started_at": "2026-04-17T14:38:24+0900",
+      "completed_at": "2026-04-17T14:47:39+0900"
+    },
+    {
+      "phase": 3,
+      "name": "worker-context-menu",
+      "status": "completed",
+      "started_at": "2026-04-17T14:47:41+0900",
+      "completed_at": "2026-04-17T14:55:21+0900"
+    },
+    {
+      "phase": 4,
+      "name": "worker-created-at",
+      "status": "completed",
+      "started_at": "2026-04-17T14:55:24+0900",
+      "completed_at": "2026-04-17T15:05:00+0900",
+      "notes": "Phase 4 작업 완료 (OfficeContactCard/StaffContactCard에 formatCreatedAt 생성시간 표시 + 테스트 신규). Claude API 429 rate limit으로 인해 claude subprocess가 index.json status 업데이트 + 커밋 전 중단. 수동으로 테스트 통과(StaffContactCard 3건) + 타입체크 통과 확인 후 status=completed 수동 마킹 및 수동 커밋."
+    },
+    {
+      "phase": 5,
+      "name": "docs-sync",
+      "status": "completed",
+      "started_at": "2026-04-17T16:07:04+0900",
+      "completed_at": "2026-04-17T16:12:37+0900",
+      "notes": "문서 동기화 완료. spec 수정(WorkerContextMenu 재분류 위치 '아래' → 메뉴 상단 + 구분선 후 기존 항목, 구현 결과 섹션 §7 추가), CHANGELOG [Unreleased] 2026-04-17 inquiry-classification-ux 엔트리 추가, nextjs-routes.md에 PATCH /api/contacts/[id]/inquiry-type 엔트리 + 재분류 confirm UX 주석 추가. AC: pnpm build OK, npx tsc --noEmit OK. pnpm test는 R2 업로드/다운로드 테스트 2건 실패하나 Phase 5 변경 전 stash 상태에서도 동일 실패 — 기존 회귀(문서 수정은 영향 없음)."
+    }
+  ],
+  "completed_at": "2026-04-17T16:12:39+0900"
+}

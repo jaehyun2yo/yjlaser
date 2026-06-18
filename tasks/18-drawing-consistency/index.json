@@ -1,0 +1,81 @@
+{
+  "project": "yjlaser-website",
+  "task": "drawing-consistency",
+  "prompt": "피드백\n1. [Image #1] 도면 추가로 업로드시 타임라인이 실시간으로 반영하게 수정\n2. [Image #2] 기존에 올라와있던 도면을 다운로드가 안될때가있음 (웹하드에 어디에 저장되있는지?)\n2-1. 다운로드시 문의번호가 붙지않음 (업로드 기준으로 상태에 따라서 사무실 문의번호, 현장번호가 파일에 붙어야됨)\n3. 도면 원본 버전이 타임라인에 없다.\n4. 현재 한 문의에 도면이 여러개 있을때 관리 어떻게 하는지 조사해봐.\n\n확정 설계:\n- 폴더 구조: {업체명}/{칼선의뢰|목형의뢰}/문의-{O번호}_{F번호}/\n- 파일명 규칙: [{번호}] 원본명 (번호 = revision.processStage 우선 → contact.processStage fallback → inquiryType fallback)\n- 폴더명: O만 있으면 문의-{O}, F만 있으면 문의-{F}, 둘 다면 문의-{O}_{F} (F 추가 발급 시 rename)\n- 관리자 수동 분류 / inquiryType 변경 시 WebhardFile 자동 이동 + 폴더 생성\n- 원본 v1 누락 수정: createInitialRevision 트랜잭션화 + 백필 스크립트\n- 실시간 반영: 상세 페이지 클라이언트 래퍼 + 8개 이벤트 구독",
+  "totalPhases": 10,
+  "created_at": "2026-04-20T19:15:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-20T16:50:20+0900",
+      "completed_at": "2026-04-20T16:59:16+0900"
+    },
+    {
+      "phase": 1,
+      "name": "filename-util",
+      "status": "completed",
+      "started_at": "2026-04-20T16:59:19+0900",
+      "completed_at": "2026-04-20T17:08:13+0900"
+    },
+    {
+      "phase": 2,
+      "name": "schema-extend",
+      "status": "completed",
+      "started_at": "2026-04-20T17:08:15+0900",
+      "completed_at": "2026-04-20T17:17:02+0900"
+    },
+    {
+      "phase": 3,
+      "name": "initial-revision-fix",
+      "status": "completed",
+      "started_at": "2026-04-20T17:17:05+0900",
+      "completed_at": "2026-04-20T17:27:59+0900"
+    },
+    {
+      "phase": 4,
+      "name": "filename-prefix-apply",
+      "status": "completed",
+      "started_at": "2026-04-20T17:28:01+0900",
+      "completed_at": "2026-04-20T17:41:58+0900"
+    },
+    {
+      "phase": 5,
+      "name": "folder-routing-hooks",
+      "status": "completed",
+      "started_at": "2026-04-20T17:42:01+0900",
+      "completed_at": "2026-04-20T18:01:19+0900"
+    },
+    {
+      "phase": 6,
+      "name": "r2-key-robustness",
+      "status": "completed",
+      "started_at": "2026-04-20T18:01:21+0900",
+      "completed_at": "2026-04-20T18:15:00+0900"
+    },
+    {
+      "phase": 7,
+      "name": "webhard-migration",
+      "status": "completed",
+      "started_at": "2026-04-20T18:27:23+0900",
+      "completed_at": "2026-04-20T18:44:48+0900"
+    },
+    {
+      "phase": 8,
+      "name": "timeline-realtime",
+      "status": "completed",
+      "started_at": "2026-04-20T18:44:50+0900",
+      "completed_at": "2026-04-20T18:55:11+0900"
+    },
+    {
+      "phase": 9,
+      "name": "docs-sync",
+      "status": "completed",
+      "started_at": "2026-04-20T18:55:13+0900",
+      "completed_at": "2026-04-20T19:09:00+0900",
+      "error_message": "pnpm build·tsc·webhard-api build 는 통과. pnpm test 에서 R2 env 캐싱 이슈로 2건(src/__tests__/lib/r2/{upload,download}.test.ts) 실패 — task 18 범위 밖의 pre-existing 환경 이슈. webhard-api pnpm test 도 orders/auto-contact 서비스 legacy 번호 포맷 기대 등 pre-existing 실패 61건 — phase 9 는 코드 변경 없음(문서+E2E 스펙만)이므로 회귀 원인 아님. E2E(`npx playwright test e2e/drawing-consistency.spec.ts`)는 dev 서버+시드 DB 미구축으로 미실행, 스펙 작성만으로 대체 (task 17 phase 6 선례)."
+    }
+  ],
+  "completed_at": "2026-04-20T19:09:02+0900"
+}

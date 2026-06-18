@@ -1,0 +1,38 @@
+{
+  "project": "yjlaser-website",
+  "task": "laser-only-flow",
+  "prompt": "레이저 가공 업체관리에 등록된 업체의 문의는 레이저가공만 하므로, 레이저가공 완료 시 칼작업/오시작업을 거치지 않고 바로 완료 처리. 업체 대시보드에서도 접수→레이저가공→완료 3단계만 보이게.",
+  "totalPhases": 4,
+  "created_at": "2026-04-15T15:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-15T17:24:39+0900",
+      "completed_at": "2026-04-15T17:31:20+0900"
+    },
+    {
+      "phase": 1,
+      "name": "backend-flow",
+      "status": "completed",
+      "started_at": "2026-04-15T17:31:28+0900",
+      "completed_at": "2026-04-15T17:36:33+0900"
+    },
+    {
+      "phase": 2,
+      "name": "frontend-ui",
+      "status": "completed",
+      "started_at": "2026-04-15T17:38:25+0900",
+      "completed_at": "2026-04-15T17:52:48+0900"
+    },
+    {
+      "phase": 3,
+      "name": "docs-sync",
+      "status": "completed",
+      "started_at": "2026-04-15T17:52:53+0900",
+      "completed_at": "2026-04-15T18:00:26+0900"
+    }
+  ],
+  "completed_at": "2026-04-15T18:00:30+0900"
+}

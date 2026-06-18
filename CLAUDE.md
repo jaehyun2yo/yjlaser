@@ -1,119 +1,158 @@
-# YJLaser 프로젝트 지침
+# CLAUDE.md
 
-## 기본 규칙
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-- 모든 답변은 **한글**로 작성한다.
-- 코드 주석, 변수명, 기술 용어는 영어 허용.
-- 커밋 메시지는 **한글**로 작성한다.
+## Response Language
 
----
+All responses MUST be in Korean. Exceptions: code identifiers, technical terms, file paths, error messages.
 
-## 회사 개요
+## Commands
 
-유진레이저목형 — 도무송 목형 제작 전문 B2B 제조업체.
-거래처로부터 도면을 받아 목형을 제작·납품. 업무 흐름 상세는 → [docs/workflow.md](docs/workflow.md)
+```bash
+pnpm dev              # Next.js dev (Turbopack, :3000)
+pnpm build            # Production build
+pnpm lint             # ESLint
+pnpm format           # Prettier
+pnpm test             # Jest
+npx tsc --noEmit      # Type check (safe to auto-run)
+pnpm test -- --testPathPattern="<path>"  # Single test
 
----
+# NestJS backend (webhard-api/)
+pnpm webhard:dev      # NestJS dev (:4000, watch)
+pnpm webhard:build    # Build backend
+pnpm webhard:prisma   # Prisma client generate
+cd webhard-api && npx prisma migrate dev --name <name>  # 마이그레이션 생성
+cd webhard-api && npx prisma db seed                     # 시드 데이터
+pnpm dev:all          # Both frontend + backend
 
-## 활성 프로젝트
-
-| 프로젝트 | 폴더 | 역할 | 스택 | 배포 |
-|---------|------|------|------|------|
-| yjlaser_website | `./yjlaser_website/` | 웹사이트·Worker 작업관리·웹하드·API | Next.js 15, NestJS, Prisma | Vercel + Railway |
-| 외부웹하드동기화프로그램 | `./외부웹하드동기화프로그램/` | LGU+ → 자체 웹하드 동기화 | Electron, TS, React, SQLite | NAS 자동 업데이트 |
-| 유진레이저목형 관리프로그램 | `./유진레이저목형 관리프로그램/` | DXF 분류·청구서 생성·발송 | Python, PyQt5, Popbill API | PyInstaller EXE |
-| 레이저네스팅프로그램 | `./레이저네스팅프로그램/` | DXF 합판 배치 최적화 | Python 3.8, PyQt6, ezdxf | PyInstaller EXE |
-| computeroff | `./computeroff/` | PC 부팅/종료 모니터링 | Python, FastAPI, SQLite | Railway + Inno Setup |
-
-> `./현재 아직 사용안하는것들/` — 아카이브 프로젝트 보관
-
-프로젝트 간 연동·인증·DB 상세 → [docs/architecture.md](docs/architecture.md)
-
----
-
-## 개발 컨벤션 (요약)
-
-### 브랜치
-- 기본: `main` 단일 브랜치
-- 큰 기능: `feat/{프로젝트약칭}/{설명}` → 머지
-
-### 커밋 메시지
-`{타입}: {한글 설명}` — feat / fix / refactor / docs / chore / perf / test
-
-### 테스트
-- Python: pytest, TDD 권장
-- Electron: Vitest + Playwright
-- 웹사이트: 핵심 API 테스트 필수
-- **"깨지면 안 되는 것"** 위주 실용적 접근
-
-### 문서화
-- 코드 변경 → docs/specs/ 동기화 (spec-code-sync)
-- 데스크톱 앱: CHANGELOG.md + SemVer 유지
-- 웹사이트: 커밋 기반 버전
-
-컨벤션 상세는 위 요약 및 각 프로젝트에 존재하는 `AGENTS.md`, `CLAUDE.md`, `README.md` 참조.
-
----
-
-## TODO
-
-→ [docs/todo.md](docs/todo.md)
-
----
-
-## 참조 문서
-
-| 문서 | 내용 |
-|------|------|
-| [docs/workflow.md](docs/workflow.md) | 업무 워크플로우 상세 (접수~납품 8단계) |
-| [docs/architecture.md](docs/architecture.md) | 프로젝트 간 연동, 데이터 흐름, 인증, DB |
-| [docs/todo.md](docs/todo.md) | 할일 리스트 (우선순위별) |
-
-각 프로젝트 내부의 `AGENTS.md`, `CLAUDE.md`, `README.md`, `.claude/rules/` 중 존재하는 파일에 프로젝트별 상세 규칙 있음.
-
-<!-- ooo:START -->
-<!-- ooo:VERSION:0.28.2 -->
-# Ouroboros — Specification-First AI Development
-
-> Before telling AI what to build, define what should be built.
-> As Socrates asked 2,500 years ago — "What do you truly know?"
-> Ouroboros turns that question into an evolutionary AI workflow engine.
-
-Most AI coding fails at the input, not the output. Ouroboros fixes this by
-**exposing hidden assumptions before any code is written**.
-
-1. **Socratic Clarity** — Question until ambiguity ≤ 0.2
-2. **Ontological Precision** — Solve the root problem, not symptoms
-3. **Evolutionary Loops** — Each evaluation cycle feeds back into better specs
-
-```
-Interview → Seed → Execute → Evaluate
-    ↑                           ↓
-    └─── Evolutionary Loop ─────┘
+# Development Setup
+bash scripts/setup-dev.sh         # 개발 환경 초기 셋업
+bash scripts/setup-dev.sh --dry-run  # 드라이런 (실행 없이 단계 확인)
 ```
 
-## ooo Commands
+`npx tsc --noEmit` may run automatically. `pnpm build`, `git add/commit/push` require explicit user request.
 
-Each command loads its agent/MCP on-demand. Details in each skill file.
+## Architecture
 
-| Command | Loads |
-|---------|-------|
-| `ooo` | — |
-| `ooo interview` | `ouroboros:socratic-interviewer` |
-| `ooo seed` | `ouroboros:seed-architect` |
-| `ooo run` | MCP required |
-| `ooo evolve` | MCP: `evolve_step` |
-| `ooo evaluate` | `ouroboros:evaluator` |
-| `ooo unstuck` | `ouroboros:{persona}` |
-| `ooo status` | MCP: `session_status` |
-| `ooo setup` | — |
-| `ooo help` | — |
+Monorepo: two apps sharing `.env.local` and one PostgreSQL database (Prisma ORM).
 
-## Agents
+**Next.js frontend** (`src/`) — Vercel
 
-Loaded on-demand — not preloaded.
+- Next.js 15 App Router + Turbopack, React 19, TypeScript 5 strict
+- Tailwind CSS 4 via centralized constants (`@/lib/styles.ts`)
+- React Query (`queryKeys` factory) + Zustand
+- All DB access via NestJS API (`nestjs-server-client.ts`)
+- Cloudflare R2 storage, Sentry (prod), Inngest background jobs
 
-**Core**: socratic-interviewer, ontologist, seed-architect, evaluator,
-wonder, reflect, advocate, contrarian, judge
-**Support**: hacker, simplifier, researcher, architect
-<!-- ooo:END -->
+**NestJS backend** (`webhard-api/`) — Railway (Docker)
+
+- NestJS 10, Prisma ORM (sole DB access layer), Socket.IO, prefix `/api/v1`
+- 37 Prisma models: Contact, ContactStatusHistory, Company, CompanyStorage, CompanyFeedback, VisitBooking, Portfolio, Post, WebhardFile, WebhardFolder, WebhardFolderFavorite, WebhardSettings, WebhardUserSettings, WebhardLog, WebhardSyncHistory, WebhardSyncState, Machine, Task, ErpWorker, WorkerAccessLog, WorkerNote, Order, OrderEvent, Delivery, DeliveryCompany, InventoryItem, InventoryTransaction, ApiKey, ProgramHeartbeat, SyncLog, ActivityLog, Notification, PushSubscription, ShareLink, ActiveSession, SystemSetting, NumberCounter
+- Modules: Auth, Files, Folders, Trash, Search, Storage, ERP, Integration, Contacts, Companies, Bookings, Notifications, PublicData, Sessions, ActivityLogs, Feedback, ShareLinks, Sync, Health, Settings, Events, DeliveryCompanies, PushSubscriptions, Mail
+
+Next.js never accesses PostgreSQL directly — all DB operations go through NestJS API.
+
+## Auth
+
+| Method        | Scope                    | Mechanism                                                         |
+| ------------- | ------------------------ | ----------------------------------------------------------------- |
+| Admin session | `/admin/*`               | Cookie + env credentials (`ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH`) |
+| Company auth  | `/company/*`, `/webhard` | Password hash (bcrypt) + session cookie via NestJS                |
+| API key       | CLI/external programs    | `X-API-Key` header, timing-safe compare                           |
+| Worker PIN    | `/worker/*`              | PIN hash via NestJS `erp_workers` table                           |
+
+## Routes
+
+- `/` — public pages (landing, portfolio, blog, contact, about)
+- `/login`, `/register` — company auth pages
+- `/notice`, `/notice/[slug]` — notice pages
+- `/webhard` — company webhard file access
+- `/admin/*` — admin dashboard, work management, integration, webhard management (route group `(admin)`)
+- `/company/*` — company portal: orders, billing, profile, feedback
+- `/worker/*` — field worker mobile UI: tasks, PIN login
+- `/api/*` — Next.js API routes (incl. `/api/auth/`, `/api/debug/`, `/api/erp/`, `/api/push/`, `/api/sync/`, `/api/worker/`, `/api/inngest/`)
+
+## Conventions
+
+**Styling** — CSS variable-based design tokens in `globals.css`, consumed via `@/lib/styles` (TS constants) or Tailwind utilities (`bg-brand`, `text-success`). Dark mode is automatic via CSS variables — no `dark:` classes. For new interactive elements, use UI components from `@/components/ui/` (`<Button>`, `<Input>`, `<Badge>`, etc.) instead of string constants. Portfolio pages are always light mode (`data-portfolio-page="true"`).
+
+**React Query** — Always use `queryKeys` factory from `@/lib/react-query/queryKeys.ts`. Never raw string arrays. After mutations, invalidate specific queries — never `window.location.reload()`.
+
+**Realtime** — Use `useSocketNamespace` hook from `@/lib/socket/useSocketNamespace.ts`. Always return cleanup in `useEffect`.
+
+**Files** — Local: `_components/`, `_lib/` (underscore = private). Used 2+ places → move to global `components/` or `lib/`. Always `@/` imports, never relative.
+
+**Logging** — `logger.createLogger('Name')` from `@/lib/utils/logger`. No `console.log`.
+
+**Components** — Server Components by default. `'use client'` only when interactive.
+
+**NestJS** — DTOs with `class-validator`. Global `ValidationPipe` (whitelist + forbidNonWhitelisted). `AuditLogInterceptor` globally. Env load order: `../.env.local` → `../.env` → `.env.local` → `.env`.
+
+## Git
+
+Commit messages in Korean. Format:
+
+```
+<type>: <제목>
+
+- 변경사항
+```
+
+Types: `feat`, `fix`, `refactor`, `style`, `docs`, `chore`, `perf`, `test`
+
+Only commit/push when the user explicitly asks. Stage only files that belong to the current task; do not use broad `git add .` when unrelated dirty files exist.
+
+## Parent Review Directives
+
+When the parent project assigns work from `docs/parent-review/`, start with:
+
+1. `PROJECT_STATUS.md`
+2. `docs/parent-review/README.md`
+3. the relevant `docs/parent-review/*.md`
+4. this file and `AGENTS.md`
+
+After completing the directive, update the child directive status and any changed source status docs before reporting back to the parent project.
+
+## Env Vars
+
+All env vars are in root `.env.local` (shared by Next.js and NestJS). NestJS loads `../../.env.local` first (see `webhard-api/src/main.ts`). `webhard-api/.env` is NOT used — do not create it.
+
+Dev/Prod separation:
+
+- Dev: `.env.local` points to dev Supabase + `yjlaser-dev` R2 bucket
+- Prod: Vercel/Railway dashboards have production values
+
+- `DATABASE_URL` — PostgreSQL via Supabase Pooler (Transaction mode, port 6543, pgbouncer)
+- `DIRECT_URL` — PostgreSQL direct connection (port 5432, for migrations only)
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_BASE_URL`, `R2_ENDPOINT` — R2 storage
+- `SESSION_SECRET` — cookie encryption
+- `USE_SECURE_COOKIES` — cookie security flag
+- `COOKIE_DOMAIN` — cookie domain
+- `MIGRATION_API_KEY` — API auth
+- `INTEGRATION_API_KEY` — external integration API key
+- `NESTJS_PORT` / `PORT` — backend port (default 4000)
+- `CORS_ORIGINS` — comma-separated origins
+- `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` — mail delivery
+- `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` — rate limiting
+- `NEXT_PUBLIC_WEBHARD_API_URL` — webhard API base URL (frontend)
+- `NEXT_PUBLIC_SENTRY_DSN` — Sentry error tracking frontend (prod only)
+- `SENTRY_DSN` — Sentry error tracking NestJS backend (prod only)
+- `NEXT_PUBLIC_SITE_URL` — public site URL (e.g. https://yjlaser.com)
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — web push VAPID public key
+
+## Hard Rules
+
+- No `any` — explicit types always
+- No `dark:` classes — CSS variables handle dark mode automatically
+- No `console.log` — use logger
+- No relative imports — use `@/`
+- No raw query keys — use `queryKeys` factory
+- No skipping `useEffect` cleanup
+- No `window.location.reload()` — invalidate queries
+- No direct DB access from Next.js — all DB via NestJS API (Prisma)
+- No `BUTTON_STYLES`/`INPUT_STYLES` for new code — use `<Button>`, `<Input>` from `@/components/ui/`
+- No auto build/commit/push — user must request
+
+## CLAUDE.md Maintenance
+
+English only. < 200 lines. Project-specific patterns only. Update when architecture/conventions change.

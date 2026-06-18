@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- 파일 모양 배경 -->
+  <path d="M12 4 L44 4 L52 12 L52 60 L12 60 Z" fill="#ffffff" stroke="#DC2626" stroke-width="2"/>
+
+  <!-- 접힌 모서리 -->
+  <path d="M44 4 L44 12 L52 12" fill="#FEE2E2" stroke="#DC2626" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- PDF 텍스트 배경 박스 -->
+  <rect x="8" y="32" width="48" height="20" rx="2" fill="#DC2626"/>
+
+  <!-- P 글자 -->
+  <path d="M16 38 L16 48 M16 38 L20 38 C22 38 23 39 23 41 C23 43 22 44 20 44 L16 44" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- D 글자 -->
+  <path d="M27 38 L27 48 L30 48 C34 48 36 46 36 43 C36 40 34 38 30 38 L27 38" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- F 글자 -->
+  <path d="M41 38 L41 48 M41 38 L49 38 M41 43 L47 43" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

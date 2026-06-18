@@ -1,0 +1,7 @@
+{
+  "phase": 7,
+  "name": "docs-sync",
+  "exitCode": 0,
+  "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"api_error_status\":null,\"duration_ms\":645306,\"duration_api_ms\":558393,\"num_turns\":70,\"result\":\"\",\"stop_reason\":\"end_turn\",\"session_id\":\"cb95e893-1519-4921-951d-0779ec54a64c\",\"total_cost_usd\":4.739449500000002,\"usage\":{\"input_tokens\":460,\"cache_creation_input_tokens\":150286,\"cache_read_input_tokens\":6065224,\"output_tokens\":30610,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":150286,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":162411,\"cache_creation_input_tokens\":1111,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1111},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-opus-4-6[1m]\":{\"inputTokens\":460,\"outputTokens\":30610,\"cacheReadInputTokens\":6065224,\"cacheCreationInputTokens\":150286,\"webSearchRequests\":0,\"costUSD\":4.739449500000002,\"contextWindow\":1000000,\"maxOutputTokens\":64000}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"uuid\":\"0ae6fafa-e4a2-470e-ba9e-f363fa42e9b2\"}\n",
+  "stderr": ""
+}

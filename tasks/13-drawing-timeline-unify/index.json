@@ -1,0 +1,57 @@
+{
+  "project": "yjlaser-website",
+  "task": "drawing-timeline-unify",
+  "prompt": "기능개발 피드백\n\n1. 타임라인 + 도면이력 을 합치는 타임라인으로 통합시켜줘\n2. 기존 문의생성시 올려져있던 파일도 타임라인에 포함시켜야됨\n3. 타임라인에 표시되는 도면들 다운로드 되게해줘\n4. 문의 과정에 따라 추가로 올리는 도면을 웹하드에 어떻게 저장되고있는지 확인해줘 (저장안되는듯함)\n\nUI 수정\n\n1. 사이드바 투명 으로됨\n2. 검색 결과 투명 으로됨\n3. 전체검색바 투명 으로됨",
+  "totalPhases": 6,
+  "created_at": "2026-04-17T12:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-17T11:27:43+0900",
+      "completed_at": "2026-04-17T11:33:06+0900"
+    },
+    {
+      "phase": 1,
+      "name": "webhard-sync",
+      "status": "completed",
+      "started_at": "2026-04-17T11:33:09+0900",
+      "completed_at": "2026-04-17T11:44:36+0900",
+      "notes": "Prisma migration `drawing_revisions_webhard_link` applied. syncRevisionToWebhard helper + createRevision/createInitialRevision wiring 완료. 12 새 spec 테스트 모두 통과 (9 필수 + 3 회귀). 기존 테스트 59건 실패는 phase 1 이전부터 존재 (orders.service.spec 등 날짜 mock 불일치 — 본 phase 범위 밖)."
+    },
+    {
+      "phase": 2,
+      "name": "timeline-api",
+      "status": "completed",
+      "started_at": "2026-04-17T11:44:39+0900",
+      "completed_at": "2026-04-17T11:53:43+0900",
+      "notes": "TimelineItemDto 신규 + getTimeline 인터리브 구현 + forCompany 필터/마스킹 + Controller camelCase 래핑. DrawingRevisionService.createRevision 내 fire-and-forget recordChange 제거(중복 타임라인·NaN/NaN 원인). 신규 테스트 9건(service 6 + controller 3) 모두 통과, drawing-revision 회귀 테스트 12건 유지. 전체 테스트의 기존 실패 59건은 phase 2 범위 밖(AutoContactService 생성자 미스매치 등)."
+    },
+    {
+      "phase": 3,
+      "name": "timeline-ui",
+      "status": "completed",
+      "started_at": "2026-04-17T11:53:45+0900",
+      "completed_at": "2026-04-17T12:29:58+0900",
+      "notes": "신규 TimelineItem 타입 + ContactTimeline 통합 컴포넌트 + useContactTimeline 정합화. DrawingRevisionTimeline.tsx, useDrawingRevisions.ts, /api/contacts/[id]/drawing-revisions GET 라우트 삭제 (POST는 모달용으로 유지). queryKeys.contacts.drawingRevisions 제거 — DrawingRevisionModal/CompanyDrawingUpload/WorkerDrawingUpload/Socket.IO hook 모두 timeline 키로 invalidate. ContactDetailView 중복 Section 2개 제거 → 단일 '타임라인' Section + 도면 수정 등록 버튼 헤더 액션. CompanyDrawingHistory rewrite + ContactCardToggle/Office/StaffContactCard/DeliveredItemCard 모두 통합 타임라인 사용. 신규 Jest 테스트 7건 모두 통과 (status_change/drawing_revision/파일펼치기/NaN방지/비공개뱃지/truncate). pnpm build + npx tsc --noEmit 통과. Playwright 스펙(A/A2/B/C+D) 작성 완료 — 단 .auth/user.json 갱신 실패 (test_admin 계정 미존재, 기존 e2e 공통 인프라 이슈, phase 3 범위 밖). 기존 R2 env 테스트 2건 실패도 phase 3 이전부터 존재."
+    },
+    {
+      "phase": 4,
+      "name": "css-theme-fix",
+      "status": "completed",
+      "started_at": "2026-04-17T12:30:01+0900",
+      "completed_at": "2026-04-17T12:42:19+0900",
+      "notes": "globals.css의 @theme + @theme inline 이중 블록 → 단일 @theme 블록으로 통합 (shadcn semantic tokens 매핑 포함). 회귀 방지 주석 + design-system.md 참조 추가. WebhardSidebar/SearchDropdown/SearchModal에 data-testid 3곳 추가. e2e/webhard-background.spec.ts 신규 3건 모두 통과 (sidebar/dropdown/modal 배경 oklch(1 0 0) 불투명 확인). 빌드 산출물(.next/static/chunks/*.css)에서 .bg-card/.bg-muted/.bg-background 유틸 생성 확인. pnpm build + npx tsc --noEmit 통과. 기존 auth 파일(2026-03-31 생성, 쿠키 만료)은 globalSetup이 재로그인 시도하나 하드코딩된 'test_admin' 폴백이 .env.local의 실제 TEST_ADMIN_USERNAME='test'와 불일치 — TEST_ADMIN_USERNAME=test TEST_ADMIN_PASSWORD=test1234 env로 재시작하여 통과."
+    },
+    {
+      "phase": 5,
+      "name": "final-sync",
+      "status": "completed",
+      "started_at": "2026-04-17T12:42:22+0900",
+      "completed_at": "2026-04-17T12:46:22+0900",
+      "notes": "CHANGELOG.md 최상단에 2026-04-17 drawing-timeline-unify 엔트리 추가 (기능 개발 6건 + 버그 수정 4건 + 내부 3건). nestjs-endpoints.md의 TimelineItemDto shape을 실제 구현과 일치시키기 위해 StatusChangePayload/DrawingRevisionPayload로 분리하고 revisionId 필드 추가 + changeType 매핑 테이블(status/process_stage/type) 명시. 기타 spec 파일(drawing-workflow.md, drawing-revision-history.md, design-system.md, webhard.md, integration.md)은 Phase 0에서 이미 최종 구현과 일치하도록 갱신되어 추가 수정 불필요. features-list.md와 docs-diff.md는 존재하지 않아 skip (phase 지침 준수). AC grep 2건 모두 통과."
+    }
+  ],
+  "completed_at": "2026-04-17T12:46:24+0900"
+}

@@ -1,0 +1,38 @@
+{
+  "project": "yjlaser-website",
+  "task": "split-realtime-fix",
+  "prompt": "1. 작업완료시 실시간 반영할수있도록 ( 새로고침 해야지 적용됨 )\n2. 분할된 하위 문의 작업완료시에도 동일하게 작업완료 모달 나오게\n3. 분할 문의 타임라인이 기록되지않음",
+  "totalPhases": 4,
+  "created_at": "2026-04-14T00:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-14T10:54:35+0900",
+      "completed_at": "2026-04-14T10:56:11+0900"
+    },
+    {
+      "phase": 1,
+      "name": "backend-socket-timeline",
+      "status": "completed",
+      "started_at": "2026-04-14T10:56:19+0900",
+      "completed_at": "2026-04-14T11:02:00+0900"
+    },
+    {
+      "phase": 2,
+      "name": "frontend-socket-subscription",
+      "status": "completed",
+      "started_at": "2026-04-14T11:00:37+0900",
+      "completed_at": "2026-04-14T11:06:33+0900"
+    },
+    {
+      "phase": 3,
+      "name": "frontend-confirm-modal",
+      "status": "completed",
+      "started_at": "2026-04-14T11:06:36+0900",
+      "completed_at": "2026-04-14T11:13:26+0900"
+    }
+  ],
+  "completed_at": "2026-04-14T11:13:28+0900"
+}

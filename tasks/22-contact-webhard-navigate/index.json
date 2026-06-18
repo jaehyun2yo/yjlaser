@@ -1,0 +1,52 @@
+{
+  "project": "yjlaser-website",
+  "task": "contact-webhard-navigate",
+  "prompt": "1. 해당 문의에 맞춰서 웹하드에 폴더생성은되나 해당 도면도 문의폴더로 자동이동시켜야되는데 안옮긴다.\n2. worker 페이지, admin 페이지에서 문의카드에 오른쪽마우스메뉴로 웹하드 이동 기능 추가. 해당 기능은 그 도면파일이있는 웹하드로 이동하는 기능임.",
+  "totalPhases": 6,
+  "created_at": "2026-04-24T19:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-24T11:22:48+0900",
+      "completed_at": "2026-04-24T11:26:50+0900"
+    },
+    {
+      "phase": 1,
+      "name": "backend-relocate-unify",
+      "status": "completed",
+      "started_at": "2026-04-24T11:26:52+0900",
+      "completed_at": "2026-04-24T11:41:36+0900"
+    },
+    {
+      "phase": 2,
+      "name": "backend-tests",
+      "status": "completed",
+      "started_at": "2026-04-24T11:41:38+0900",
+      "completed_at": "2026-04-24T11:50:27+0900"
+    },
+    {
+      "phase": 3,
+      "name": "webhard-fileid-query",
+      "status": "completed",
+      "started_at": "2026-04-24T11:50:30+0900",
+      "completed_at": "2026-04-24T12:04:18+0900"
+    },
+    {
+      "phase": 4,
+      "name": "context-menu-webhard-link",
+      "status": "completed",
+      "started_at": "2026-04-24T12:04:21+0900",
+      "completed_at": "2026-04-24T12:12:30+0900"
+    },
+    {
+      "phase": 5,
+      "name": "docs-sync-wrap",
+      "status": "completed",
+      "started_at": "2026-04-24T12:12:33+0900",
+      "completed_at": "2026-04-24T12:19:22+0900"
+    }
+  ],
+  "completed_at": "2026-04-24T12:19:24+0900"
+}

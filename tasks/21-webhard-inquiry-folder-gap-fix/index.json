@@ -1,0 +1,45 @@
+{
+  "project": "yjlaser-website",
+  "task": "webhard-inquiry-folder-gap-fix",
+  "prompt": "현재 문의생성시 ( 여러가지 방법 존재 ) 해당 문의 폴더가 생성이 안된다 ( 외부웹하드도 각 업체 폴더 에 생성되게끔해줘야됨 )\n\n실제 운영 시나리오: 외부웹하드(LGU+) → 동기화 프로그램 → 자체웹하드 → auto-contact 자동 문의 생성 지점에서 문의폴더가 만들어지지 않아 이후 올라오는 추가 도면을 문의별로 관리할 수 없음. 미분류 상태 포함.\n\n근본 원인:\n1) auto-contact.service.ts:detectAndCreate 가 finalInquiryType 확정 시에만 ensureInquiryFolder 호출 — 미분류(null) 상태로 생성되는 Contact 는 폴더 없이 생성됨\n2) contacts.service.ts:555-589 의 `if (!company)` 가드가 ensureInquiryFolder 호출 자체를 막음 — 9be443cc 에서 내부 name fallback 을 추가했음에도 외부 가드로 차단\n3) ensureInquiryFolder 가 null 반환 시 logger.warn 만 남아 실패 원인 추적 어려움\n\n확정 정책:\n- 미분류 상태여도 inquiryNumber(O번호) 기반으로 `문의-{O}` 폴더 즉시 생성\n- 분류 + workNumber 발급 시 기존 폴더 재활용 후 `문의-{O}_{F}` rename (task 20 기존 로직 활용)\n- ensureInquiryFolder fallback 2단계: companyName 완전 일치 → 정규화(공백·특수문자 제거, NFKC) 일치\n- 전 경로 best-effort + logger.warn({ reason_code, contactId, companyName }) — reason_code: NO_INQUIRY_NUMBER / NO_COMPANY_ROOT / NO_FALLBACK_MATCH / FOLDER_CREATE_FAILED\n- 공개폼 `!company` 가드 완화 (ensureInquiryFolder 호출 허용, mismatch 알림 병행)\n\n폴더 구조 (task 20 계승 유지):\n{업체}/\n├── 칼선의뢰/\n├── 목형의뢰/\n├── 문의/       ← template (folderKind='template')\n│   ├── 문의-{O}/           ← 미분류 initial\n│   ├── 문의-{O}_{F}/       ← 분류+F 발급 rename\n│   └── 문의-{O}-1/         ← 분할\n└── 완료/\n\n범위 제외 (task 22+ 후속):\n- D 경로 (관리프로그램 DXF 파일 업로드 클라이언트 구현, yjlaser_api_client/client.py — 서버 POST /integration/dxf-match/upload 는 이미 구현됨)\n- 기존 업체 루트 직하 `문의-{O}` 폴더 마이그레이션\n- Admin 재시도 UI (webhardWarning 복구)\n- `/integration/contacts/auto` (createAutoContact) 신규 문의 생성 경로의 폴더 연결",
+  "totalPhases": 5,
+  "created_at": "2026-04-23T17:50:40+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-23T18:03:43+0900",
+      "completed_at": "2026-04-23T18:11:03+0900"
+    },
+    {
+      "phase": 1,
+      "name": "folders-service-extend",
+      "status": "completed",
+      "started_at": "2026-04-23T18:11:07+0900",
+      "completed_at": "2026-04-23T18:28:20+0900"
+    },
+    {
+      "phase": 2,
+      "name": "contacts-service-gap-fix",
+      "status": "completed",
+      "started_at": "2026-04-23T18:28:25+0900",
+      "completed_at": "2026-04-23T18:38:36+0900"
+    },
+    {
+      "phase": 3,
+      "name": "auto-contact-unclassified",
+      "status": "completed",
+      "started_at": "2026-04-23T18:38:39+0900",
+      "completed_at": "2026-04-23T18:47:25+0900"
+    },
+    {
+      "phase": 4,
+      "name": "docs-sync-changelog",
+      "status": "completed",
+      "started_at": "2026-04-23T18:47:28+0900",
+      "completed_at": "2026-04-23T18:57:43+0900"
+    }
+  ],
+  "completed_at": "2026-04-23T18:57:45+0900"
+}

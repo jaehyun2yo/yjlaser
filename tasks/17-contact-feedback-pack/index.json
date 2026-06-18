@@ -1,0 +1,61 @@
+{
+  "project": "yjlaser-website",
+  "task": "contact-feedback-pack",
+  "prompt": "1. 미분류, 칼선의뢰, 목형의뢰 배지/버튼의 주황 ring/pulse 테두리 없애고 칼선의뢰-목형의뢰 사이 간격 주기\n2. 타임라인 파일명 바로 옆 다운로드 버튼 (이미 존재 — 유지)\n3. 목형의뢰/칼선의뢰 재분류 이벤트에 작업자명 타임라인 노출\n4. 타임라인 변동 시 실시간 반영 (현재는 새로고침 필요) — 소켓 구독\n5. 타임라인 ASC 정렬 (오래된 위 → 최신 아래)\n6. 도면 업로드 후 다운로드 시 원본이 아닌 최신 리비전 파일 내려오도록\n7. 타임라인 다운로드 버튼 401 (worker session 미지원) 해결\n8. 긴급 배치 시 사이렌 아이콘 + 붉은 '긴급' 배지만 추가, 기존 카드 배경/border 유지",
+  "totalPhases": 7,
+  "created_at": "2026-04-20T16:00:00+0900",
+  "phases": [
+    {
+      "phase": 0,
+      "name": "docs-update",
+      "status": "completed",
+      "started_at": "2026-04-20T13:47:07+0900",
+      "completed_at": "2026-04-20T13:55:52+0900"
+    },
+    {
+      "phase": 1,
+      "name": "classify-cta-cleanup",
+      "status": "completed",
+      "started_at": "2026-04-20T13:55:54+0900",
+      "completed_at": "2026-04-20T14:01:04+0900"
+    },
+    {
+      "phase": 2,
+      "name": "timeline-sort-asc-actor",
+      "status": "completed",
+      "started_at": "2026-04-20T14:01:06+0900",
+      "completed_at": "2026-04-20T14:07:33+0900"
+    },
+    {
+      "phase": 3,
+      "name": "timeline-realtime",
+      "status": "completed",
+      "started_at": "2026-04-20T14:07:38+0900",
+      "completed_at": "2026-04-20T14:15:54+0900"
+    },
+    {
+      "phase": 4,
+      "name": "latest-drawing-download",
+      "status": "completed",
+      "started_at": "2026-04-20T14:15:56+0900",
+      "completed_at": "2026-04-20T14:25:56+0900"
+    },
+    {
+      "phase": 5,
+      "name": "urgent-siren-overlay",
+      "status": "completed",
+      "started_at": "2026-04-20T14:25:58+0900",
+      "completed_at": "2026-04-20T14:33:44+0900"
+    },
+    {
+      "phase": 6,
+      "name": "e2e-tests-docs-sync",
+      "status": "completed",
+      "started_at": "2026-04-20T14:33:46+0900",
+      "completed_at": "2026-04-20T14:50:08+0900",
+      "error_message": "통합 게이트: 프론트엔드 build/tsc/test 통과 (2 pre-existing test failure 는 phase 5 baseline 동일). 백엔드 build 통과, tsc 1건 + jest 11 suite/61 test 실패는 phase 5 baseline 과 동일 (선행 phase 미수정 상태). E2E 환경 이슈 — Playwright 기반 7 시나리오 스펙은 작성 완료, 실 실행은 dev 서버 + 시드 적용 후 수동 검증."
+    }
+  ],
+  "status": "completed",
+  "completed_at": "2026-04-20T14:50:10+0900"
+}
