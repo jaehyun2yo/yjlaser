@@ -51,17 +51,13 @@
 - 데스크톱 앱: CHANGELOG.md + SemVer 유지
 - 웹사이트: 커밋 기반 버전
 
-컨벤션 상세 → [docs/conventions.md](docs/conventions.md)
+컨벤션 상세는 위 요약 및 각 프로젝트에 존재하는 `AGENTS.md`, `CLAUDE.md`, `README.md` 참조.
 
 ---
 
-## 로드맵
-
-> 추후 작성. → [docs/roadmap.md](docs/roadmap.md)
-
 ## TODO
 
-> 추후 작성. → [docs/todo.md](docs/todo.md)
+→ [docs/todo.md](docs/todo.md)
 
 ---
 
@@ -71,11 +67,9 @@
 |------|------|
 | [docs/workflow.md](docs/workflow.md) | 업무 워크플로우 상세 (접수~납품 8단계) |
 | [docs/architecture.md](docs/architecture.md) | 프로젝트 간 연동, 데이터 흐름, 인증, DB |
-| [docs/conventions.md](docs/conventions.md) | 개발 컨벤션 상세 (브랜치, 커밋, 테스트, 코드 스타일) |
-| [docs/roadmap.md](docs/roadmap.md) | 프로젝트별 개발 로드맵 |
 | [docs/todo.md](docs/todo.md) | 할일 리스트 (우선순위별) |
 
-각 프로젝트 내부의 `CLAUDE.md`, `README.md`, `.claude/rules/`에 프로젝트별 상세 규칙 있음.
+각 프로젝트 내부의 `AGENTS.md`, `CLAUDE.md`, `README.md`, `.claude/rules/` 중 존재하는 파일에 프로젝트별 상세 규칙 있음.
 
 <!-- ooo:START -->
 <!-- ooo:VERSION:0.28.2 -->

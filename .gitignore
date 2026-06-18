@@ -27,5 +27,17 @@ Thumbs.db
 .claude/
 .omc/
 
+# 로컬 에이전트/검증 캐시
+.serena/
+.superpowers/
+.gstack/
+test-results/
+
+# 하위 프로젝트 복제본/임시 작업 폴더
+yjlaser_website_publish_refero/
+yjlaser_website_master_merge/
+yjlaser-classification-cancel-delete/
+yjlaser-master-hotfix/
+
 # 기타
 *.log
