@@ -315,6 +315,11 @@ model Order {
   description               String?
   orderType                 String    @default("standard") @map("order_type") @db.VarChar(30)
   status                    String    @default("inquiry_received") @db.VarChar(30)
+  productionStatus          String?   @map("production_status") @db.VarChar(30)
+  confirmationStatus        String?   @map("confirmation_status") @db.VarChar(30)
+  classificationStatus      String?   @map("classification_status") @db.VarChar(30)
+  nestingStatus             String?   @map("nesting_status") @db.VarChar(30)
+  billingStatus             String?   @map("billing_status") @db.VarChar(30)
   priority                  String    @default("normal") @db.VarChar(10)
   drawingFileCount          Int       @default(0) @map("drawing_file_count")
   webhardFolderId           String?   @map("webhard_folder_id")
@@ -345,6 +350,11 @@ model Order {
 
   @@index([contactId])
   @@index([status])
+  @@index([productionStatus])
+  @@index([confirmationStatus])
+  @@index([classificationStatus])
+  @@index([nestingStatus])
+  @@index([billingStatus])
   @@index([companyName])
   @@index([inquiryNumber])
   @@index([priority, status])

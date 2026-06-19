@@ -221,21 +221,28 @@ Relations: → tasks
 
 ### orders
 
-| Column             | Type         | Notes                                                                                 |
-| ------------------ | ------------ | ------------------------------------------------------------------------------------- |
-| id                 | UUID (PK)    |                                                                                       |
-| contact_id         | BigInt?      | → contacts (nullable)                                                                 |
-| inquiry_number     | String?      |                                                                                       |
-| company_name       | VarChar(200) |                                                                                       |
-| title              | VarChar(500) |                                                                                       |
-| order_type         | VarChar(30)  | "standard" default                                                                    |
-| status             | VarChar(30)  | inquiry_received → drawing_review → confirmed → cutting → post_processing → delivered |
-| priority           | VarChar(10)  | urgent/normal/low                                                                     |
-| webhard_folder_id  | String?      | Links to webhard folder                                                               |
-| delivery_method    | VarChar(50)? |                                                                                       |
-| Various timestamps | DateTime?    | receivedAt, confirmedAt, cuttingStartedAt, etc.                                       |
+| Column                | Type         | Notes                                                                                 |
+| --------------------- | ------------ | ------------------------------------------------------------------------------------- |
+| id                    | UUID (PK)    |                                                                                       |
+| contact_id            | BigInt?      | → contacts (nullable)                                                                 |
+| inquiry_number        | String?      |                                                                                       |
+| company_name          | VarChar(200) |                                                                                       |
+| title                 | VarChar(500) |                                                                                       |
+| order_type            | VarChar(30)  | "standard" default                                                                    |
+| status                | VarChar(30)  | inquiry_received → drawing_review → confirmed → cutting → post_processing → delivered |
+| production_status     | VarChar(30)? | 신규 병렬 상태 축. null이면 아직 중앙 상태 mapper 미적용                              |
+| confirmation_status   | VarChar(30)? | 도면 컨펌 상태 축. null이면 아직 중앙 상태 mapper 미적용                              |
+| classification_status | VarChar(30)? | 관리프로그램 분류 상태 축. null이면 아직 중앙 상태 mapper 미적용                      |
+| nesting_status        | VarChar(30)? | 네스팅 상태 축. null이면 아직 중앙 상태 mapper 미적용                                 |
+| billing_status        | VarChar(30)? | 청구/발송 상태 축. null이면 아직 중앙 상태 mapper 미적용                              |
+| priority              | VarChar(10)  | urgent/normal/low                                                                     |
+| webhard_folder_id     | String?      | Links to webhard folder                                                               |
+| delivery_method       | VarChar(50)? |                                                                                       |
+| Various timestamps    | DateTime?    | receivedAt, confirmedAt, cuttingStartedAt, etc.                                       |
 
 Relations: → order_events, job_events, tasks, deliveries, nesting_tasks
+
+Indexes: contact_id, status, production_status, confirmation_status, classification_status, nesting_status, billing_status, company_name, inquiry_number, (priority + status)
 
 ### nesting_tasks
 
