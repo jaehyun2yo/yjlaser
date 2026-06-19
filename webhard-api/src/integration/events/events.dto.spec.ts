@@ -1,6 +1,11 @@
-import { plainToInstance } from 'class-transformer';
+import { ClassConstructor, plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { EventEnvelopeDto } from './dto/event-envelope.dto';
+import {
+  EventAcceptedResponseDto,
+  EventDuplicateResponseDto,
+  EventFailureResponseDto,
+} from './dto/event-response.dto';
 
 const validEnvelope = {
   idempotency_key: 'management_program:outbox-123:drawing.classified',
@@ -25,8 +30,50 @@ const validEnvelope = {
   },
 };
 
+const validAppliedStateChange = {
+  target: 'job',
+  id: 'job-001',
+  field: 'classification_status',
+  value: 'CLASSIFIED',
+};
+
+const validAcceptedResponse = {
+  event_id: 'evt-001',
+  duplicate: false,
+  accepted: true,
+  applied_state_changes: [validAppliedStateChange],
+};
+
+const validDuplicateResponse = {
+  event_id: 'evt-001',
+  duplicate: true,
+  accepted: true,
+  applied_state_changes: [],
+};
+
+const validFailureResponse = {
+  event_id: 'evt-001',
+  duplicate: false,
+  accepted: false,
+  state_apply_status: 'failed',
+  failure_id: 'fail-001',
+  applied_state_changes: [],
+  error: {
+    code: 'STATE_APPLY_FAILED',
+    message: 'state transition rejected',
+    retryable: true,
+  },
+};
+
 async function validateEnvelope(input: Record<string, unknown>) {
   return validate(plainToInstance(EventEnvelopeDto, input));
+}
+
+async function validateDto<T extends object>(
+  dto: ClassConstructor<T>,
+  input: Record<string, unknown>
+) {
+  return validate(plainToInstance(dto, input));
 }
 
 describe('EventEnvelopeDto', () => {
@@ -90,5 +137,61 @@ describe('EventEnvelopeDto', () => {
     });
 
     expect(errors.map((error) => error.property)).toContain('occurred_at');
+  });
+});
+
+describe('EventResponseDto', () => {
+  it('신규 처리 응답 shape를 통과시킨다', async () => {
+    await expect(
+      validateDto(EventAcceptedResponseDto, validAcceptedResponse)
+    ).resolves.toHaveLength(0);
+  });
+
+  it('신규 처리 응답에서 accepted/duplicate literal 값을 검증한다', async () => {
+    const errors = await validateDto(EventAcceptedResponseDto, {
+      ...validAcceptedResponse,
+      duplicate: true,
+      accepted: false,
+    });
+
+    expect(errors.map((error) => error.property)).toEqual(
+      expect.arrayContaining(['duplicate', 'accepted'])
+    );
+  });
+
+  it('중복 처리 응답 shape를 통과시킨다', async () => {
+    await expect(
+      validateDto(EventDuplicateResponseDto, validDuplicateResponse)
+    ).resolves.toHaveLength(0);
+  });
+
+  it('중복 처리 응답이 상태 변경 결과를 포함하면 거부한다', async () => {
+    const errors = await validateDto(EventDuplicateResponseDto, {
+      ...validDuplicateResponse,
+      applied_state_changes: [validAppliedStateChange],
+    });
+
+    expect(errors.map((error) => error.property)).toContain('applied_state_changes');
+  });
+
+  it('상태 적용 실패 응답 shape를 통과시킨다', async () => {
+    await expect(validateDto(EventFailureResponseDto, validFailureResponse)).resolves.toHaveLength(
+      0
+    );
+  });
+
+  it('상태 적용 실패 응답에서 실패 상태와 failure_id를 검증한다', async () => {
+    const input: Record<string, unknown> = {
+      ...validFailureResponse,
+      state_apply_status: 'applied',
+    };
+    delete input.failure_id;
+    delete input.error;
+
+    const errors = await validateDto(EventFailureResponseDto, input);
+
+    expect(errors.map((error) => error.property)).toEqual(
+      expect.arrayContaining(['state_apply_status', 'failure_id', 'error'])
+    );
   });
 });
