@@ -418,11 +418,13 @@ model JobEvent {
   createdAt        DateTime @default(now()) @map("created_at")
 
   order                Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  integrationRun       IntegrationRun? @relation(fields: [integrationRunId], references: [id], onDelete: SetNull)
   failure              JobFailure?   @relation("JobEventFailure", fields: [failureId], references: [id], onDelete: SetNull)
   lastEventForFailures JobFailure[]  @relation("JobFailureLastEvent")
 
   @@index([orderId, occurredAt(sort: Desc)])
   @@index([jobId, occurredAt(sort: Desc)])
+  @@index([integrationRunId, occurredAt(sort: Desc)])
   @@index([sourceWorker, occurredAt(sort: Desc)])
   @@index([failureId])
   @@index([occurredAt(sort: Desc)])
@@ -456,6 +458,27 @@ model JobFailure {
   @@index([retryable, resolvedAt, createdAt(sort: Desc)])
   @@index([lastEventId])
   @@map("job_failures")
+}
+
+model IntegrationRun {
+  id             String    @id @default(uuid())
+  workerType     String    @map("worker_type") @db.VarChar(50)
+  sourceVersion  String?   @map("source_version") @db.VarChar(50)
+  startedAt      DateTime  @default(now()) @map("started_at")
+  finishedAt     DateTime? @map("finished_at")
+  result         String    @default("running") @db.VarChar(20)
+  processedCount Int       @default(0) @map("processed_count")
+  failedCount    Int       @default(0) @map("failed_count")
+  metadata       Json?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  jobEvents JobEvent[]
+
+  @@index([workerType, startedAt(sort: Desc)])
+  @@index([result, startedAt(sort: Desc)])
+  @@index([finishedAt])
+  @@map("integration_runs")
 }
 
 model ApiKey {
