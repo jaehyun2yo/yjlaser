@@ -6,6 +6,10 @@ import type { EventEnvelopeDto } from './dto/event-envelope.dto';
 import type { EventAppliedStateChangeDto, EventResponseDto } from './dto/event-response.dto';
 import { OrdersService } from '../orders/orders.service';
 import { ContactStatus } from '../orders/dto/order.dto';
+import {
+  sanitizeIntegrationEventData,
+  sanitizeIntegrationEventText,
+} from '../../common/sensitive-data-sanitizer.util';
 
 // 이벤트 타입 -> 자동 상태 전환 매핑
 const AUTO_STATUS_MAP: Record<string, string> = {
@@ -97,7 +101,7 @@ export class EventsService {
         occurredAt: new Date(dto.occurred_at),
         durationMs: dto.duration_ms ?? null,
         processedCount: dto.processed_count ?? null,
-        payload: dto.payload as Prisma.InputJsonValue,
+        payload: sanitizeIntegrationEventData(dto.payload) as Prisma.InputJsonValue,
         stateApplyStatus: 'not_applicable',
       },
       select: { id: true },
@@ -149,6 +153,7 @@ export class EventsService {
     eventId: string,
     failureDetails: JobEventFailureDetails
   ): Promise<EventResponseDto> {
+    const failureMessage = sanitizeIntegrationEventText(failureDetails.message);
     const failure = await tx.jobFailure.create({
       data: {
         jobId: dto.job_id ?? null,
@@ -156,7 +161,7 @@ export class EventsService {
         sourceWorker: dto.source_worker,
         eventType: dto.event_type,
         errorCode: failureDetails.errorCode,
-        message: failureDetails.message,
+        message: failureMessage,
         retryable: failureDetails.retryable,
         lastEventId: eventId,
       },
@@ -185,7 +190,7 @@ export class EventsService {
       applied_state_changes: [],
       error: {
         code: failureDetails.errorCode,
-        message: failureDetails.message,
+        message: failureMessage,
         retryable: failureDetails.retryable,
       },
     };
@@ -215,7 +220,9 @@ export class EventsService {
         applied_state_changes: [],
         error: {
           code: existingEvent.failure.errorCode,
-          message: existingEvent.failure.message ?? 'Job event failed',
+          message: sanitizeIntegrationEventText(
+            existingEvent.failure.message ?? 'Job event failed'
+          ),
           retryable: existingEvent.failure.retryable,
         },
       };
