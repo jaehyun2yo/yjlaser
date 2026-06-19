@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEventDto, EventQueryDto } from './dto/event.dto';
 import type { EventEnvelopeDto } from './dto/event-envelope.dto';
@@ -48,14 +49,36 @@ export class EventsService {
   }
 
   private async createJobEvent(dto: EventEnvelopeDto): Promise<EventResponseDto> {
-    this.logger.debug(
-      `Job event received: sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
-    );
+    const startedAt = Date.now();
+    const logContext = this.getJobEventLogContext(dto);
+    const processedCount = dto.processed_count ?? 0;
+    this.logger.debug(`Job event create started: ${logContext}, processedCount=${processedCount}`);
 
-    return this.prisma.executeWithRetry(
-      () => this.prisma.$transaction((tx) => this.createJobEventInTransaction(tx, dto)),
-      { operationName: 'createJobEventTransaction' }
-    );
+    try {
+      const response = await this.prisma.executeWithRetry(
+        () => this.prisma.$transaction((tx) => this.createJobEventInTransaction(tx, dto)),
+        { operationName: 'createJobEventTransaction' }
+      );
+      const elapsedMs = Date.now() - startedAt;
+
+      if (response.accepted) {
+        this.logger.debug(
+          `Job event create succeeded: eventId=${response.event_id}, duplicate=${response.duplicate}, ${logContext}, processedCount=${processedCount}, elapsedMs=${elapsedMs}`
+        );
+      } else {
+        this.logger.warn(
+          `Job event create failed: eventId=${response.event_id}, duplicate=${response.duplicate}, failureId=${response.failure_id}, errorCode=${response.error.code}, retryable=${response.error.retryable ?? false}, ${logContext}, processedCount=${processedCount}, elapsedMs=${elapsedMs}`
+        );
+      }
+
+      return response;
+    } catch (error) {
+      const elapsedMs = Date.now() - startedAt;
+      this.logger.error(
+        `Job event create errored: ${logContext}, processedCount=${processedCount}, elapsedMs=${elapsedMs}, error=${this.getErrorType(error)}`
+      );
+      throw error;
+    }
   }
 
   private async createJobEventInTransaction(
@@ -287,6 +310,18 @@ export class EventsService {
 
   private getWorkerReportedFailureMessage(eventType: string): string {
     return `Worker reported failed event type ${eventType}`;
+  }
+
+  private getJobEventLogContext(dto: EventEnvelopeDto): string {
+    return `sourceWorker=${dto.source_worker}, eventType=${dto.event_type}, idempotencyKeyHash=${this.getIdempotencyKeyHash(dto.idempotency_key)}`;
+  }
+
+  private getIdempotencyKeyHash(idempotencyKey: string): string {
+    return createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 16);
+  }
+
+  private getErrorType(error: unknown): string {
+    return error instanceof Error ? error.name : typeof error;
   }
 
   private getStateApplyFailureResponse(eventId: string, eventType: string) {
