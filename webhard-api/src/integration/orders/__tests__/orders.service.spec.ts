@@ -246,6 +246,20 @@ describe('OrdersService.createOrder', () => {
 
     expect(result.id).toBe('order-001');
     expect(prisma.order.create).toHaveBeenCalledTimes(1);
+    const createArgs = prisma.order.create.mock.calls[0][0];
+    expect(createArgs.data).toEqual(
+      expect.objectContaining({
+        companyName: '원컴퍼니',
+        title: '테스트 주문',
+        orderType: 'standard',
+        priority: 'normal',
+      })
+    );
+    expect(createArgs.data).not.toHaveProperty('productionStatus');
+    expect(createArgs.data).not.toHaveProperty('confirmationStatus');
+    expect(createArgs.data).not.toHaveProperty('classificationStatus');
+    expect(createArgs.data).not.toHaveProperty('nestingStatus');
+    expect(createArgs.data).not.toHaveProperty('billingStatus');
     expect(prisma.orderEvent.create).toHaveBeenCalledTimes(1);
   });
 

@@ -77,6 +77,47 @@ describe('TasksService — 오늘/잔여 작업 필터링', () => {
     service = new TasksService(prisma as never);
   });
 
+  describe('createTask()', () => {
+    it('Order 상태 축 추가와 무관하게 기존 작업 생성 payload를 유지', async () => {
+      prisma.task.aggregate.mockResolvedValue({ _max: { sortOrder: 4 } });
+      prisma.task.create.mockResolvedValue(
+        makeTask({
+          id: 'created-task',
+          title: '레이저 커팅',
+          taskType: 'laser',
+        })
+      );
+
+      const result = await service.createTask({
+        title: '레이저 커팅',
+        taskType: 'laser',
+      } as never);
+
+      expect(result.id).toBe('created-task');
+      expect(prisma.task.create).toHaveBeenCalledTimes(1);
+      const createArgs = prisma.task.create.mock.calls[0][0];
+      expect(createArgs.data).toEqual(
+        expect.objectContaining({
+          title: '레이저 커팅',
+          taskType: 'laser',
+          contactId: null,
+          priority: 'normal',
+          sortOrder: 5,
+        })
+      );
+      expect(createArgs.data).not.toHaveProperty('productionStatus');
+      expect(createArgs.data).not.toHaveProperty('confirmationStatus');
+      expect(createArgs.data).not.toHaveProperty('classificationStatus');
+      expect(createArgs.data).not.toHaveProperty('nestingStatus');
+      expect(createArgs.data).not.toHaveProperty('billingStatus');
+      expect(createArgs.include).toEqual({
+        machine: {
+          select: { name: true },
+        },
+      });
+    });
+  });
+
   describe('getTodayTasks()', () => {
     it('오늘 생성된 작업만 반환', async () => {
       const today = new Date();
