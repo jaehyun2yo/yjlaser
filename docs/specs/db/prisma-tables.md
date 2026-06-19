@@ -235,7 +235,7 @@ Relations: → tasks
 | delivery_method    | VarChar(50)? |                                                                                       |
 | Various timestamps | DateTime?    | receivedAt, confirmedAt, cuttingStartedAt, etc.                                       |
 
-Relations: → order_events, tasks, deliveries, nesting_tasks
+Relations: → order_events, job_events, tasks, deliveries, nesting_tasks
 
 ### nesting_tasks
 
@@ -271,6 +271,36 @@ Indexes: (status, priority, created_at), order_id
 | from_status / to_status | VarChar(30)? |                    |
 | source                  | VarChar(30)  |                    |
 | data                    | Json?        |                    |
+
+### job_events
+
+Worker 이벤트 수신 원장. `OrderEvent`를 중복 처리 source로 확장하지 않고, 외부
+프로그램 event envelope는 `idempotency_key` 기준으로 이 테이블에 1회만 저장한다.
+
+| Column             | Type          | Notes                                       |
+| ------------------ | ------------- | ------------------------------------------- |
+| id                 | UUID (PK)     |                                             |
+| idempotency_key    | VarChar(255)  | Unique. Worker 재전송 stable key            |
+| event_type         | VarChar(100)  | `drawing.classified` 같은 도메인 이벤트명   |
+| event_version      | Int           | Payload schema version                      |
+| source_worker      | VarChar(50)   | management/nesting/sync 등 source worker    |
+| source_version     | VarChar(50)?  | Worker app version                          |
+| order_id           | UUID? (FK)    | → orders (SetNull)                          |
+| job_id             | String?       | 후속 `Job` 모델 reference placeholder       |
+| integration_run_id | String?       | 후속 `IntegrationRun` reference placeholder |
+| worker_local_id    | VarChar(255)? | Worker local outbox/record reference        |
+| result             | VarChar(20)   | success/failed/partial                      |
+| occurred_at        | DateTime      | Worker에서 사건이 발생한 시각               |
+| received_at        | DateTime      | Default now                                 |
+| duration_ms        | Int?          |                                             |
+| processed_count    | Int?          |                                             |
+| payload            | Json          | Sanitized event payload                     |
+| state_apply_status | VarChar(20)   | Default `not_applicable`                    |
+| failure_id         | String?       | 후속 `JobFailure` reference placeholder     |
+| order_event_id     | String?       | 파생된 화면 timeline event reference        |
+| created_at         | DateTime      | Default now                                 |
+
+Constraints: `idempotency_key` unique. 조회 인덱스는 후속 schema ticket에서 추가한다.
 
 ### deliveries
 
