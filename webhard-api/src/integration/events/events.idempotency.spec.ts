@@ -8,9 +8,9 @@ import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 
 const validEnvelope = {
-  idempotency_key: 'management_program:outbox-123:drawing.classified',
+  idempotency_key: 'management_program:outbox-123:worker.ping',
   attempt_no: 1,
-  event_type: 'drawing.classified',
+  event_type: 'worker.ping',
   event_version: 1,
   source_worker: 'management_program',
   source_version: '1.46.37',
@@ -23,7 +23,7 @@ const validEnvelope = {
   duration_ms: 1234,
   processed_count: 1,
   payload: {
-    classification_status: 'CLASSIFIED',
+    heartbeat: true,
   },
 };
 

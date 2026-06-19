@@ -1,9 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEventDto, EventQueryDto } from './dto/event.dto';
 import type { EventEnvelopeDto } from './dto/event-envelope.dto';
-import type { EventResponseDto } from './dto/event-response.dto';
+import type { EventAppliedStateChangeDto, EventResponseDto } from './dto/event-response.dto';
 import { OrdersService } from '../orders/orders.service';
 import { ContactStatus } from '../orders/dto/order.dto';
 
@@ -14,6 +14,9 @@ const AUTO_STATUS_MAP: Record<string, string> = {
   nesting_started: 'nesting_queued',
   nesting_completed: 'nesting_complete',
 };
+
+const JOB_EVENT_STATE_APPLY_FAILED = 'STATE_APPLY_FAILED';
+const DRAWING_CLASSIFIED_EVENT = 'drawing.classified';
 
 @Injectable()
 export class EventsService {
@@ -86,16 +89,144 @@ export class EventsService {
       select: { id: true },
     });
 
-    this.logger.debug(
-      `Job event created: eventId=${createdEvent.id}, sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
-    );
+    try {
+      const appliedStateChanges = await this.applyJobEventStateEffect(tx, dto);
 
+      if (appliedStateChanges.length > 0) {
+        await tx.jobEvent.update({
+          where: { id: createdEvent.id },
+          data: { stateApplyStatus: 'applied' },
+          select: { id: true },
+        });
+      }
+
+      this.logger.debug(
+        `Job event created: eventId=${createdEvent.id}, sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
+      );
+
+      return {
+        event_id: createdEvent.id,
+        duplicate: false,
+        accepted: true,
+        applied_state_changes: appliedStateChanges,
+      };
+    } catch {
+      const failureMessage = this.getStateApplyFailureMessage(dto.event_type);
+      const failure = await tx.jobFailure.create({
+        data: {
+          jobId: dto.job_id ?? null,
+          orderId: dto.order_id ?? null,
+          sourceWorker: dto.source_worker,
+          eventType: dto.event_type,
+          errorCode: JOB_EVENT_STATE_APPLY_FAILED,
+          message: failureMessage,
+          retryable: true,
+          lastEventId: createdEvent.id,
+        },
+        select: { id: true },
+      });
+
+      await tx.jobEvent.update({
+        where: { id: createdEvent.id },
+        data: {
+          stateApplyStatus: 'failed',
+          failureId: failure.id,
+        },
+        select: { id: true },
+      });
+
+      this.logger.warn(
+        `Job event state apply failed: eventId=${createdEvent.id}, failureId=${failure.id}, sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
+      );
+
+      return {
+        event_id: createdEvent.id,
+        duplicate: false,
+        accepted: false,
+        state_apply_status: 'failed',
+        failure_id: failure.id,
+        applied_state_changes: [],
+        error: {
+          code: JOB_EVENT_STATE_APPLY_FAILED,
+          message: failureMessage,
+          retryable: true,
+        },
+      };
+    }
+  }
+
+  private async applyJobEventStateEffect(
+    tx: Prisma.TransactionClient,
+    dto: EventEnvelopeDto
+  ): Promise<EventAppliedStateChangeDto[]> {
+    if (dto.event_type !== DRAWING_CLASSIFIED_EVENT) {
+      return [];
+    }
+
+    const classificationStatus = this.getStringPayloadValue(dto, 'classification_status');
+    if (!dto.order_id || !classificationStatus) {
+      throw new Error('Invalid drawing classification payload');
+    }
+
+    const updateResult = await tx.order.updateMany({
+      where: { id: dto.order_id },
+      data: { classificationStatus },
+    });
+    if (updateResult.count !== 1) {
+      throw new Error('Drawing classification target order not found');
+    }
+
+    return [
+      {
+        target: 'order',
+        id: dto.order_id,
+        field: 'classification_status',
+        value: classificationStatus,
+      },
+    ];
+  }
+
+  private getStringPayloadValue(dto: EventEnvelopeDto, field: string): string | null {
+    const value = dto.payload[field];
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  }
+
+  private getStateApplyFailureMessage(eventType: string): string {
+    return `State apply failed for event type ${eventType}`;
+  }
+
+  private getStateApplyFailureResponse(eventId: string, eventType: string) {
     return {
-      event_id: createdEvent.id,
-      duplicate: false,
-      accepted: true,
-      applied_state_changes: [],
+      event_id: eventId,
+      accepted: false,
+      state_apply_status: 'failed',
+      error: {
+        code: JOB_EVENT_STATE_APPLY_FAILED,
+        message: this.getStateApplyFailureMessage(eventType),
+        retryable: true,
+      },
     };
+  }
+
+  private getLegacyStateApplyFailureException(eventId: string, eventType: string) {
+    return new ConflictException(this.getStateApplyFailureResponse(eventId, eventType));
+  }
+
+  private logLegacyStateApplyFailure(eventId: string, orderId: string, eventType: string) {
+    this.logger.warn(
+      `Legacy event state apply failed: eventId=${eventId}, orderId=${orderId}, eventType=${eventType}`
+    );
+  }
+
+  private logLegacyStateApplySuccess(
+    orderId: string,
+    fromStatus: string | null,
+    autoStatus: string,
+    eventType: string
+  ) {
+    this.logger.debug(
+      `Auto status transition: ${orderId} ${fromStatus} -> ${autoStatus} (${eventType})`
+    );
   }
 
   private isEventEnvelopeDto(dto: CreateEventDto | EventEnvelopeDto): dto is EventEnvelopeDto {
@@ -137,11 +268,10 @@ export class EventsService {
           actorName: dto.source ?? 'system',
           message: `Auto transition via ${dto.eventType}`,
         });
-        this.logger.log(
-          `Auto status transition: ${dto.orderId} ${fromStatus} -> ${autoStatus} (${dto.eventType})`
-        );
-      } catch (err) {
-        this.logger.warn(`Auto status transition failed for ${dto.orderId}: ${err}`);
+        this.logLegacyStateApplySuccess(dto.orderId, fromStatus, autoStatus, dto.eventType);
+      } catch {
+        this.logLegacyStateApplyFailure(event.id, dto.orderId, dto.eventType);
+        throw this.getLegacyStateApplyFailureException(event.id, dto.eventType);
       }
     }
 
