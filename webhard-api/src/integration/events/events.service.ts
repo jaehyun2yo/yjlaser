@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEventDto, EventQueryDto } from './dto/event.dto';
+import type { EventEnvelopeDto } from './dto/event-envelope.dto';
+import type { EventResponseDto } from './dto/event-response.dto';
 import { OrdersService } from '../orders/orders.service';
 import { ContactStatus } from '../orders/dto/order.dto';
 
@@ -21,7 +24,83 @@ export class EventsService {
     private ordersService: OrdersService
   ) {}
 
-  async createEvent(dto: CreateEventDto) {
+  async createEvent(dto: CreateEventDto | EventEnvelopeDto) {
+    if (this.isEventEnvelopeDto(dto)) {
+      return this.createJobEvent(dto);
+    }
+
+    return this.createLegacyOrderEvent(dto);
+  }
+
+  private async createJobEvent(dto: EventEnvelopeDto): Promise<EventResponseDto> {
+    this.logger.debug(
+      `Job event received: sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
+    );
+
+    const existingEvent = await this.prisma.executeWithRetry(
+      () =>
+        this.prisma.jobEvent.findUnique({
+          where: { idempotencyKey: dto.idempotency_key },
+          select: { id: true },
+        }),
+      { operationName: 'findJobEventByIdempotencyKey' }
+    );
+
+    if (existingEvent) {
+      this.logger.debug(
+        `Duplicate job event ignored: eventId=${existingEvent.id}, sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
+      );
+
+      return {
+        event_id: existingEvent.id,
+        duplicate: true,
+        accepted: true,
+        applied_state_changes: [],
+      };
+    }
+
+    const createdEvent = await this.prisma.executeWithRetry(
+      () =>
+        this.prisma.jobEvent.create({
+          data: {
+            idempotencyKey: dto.idempotency_key,
+            eventType: dto.event_type,
+            eventVersion: dto.event_version,
+            sourceWorker: dto.source_worker,
+            sourceVersion: dto.source_version ?? null,
+            orderId: dto.order_id ?? null,
+            jobId: dto.job_id ?? null,
+            integrationRunId: dto.integration_run_id ?? null,
+            workerLocalId: dto.worker_local_id ?? null,
+            result: dto.result,
+            occurredAt: new Date(dto.occurred_at),
+            durationMs: dto.duration_ms ?? null,
+            processedCount: dto.processed_count ?? null,
+            payload: dto.payload as Prisma.InputJsonValue,
+            stateApplyStatus: 'not_applicable',
+          },
+          select: { id: true },
+        }),
+      { operationName: 'createJobEvent' }
+    );
+
+    this.logger.debug(
+      `Job event created: eventId=${createdEvent.id}, sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
+    );
+
+    return {
+      event_id: createdEvent.id,
+      duplicate: false,
+      accepted: true,
+      applied_state_changes: [],
+    };
+  }
+
+  private isEventEnvelopeDto(dto: CreateEventDto | EventEnvelopeDto): dto is EventEnvelopeDto {
+    return 'idempotency_key' in dto;
+  }
+
+  private async createLegacyOrderEvent(dto: CreateEventDto) {
     // 현재 주문 상태 조회
     const order = await this.prisma.order.findUnique({
       where: { id: dto.orderId },
