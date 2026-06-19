@@ -213,7 +213,12 @@ export const PRELAUNCH_SCHEMA_SNAPSHOT = [
     relationFields: [
       'order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)',
     ],
-    indexSnippets: [],
+    indexSnippets: [
+      '@@index([orderId, occurredAt(sort: Desc)])',
+      '@@index([jobId, occurredAt(sort: Desc)])',
+      '@@index([sourceWorker, occurredAt(sort: Desc)])',
+      '@@index([occurredAt(sort: Desc)])',
+    ],
   },
   {
     model: 'ApiKey',

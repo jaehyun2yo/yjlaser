@@ -419,6 +419,10 @@ model JobEvent {
 
   order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
+  @@index([orderId, occurredAt(sort: Desc)])
+  @@index([jobId, occurredAt(sort: Desc)])
+  @@index([sourceWorker, occurredAt(sort: Desc)])
+  @@index([occurredAt(sort: Desc)])
   @@map("job_events")
 }
 
