@@ -16,7 +16,15 @@ const AUTO_STATUS_MAP: Record<string, string> = {
 };
 
 const JOB_EVENT_STATE_APPLY_FAILED = 'STATE_APPLY_FAILED';
+const JOB_EVENT_WORKER_REPORTED_FAILED = 'WORKER_REPORTED_FAILED';
 const DRAWING_CLASSIFIED_EVENT = 'drawing.classified';
+
+type JobEventFailureDetails = {
+  errorCode: string;
+  message: string;
+  retryable: boolean;
+  logReason: string;
+};
 
 @Injectable()
 export class EventsService {
@@ -52,7 +60,18 @@ export class EventsService {
   ): Promise<EventResponseDto> {
     const existingEvent = await tx.jobEvent.findUnique({
       where: { idempotencyKey: dto.idempotency_key },
-      select: { id: true },
+      select: {
+        id: true,
+        stateApplyStatus: true,
+        failureId: true,
+        failure: {
+          select: {
+            errorCode: true,
+            message: true,
+            retryable: true,
+          },
+        },
+      },
     });
 
     if (existingEvent) {
@@ -60,12 +79,7 @@ export class EventsService {
         `Duplicate job event ignored: eventId=${existingEvent.id}, sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
       );
 
-      return {
-        event_id: existingEvent.id,
-        duplicate: true,
-        accepted: true,
-        applied_state_changes: [],
-      };
+      return this.getDuplicateJobEventResponse(existingEvent);
     }
 
     const createdEvent = await tx.jobEvent.create({
@@ -89,6 +103,15 @@ export class EventsService {
       select: { id: true },
     });
 
+    if (dto.result === 'failed') {
+      return this.createJobFailureResponse(
+        tx,
+        dto,
+        createdEvent.id,
+        this.getWorkerReportedFailureDetails(dto)
+      );
+    }
+
     try {
       const appliedStateChanges = await this.applyJobEventStateEffect(tx, dto);
 
@@ -111,48 +134,99 @@ export class EventsService {
         applied_state_changes: appliedStateChanges,
       };
     } catch {
-      const failureMessage = this.getStateApplyFailureMessage(dto.event_type);
-      const failure = await tx.jobFailure.create({
-        data: {
-          jobId: dto.job_id ?? null,
-          orderId: dto.order_id ?? null,
-          sourceWorker: dto.source_worker,
-          eventType: dto.event_type,
-          errorCode: JOB_EVENT_STATE_APPLY_FAILED,
-          message: failureMessage,
-          retryable: true,
-          lastEventId: createdEvent.id,
-        },
-        select: { id: true },
+      return this.createJobFailureResponse(tx, dto, createdEvent.id, {
+        errorCode: JOB_EVENT_STATE_APPLY_FAILED,
+        message: this.getStateApplyFailureMessage(dto.event_type),
+        retryable: true,
+        logReason: 'state_apply_failed',
       });
+    }
+  }
 
-      await tx.jobEvent.update({
-        where: { id: createdEvent.id },
-        data: {
-          stateApplyStatus: 'failed',
-          failureId: failure.id,
-        },
-        select: { id: true },
-      });
+  private async createJobFailureResponse(
+    tx: Prisma.TransactionClient,
+    dto: EventEnvelopeDto,
+    eventId: string,
+    failureDetails: JobEventFailureDetails
+  ): Promise<EventResponseDto> {
+    const failure = await tx.jobFailure.create({
+      data: {
+        jobId: dto.job_id ?? null,
+        orderId: dto.order_id ?? null,
+        sourceWorker: dto.source_worker,
+        eventType: dto.event_type,
+        errorCode: failureDetails.errorCode,
+        message: failureDetails.message,
+        retryable: failureDetails.retryable,
+        lastEventId: eventId,
+      },
+      select: { id: true },
+    });
 
-      this.logger.warn(
-        `Job event state apply failed: eventId=${createdEvent.id}, failureId=${failure.id}, sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
-      );
+    await tx.jobEvent.update({
+      where: { id: eventId },
+      data: {
+        stateApplyStatus: 'failed',
+        failureId: failure.id,
+      },
+      select: { id: true },
+    });
 
+    this.logger.warn(
+      `Job event failure recorded: eventId=${eventId}, failureId=${failure.id}, sourceWorker=${dto.source_worker}, eventType=${dto.event_type}, errorCode=${failureDetails.errorCode}, reason=${failureDetails.logReason}`
+    );
+
+    return {
+      event_id: eventId,
+      duplicate: false,
+      accepted: false,
+      state_apply_status: 'failed',
+      failure_id: failure.id,
+      applied_state_changes: [],
+      error: {
+        code: failureDetails.errorCode,
+        message: failureDetails.message,
+        retryable: failureDetails.retryable,
+      },
+    };
+  }
+
+  private getDuplicateJobEventResponse(existingEvent: {
+    id: string;
+    stateApplyStatus: string;
+    failureId: string | null;
+    failure: {
+      errorCode: string;
+      message: string | null;
+      retryable: boolean;
+    } | null;
+  }): EventResponseDto {
+    if (
+      existingEvent.stateApplyStatus === 'failed' &&
+      existingEvent.failureId &&
+      existingEvent.failure
+    ) {
       return {
-        event_id: createdEvent.id,
-        duplicate: false,
+        event_id: existingEvent.id,
+        duplicate: true,
         accepted: false,
         state_apply_status: 'failed',
-        failure_id: failure.id,
+        failure_id: existingEvent.failureId,
         applied_state_changes: [],
         error: {
-          code: JOB_EVENT_STATE_APPLY_FAILED,
-          message: failureMessage,
-          retryable: true,
+          code: existingEvent.failure.errorCode,
+          message: existingEvent.failure.message ?? 'Job event failed',
+          retryable: existingEvent.failure.retryable,
         },
       };
     }
+
+    return {
+      event_id: existingEvent.id,
+      duplicate: true,
+      accepted: true,
+      applied_state_changes: [],
+    };
   }
 
   private async applyJobEventStateEffect(
@@ -193,6 +267,19 @@ export class EventsService {
 
   private getStateApplyFailureMessage(eventType: string): string {
     return `State apply failed for event type ${eventType}`;
+  }
+
+  private getWorkerReportedFailureDetails(dto: EventEnvelopeDto): JobEventFailureDetails {
+    return {
+      errorCode: dto.error?.code ?? JOB_EVENT_WORKER_REPORTED_FAILED,
+      message: dto.error?.message ?? this.getWorkerReportedFailureMessage(dto.event_type),
+      retryable: dto.error?.retryable ?? false,
+      logReason: 'worker_reported_failed',
+    };
+  }
+
+  private getWorkerReportedFailureMessage(eventType: string): string {
+    return `Worker reported failed event type ${eventType}`;
   }
 
   private getStateApplyFailureResponse(eventId: string, eventType: string) {

@@ -3,6 +3,7 @@ import { validate } from 'class-validator';
 import { EventEnvelopeDto } from './dto/event-envelope.dto';
 import {
   EventAcceptedResponseDto,
+  EventDuplicateFailureResponseDto,
   EventDuplicateResponseDto,
   EventFailureResponseDto,
 } from './dto/event-response.dto';
@@ -49,6 +50,20 @@ const validDuplicateResponse = {
   duplicate: true,
   accepted: true,
   applied_state_changes: [],
+};
+
+const validDuplicateFailureResponse = {
+  event_id: 'evt-001',
+  duplicate: true,
+  accepted: false,
+  state_apply_status: 'failed',
+  failure_id: 'fail-001',
+  applied_state_changes: [],
+  error: {
+    code: 'POPBILL_FAILED',
+    message: 'popbill send failed',
+    retryable: true,
+  },
 };
 
 const validFailureResponse = {
@@ -172,6 +187,12 @@ describe('EventResponseDto', () => {
     });
 
     expect(errors.map((error) => error.property)).toContain('applied_state_changes');
+  });
+
+  it('실패한 중복 처리 응답 shape를 통과시킨다', async () => {
+    await expect(
+      validateDto(EventDuplicateFailureResponseDto, validDuplicateFailureResponse)
+    ).resolves.toHaveLength(0);
   });
 
   it('상태 적용 실패 응답 shape를 통과시킨다', async () => {

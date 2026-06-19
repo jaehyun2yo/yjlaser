@@ -106,7 +106,36 @@ export class EventFailureResponseDto {
   error: EventResponseErrorDto;
 }
 
+export class EventDuplicateFailureResponseDto {
+  @IsString()
+  @MaxLength(255)
+  event_id: string;
+
+  @Equals(true)
+  duplicate: true;
+
+  @Equals(false)
+  accepted: false;
+
+  @Equals('failed')
+  state_apply_status: EventStateApplyStatus;
+
+  @IsString()
+  @MaxLength(255)
+  failure_id: string;
+
+  @IsArray()
+  @ArrayMaxSize(0)
+  applied_state_changes: [];
+
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => EventResponseErrorDto)
+  error: EventResponseErrorDto;
+}
+
 export type EventResponseDto =
   | EventAcceptedResponseDto
   | EventDuplicateResponseDto
-  | EventFailureResponseDto;
+  | EventFailureResponseDto
+  | EventDuplicateFailureResponseDto;

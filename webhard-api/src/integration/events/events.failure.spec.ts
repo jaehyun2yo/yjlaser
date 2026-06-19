@@ -24,6 +24,28 @@ const envelopeWithStateEffect = {
   },
 };
 
+const envelopeWithWorkerFailure = {
+  idempotency_key: 'management_program:outbox-126:invoice.failed',
+  attempt_no: 1,
+  event_type: 'invoice.failed',
+  event_version: 1,
+  source_worker: 'management_program',
+  source_version: '1.46.37',
+  occurred_at: '2026-06-19T09:15:00+09:00',
+  order_id: '11111111-1111-4111-8111-111111111111',
+  job_id: 'job-002',
+  result: 'failed',
+  processed_count: 0,
+  payload: {
+    invoice_id: 'invoice-001',
+  },
+  error: {
+    code: 'POPBILL_FAILED',
+    message: 'popbill send failed',
+    retryable: true,
+  },
+};
+
 const legacyStatusEvent = {
   orderId: '11111111-1111-4111-8111-111111111111',
   eventType: 'file_classified',
@@ -42,6 +64,63 @@ function makeEnvelopeFailurePrisma() {
     },
     jobFailure: {
       create: jest.fn().mockResolvedValue({ id: 'fail-001' }),
+    },
+  };
+
+  return {
+    tx,
+    executeWithRetry: jest.fn((fn: () => Promise<unknown>) => fn()),
+    $transaction: jest.fn((callback: (transactionClient: typeof tx) => Promise<unknown>) =>
+      callback(tx)
+    ),
+  };
+}
+
+function makeWorkerFailurePrisma() {
+  const tx = {
+    jobEvent: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: 'evt-worker-failed-001' }),
+      update: jest.fn().mockResolvedValue({ id: 'evt-worker-failed-001' }),
+    },
+    order: {
+      updateMany: jest.fn(),
+    },
+    jobFailure: {
+      create: jest.fn().mockResolvedValue({ id: 'fail-worker-001' }),
+    },
+  };
+
+  return {
+    tx,
+    executeWithRetry: jest.fn((fn: () => Promise<unknown>) => fn()),
+    $transaction: jest.fn((callback: (transactionClient: typeof tx) => Promise<unknown>) =>
+      callback(tx)
+    ),
+  };
+}
+
+function makeDuplicateWorkerFailurePrisma() {
+  const tx = {
+    jobEvent: {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'evt-worker-failed-001',
+        stateApplyStatus: 'failed',
+        failureId: 'fail-worker-001',
+        failure: {
+          errorCode: 'POPBILL_FAILED',
+          message: 'popbill send failed',
+          retryable: true,
+        },
+      }),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    order: {
+      updateMany: jest.fn(),
+    },
+    jobFailure: {
+      create: jest.fn(),
     },
   };
 
@@ -149,6 +228,83 @@ describe('EventsController state apply failure', () => {
         },
       })
     );
+  });
+
+  it('worker가 result=failed로 보고한 이벤트를 JobFailure로 기록한다', async () => {
+    const prisma = makeWorkerFailurePrisma();
+    app = await createApp(prisma, {});
+
+    const response = await request(app.getHttpServer())
+      .post('/integration/events')
+      .send(envelopeWithWorkerFailure)
+      .expect(201);
+
+    expect(response.body).toEqual({
+      event_id: 'evt-worker-failed-001',
+      duplicate: false,
+      accepted: false,
+      state_apply_status: 'failed',
+      failure_id: 'fail-worker-001',
+      applied_state_changes: [],
+      error: {
+        code: 'POPBILL_FAILED',
+        message: 'popbill send failed',
+        retryable: true,
+      },
+    });
+    expect(prisma.tx.jobEvent.create).toHaveBeenCalledTimes(1);
+    expect(prisma.tx.order.updateMany).not.toHaveBeenCalled();
+    expect(prisma.tx.jobFailure.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          orderId: envelopeWithWorkerFailure.order_id,
+          jobId: envelopeWithWorkerFailure.job_id,
+          sourceWorker: envelopeWithWorkerFailure.source_worker,
+          eventType: envelopeWithWorkerFailure.event_type,
+          errorCode: 'POPBILL_FAILED',
+          message: 'popbill send failed',
+          retryable: true,
+          lastEventId: 'evt-worker-failed-001',
+        }),
+      })
+    );
+    expect(prisma.tx.jobEvent.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'evt-worker-failed-001' },
+        data: {
+          stateApplyStatus: 'failed',
+          failureId: 'fail-worker-001',
+        },
+      })
+    );
+  });
+
+  it('failed JobEvent 중복 수신은 기존 failure 결과를 반환하고 부작용을 만들지 않는다', async () => {
+    const prisma = makeDuplicateWorkerFailurePrisma();
+    app = await createApp(prisma, {});
+
+    const response = await request(app.getHttpServer())
+      .post('/integration/events')
+      .send(envelopeWithWorkerFailure)
+      .expect(201);
+
+    expect(response.body).toEqual({
+      event_id: 'evt-worker-failed-001',
+      duplicate: true,
+      accepted: false,
+      state_apply_status: 'failed',
+      failure_id: 'fail-worker-001',
+      applied_state_changes: [],
+      error: {
+        code: 'POPBILL_FAILED',
+        message: 'popbill send failed',
+        retryable: true,
+      },
+    });
+    expect(prisma.tx.jobEvent.create).not.toHaveBeenCalled();
+    expect(prisma.tx.jobEvent.update).not.toHaveBeenCalled();
+    expect(prisma.tx.order.updateMany).not.toHaveBeenCalled();
+    expect(prisma.tx.jobFailure.create).not.toHaveBeenCalled();
   });
 
   it('legacy 자동 상태 전이 실패도 201 성공으로 숨기지 않는다', async () => {
