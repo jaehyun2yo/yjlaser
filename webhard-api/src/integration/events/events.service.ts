@@ -37,14 +37,20 @@ export class EventsService {
       `Job event received: sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`
     );
 
-    const existingEvent = await this.prisma.executeWithRetry(
-      () =>
-        this.prisma.jobEvent.findUnique({
-          where: { idempotencyKey: dto.idempotency_key },
-          select: { id: true },
-        }),
-      { operationName: 'findJobEventByIdempotencyKey' }
+    return this.prisma.executeWithRetry(
+      () => this.prisma.$transaction((tx) => this.createJobEventInTransaction(tx, dto)),
+      { operationName: 'createJobEventTransaction' }
     );
+  }
+
+  private async createJobEventInTransaction(
+    tx: Prisma.TransactionClient,
+    dto: EventEnvelopeDto
+  ): Promise<EventResponseDto> {
+    const existingEvent = await tx.jobEvent.findUnique({
+      where: { idempotencyKey: dto.idempotency_key },
+      select: { id: true },
+    });
 
     if (existingEvent) {
       this.logger.debug(
@@ -59,30 +65,26 @@ export class EventsService {
       };
     }
 
-    const createdEvent = await this.prisma.executeWithRetry(
-      () =>
-        this.prisma.jobEvent.create({
-          data: {
-            idempotencyKey: dto.idempotency_key,
-            eventType: dto.event_type,
-            eventVersion: dto.event_version,
-            sourceWorker: dto.source_worker,
-            sourceVersion: dto.source_version ?? null,
-            orderId: dto.order_id ?? null,
-            jobId: dto.job_id ?? null,
-            integrationRunId: dto.integration_run_id ?? null,
-            workerLocalId: dto.worker_local_id ?? null,
-            result: dto.result,
-            occurredAt: new Date(dto.occurred_at),
-            durationMs: dto.duration_ms ?? null,
-            processedCount: dto.processed_count ?? null,
-            payload: dto.payload as Prisma.InputJsonValue,
-            stateApplyStatus: 'not_applicable',
-          },
-          select: { id: true },
-        }),
-      { operationName: 'createJobEvent' }
-    );
+    const createdEvent = await tx.jobEvent.create({
+      data: {
+        idempotencyKey: dto.idempotency_key,
+        eventType: dto.event_type,
+        eventVersion: dto.event_version,
+        sourceWorker: dto.source_worker,
+        sourceVersion: dto.source_version ?? null,
+        orderId: dto.order_id ?? null,
+        jobId: dto.job_id ?? null,
+        integrationRunId: dto.integration_run_id ?? null,
+        workerLocalId: dto.worker_local_id ?? null,
+        result: dto.result,
+        occurredAt: new Date(dto.occurred_at),
+        durationMs: dto.duration_ms ?? null,
+        processedCount: dto.processed_count ?? null,
+        payload: dto.payload as Prisma.InputJsonValue,
+        stateApplyStatus: 'not_applicable',
+      },
+      select: { id: true },
+    });
 
     this.logger.debug(
       `Job event created: eventId=${createdEvent.id}, sourceWorker=${dto.source_worker}, eventType=${dto.event_type}`

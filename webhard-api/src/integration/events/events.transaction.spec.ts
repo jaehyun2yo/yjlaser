@@ -8,19 +8,16 @@ import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 
 const validEnvelope = {
-  idempotency_key: 'management_program:outbox-123:drawing.classified',
+  idempotency_key: 'management_program:outbox-124:drawing.classified',
   attempt_no: 1,
   event_type: 'drawing.classified',
   event_version: 1,
   source_worker: 'management_program',
   source_version: '1.46.37',
-  occurred_at: '2026-06-19T09:00:00+09:00',
+  occurred_at: '2026-06-19T09:05:00+09:00',
   order_id: 'order-001',
   job_id: 'job-001',
-  integration_run_id: 'run-001',
-  worker_local_id: 'outbox-123',
   result: 'success',
-  duration_ms: 1234,
   processed_count: 1,
   payload: {
     classification_status: 'CLASSIFIED',
@@ -28,25 +25,31 @@ const validEnvelope = {
 };
 
 function makePrisma() {
-  const createdEvent = {
-    id: 'evt-001',
-    idempotencyKey: validEnvelope.idempotency_key,
-  };
-  const jobEvent = {
-    findUnique: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(createdEvent),
-    create: jest.fn().mockResolvedValue(createdEvent),
+  const tx = {
+    jobEvent: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: 'evt-transaction-001' }),
+    },
   };
 
   return {
+    tx,
     executeWithRetry: jest.fn((fn: () => Promise<unknown>) => fn()),
-    $transaction: jest.fn((callback: (tx: { jobEvent: typeof jobEvent }) => Promise<unknown>) =>
-      callback({ jobEvent })
+    $transaction: jest.fn((callback: (transactionClient: typeof tx) => Promise<unknown>) =>
+      callback(tx)
     ),
-    jobEvent,
+    jobEvent: {
+      findUnique: jest.fn(() => {
+        throw new Error('root jobEvent.findUnique should not be used');
+      }),
+      create: jest.fn(() => {
+        throw new Error('root jobEvent.create should not be used');
+      }),
+    },
   };
 }
 
-describe('EventsController idempotency', () => {
+describe('EventsController JobEvent transaction', () => {
   let app: INestApplication;
   let prisma: ReturnType<typeof makePrisma>;
 
@@ -73,30 +76,22 @@ describe('EventsController idempotency', () => {
     await app?.close();
   });
 
-  it('같은 idempotency_key 재전송은 duplicate 응답을 반환하고 JobEvent를 추가 생성하지 않는다', async () => {
-    const first = await request(app.getHttpServer())
+  it('JobEvent duplicate check와 create를 같은 transaction client 안에서 실행한다', async () => {
+    await request(app.getHttpServer())
       .post('/integration/events')
       .send(validEnvelope)
-      .expect(201);
+      .expect(201)
+      .expect({
+        event_id: 'evt-transaction-001',
+        duplicate: false,
+        accepted: true,
+        applied_state_changes: [],
+      });
 
-    const second = await request(app.getHttpServer())
-      .post('/integration/events')
-      .send(validEnvelope)
-      .expect(201);
-
-    expect(first.body).toEqual({
-      event_id: 'evt-001',
-      duplicate: false,
-      accepted: true,
-      applied_state_changes: [],
-    });
-    expect(second.body).toEqual({
-      event_id: 'evt-001',
-      duplicate: true,
-      accepted: true,
-      applied_state_changes: [],
-    });
-    expect(prisma.jobEvent.create).toHaveBeenCalledTimes(1);
-    expect(prisma.jobEvent.findUnique).toHaveBeenCalledTimes(2);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.tx.jobEvent.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.tx.jobEvent.create).toHaveBeenCalledTimes(1);
+    expect(prisma.jobEvent.findUnique).not.toHaveBeenCalled();
+    expect(prisma.jobEvent.create).not.toHaveBeenCalled();
   });
 });
