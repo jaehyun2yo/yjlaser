@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiKeyGuard } from '../auth/api-key.guard';
+import { RequireIntegrationPermission } from '../auth/require-integration-permission.decorator';
 import { OrdersService } from './orders.service';
 import {
   CreateOrderDto,
@@ -87,6 +88,12 @@ export class OrdersController {
   @Get(':id/events')
   async getOrderEvents(@Param('id') id: string) {
     return this.ordersService.getOrderEvents(id);
+  }
+
+  @Get(':id/timeline')
+  @RequireIntegrationPermission('job/read')
+  async getOrderTimeline(@Param('id') id: string) {
+    return this.ordersService.getOrderTimeline(id);
   }
 
   @Get(':id/process-stage')
