@@ -396,6 +396,11 @@ export const queryKeys = {
       pipelineBacklog: (limit?: number) =>
         [...queryKeys.integration.all, 'sync-logs', 'pipeline-backlog', limit] as const,
     },
+    operations: {
+      all: () => [...queryKeys.integration.all, 'operations'] as const,
+      failures: (filters?: { cursor?: string; limit?: number }) =>
+        [...queryKeys.integration.all, 'operations', 'failures', filters] as const,
+    },
     health: () => [...queryKeys.integration.all, 'health'] as const,
   },
 

@@ -23,6 +23,7 @@ import type {
   SyncLog,
   SyncLogStats,
   PipelineBacklogItem,
+  OperationFailuresResponse,
 } from './types';
 
 import { NESTJS_CLIENT_API_BASE } from '@/lib/api/api-base';
@@ -345,5 +346,22 @@ export const integrationSyncLogApi = {
   async getPipelineBacklog(limit = 10): Promise<PipelineBacklogItem[]> {
     const params = new URLSearchParams({ limit: String(limit) });
     return apiFetch<PipelineBacklogItem[]>(`/sync-logs/pipeline-backlog?${params.toString()}`);
+  },
+};
+
+// ============================================================
+// Operations API
+// ============================================================
+
+export const integrationOperationsApi = {
+  async getFailures(filters?: {
+    cursor?: string;
+    limit?: number;
+  }): Promise<OperationFailuresResponse> {
+    const params = new URLSearchParams();
+    if (filters?.cursor) params.set('cursor', filters.cursor);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    const qs = params.toString();
+    return apiFetch<OperationFailuresResponse>(`/operations/failures${qs ? `?${qs}` : ''}`);
   },
 };

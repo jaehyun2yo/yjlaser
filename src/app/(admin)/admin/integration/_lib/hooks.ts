@@ -15,6 +15,7 @@ import {
   integrationHealthApi,
   integrationWorkshopApi,
   integrationSyncLogApi,
+  integrationOperationsApi,
 } from './api';
 import type {
   OrderFilters,
@@ -261,6 +262,18 @@ export function usePipelineBacklog(limit = 10) {
   return useQuery({
     queryKey: queryKeys.integration.syncLogs.pipelineBacklog(limit),
     queryFn: () => integrationSyncLogApi.getPipelineBacklog(limit),
+    refetchInterval: 30000,
+  });
+}
+
+// ============================================================
+// Operations 훅
+// ============================================================
+
+export function useOperationFailures(limit = 20) {
+  return useQuery({
+    queryKey: queryKeys.integration.operations.failures({ limit }),
+    queryFn: () => integrationOperationsApi.getFailures({ limit }),
     refetchInterval: 30000,
   });
 }

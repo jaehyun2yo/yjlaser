@@ -256,3 +256,36 @@ export interface PipelineBacklogItem {
   context: Record<string, unknown>;
   createdAt: string;
 }
+
+export interface OperationFailureLastEvent {
+  event_id: string;
+  event_type: string;
+  source_worker: string;
+  occurred_at: string;
+  result: string;
+  state_apply_status: string;
+}
+
+export interface OperationFailure {
+  failure_id: string;
+  job_id: string | null;
+  order_id: string | null;
+  source_worker: string;
+  event_type: string | null;
+  error_code: string;
+  message: string | null;
+  retryable: boolean;
+  retry_count: number;
+  resolved_at: string | null;
+  last_event_id: string | null;
+  created_at: string;
+  updated_at: string;
+  last_event: OperationFailureLastEvent | null;
+}
+
+export interface OperationFailuresResponse {
+  items: OperationFailure[];
+  next_cursor: string | null;
+  has_more: boolean;
+  limit: number;
+}
