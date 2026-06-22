@@ -13,6 +13,7 @@ import {
 import { ContactTimelineService } from '../../contacts/contact-timeline.service';
 import { ContactsService } from '../../contacts/contacts.service';
 import { UpdateProcessStageDto, VALID_PROCESS_STAGES } from './dto/order.dto';
+import { mapOrderStateReadModel } from './order-state-read';
 
 @Injectable()
 export class OrdersService {
@@ -648,6 +649,11 @@ export class OrdersService {
     description: string | null;
     orderType: string;
     status: string;
+    productionStatus?: string | null;
+    confirmationStatus?: string | null;
+    classificationStatus?: string | null;
+    nestingStatus?: string | null;
+    billingStatus?: string | null;
     priority: string;
     drawingFileCount: number;
     webhardFolderId: string | null;
@@ -681,6 +687,7 @@ export class OrdersService {
     description: order.description,
     order_type: order.orderType,
     status: order.status,
+    order_state: mapOrderStateReadModel(order),
     priority: order.priority,
     drawing_file_count: order.drawingFileCount,
     webhard_folder_id: order.webhardFolderId,
