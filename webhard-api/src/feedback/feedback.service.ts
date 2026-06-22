@@ -3,10 +3,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { FeedbackGateway } from './feedback.gateway';
 import { MailService } from '../mail/mail.service';
+import { formatLogEvent, generateCorrelationId, hashIdentifier } from '../common/logging/log-event';
 
 @Injectable()
 export class FeedbackService {
   private readonly logger = new Logger(FeedbackService.name);
+  private readonly logFeature = 'feedback';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -85,7 +87,23 @@ export class FeedbackService {
         content: data.content,
       })
       .catch((err) => {
-        this.logger.error(`Feedback notification email failed: ${err.message}`);
+        this.logger.error(
+          this.formatFeedbackLogEvent({
+            event: 'feedback_notification_mail_failed',
+            action: 'send_notification',
+            status: 'failure',
+            channel: 'external',
+            companyId: data.companyId,
+            feedbackId: Number(feedback.id),
+            errorType: this.getErrorType(err),
+            metadata: {
+              reason: this.classifyMailFailure(err),
+              category_present: !!data.category,
+              category_hash: data.category ? hashIdentifier(data.category) : undefined,
+              company_contact_present: !!data.companyEmail,
+            },
+          })
+        );
       });
 
     return createResult;
@@ -167,5 +185,50 @@ export class FeedbackService {
       category: f.category,
       category_other: f.categoryOther,
     };
+  }
+
+  private classifyMailFailure(error: unknown): string {
+    if (!(error instanceof Error)) {
+      return 'mail_delivery_failed';
+    }
+
+    if (/not configured|recipient not set/i.test(error.message)) {
+      return 'mail_configuration_error';
+    }
+
+    return 'mail_delivery_failed';
+  }
+
+  private getErrorType(error: unknown): string {
+    return error instanceof Error ? error.name : typeof error;
+  }
+
+  private formatFeedbackLogEvent(input: {
+    event: string;
+    action: string;
+    status: 'failure';
+    channel: 'external' | 'error';
+    companyId: number;
+    feedbackId: number;
+    errorType: string;
+    metadata: Record<string, unknown>;
+  }): string {
+    return formatLogEvent({
+      level: 'error',
+      project: 'company_site',
+      component: FeedbackService.name,
+      feature: this.logFeature,
+      event: input.event,
+      action: input.action,
+      status: input.status,
+      channel: input.channel,
+      correlation_id: generateCorrelationId('feedback'),
+      actor_type: 'company',
+      actor_id_hash: hashIdentifier(input.companyId),
+      target_type: 'feedback',
+      target_id_hash: hashIdentifier(input.feedbackId),
+      error_type: input.errorType,
+      metadata: input.metadata,
+    });
   }
 }
