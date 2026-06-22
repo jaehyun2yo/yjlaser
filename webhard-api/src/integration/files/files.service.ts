@@ -22,6 +22,19 @@ export class IntegrationFilesService {
   constructor(private readonly filesService: FilesService) {}
 
   async registerFile(dto: FileRegisterDto): Promise<FileRegisterResponseDto> {
+    const existingFile = await this.filesService.findExistingUploadMetadata({
+      driveFileId: dto.drive_file_id,
+      path: dto.path,
+    });
+    if (existingFile) {
+      return {
+        file_id: existingFile.id,
+        order_id: dto.order_id ?? null,
+        duplicate: true,
+        status: 'FILE_RECEIVED',
+      };
+    }
+
     const file = await this.filesService.confirmUpload(
       this.toConfirmUploadDto(dto),
       FILE_REGISTER_SYSTEM_USER

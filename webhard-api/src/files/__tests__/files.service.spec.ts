@@ -258,6 +258,51 @@ const integrationUser: SessionUser = {
   permissions: [],
 };
 
+describe('FilesService.findExistingUploadMetadata', () => {
+  it('driveFileId가 있으면 driveFileId 기준으로 기존 파일 metadata를 조회해 DTO로 반환한다', async () => {
+    const { service, prisma } = makeService();
+    prisma.webhardFile.findFirst.mockResolvedValueOnce(
+      makeFile({
+        id: 'file-existing',
+        storageProvider: StorageProvider.GOOGLE_DRIVE,
+        driveFileId: 'drive-file-1',
+        path: 'folder-uuid-1/sanitized-name.dxf',
+        company: { companyName: '대성목형', managerName: '홍길동' },
+      })
+    );
+
+    const result = await service.findExistingUploadMetadata({
+      driveFileId: 'drive-file-1',
+      path: 'external/path/sanitized-name.dxf',
+    });
+
+    expect(prisma.webhardFile.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { driveFileId: 'drive-file-1' },
+        orderBy: { createdAt: 'asc' },
+      })
+    );
+    expect(result).toMatchObject({
+      id: 'file-existing',
+      path: 'folder-uuid-1/sanitized-name.dxf',
+      storage_provider: 'google_drive',
+      companies: { company_name: '대성목형', manager_name: '홍길동' },
+    });
+  });
+
+  it('driveFileId가 없으면 path만으로 조회한다', async () => {
+    const { service, prisma } = makeService();
+
+    await service.findExistingUploadMetadata({ path: 'legacy/path.dxf' });
+
+    expect(prisma.webhardFile.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { path: 'legacy/path.dxf' },
+      })
+    );
+  });
+});
+
 describe('FilesService DB-only fast path', () => {
   it('getFiles 목록 조회는 Google Drive mutation/download API를 호출하지 않는다', async () => {
     const { service, prisma, storage } = makeService();

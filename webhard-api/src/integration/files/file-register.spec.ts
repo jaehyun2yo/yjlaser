@@ -39,7 +39,13 @@ describe('Integration files register API', () => {
   let app: INestApplication;
   let authService: jest.Mocked<Pick<AuthService, 'verifySession' | 'verifyWorkerSession'>>;
   let filesService: jest.Mocked<
-    Pick<FilesService, 'confirmUpload' | 'getUploadPresignedUrl' | 'getBatchUploadPresignedUrls'>
+    Pick<
+      FilesService,
+      | 'confirmUpload'
+      | 'findExistingUploadMetadata'
+      | 'getUploadPresignedUrl'
+      | 'getBatchUploadPresignedUrls'
+    >
   >;
 
   beforeAll(async () => {
@@ -67,6 +73,7 @@ describe('Integration files register API', () => {
         deleted_by: null,
         storage_provider: 'google_drive',
       }),
+      findExistingUploadMetadata: jest.fn().mockResolvedValue(null),
       getUploadPresignedUrl: jest.fn(),
       getBatchUploadPresignedUrls: jest.fn(),
     };
@@ -166,8 +173,47 @@ describe('Integration files register API', () => {
         companyId: null,
       }
     );
+    expect(filesService.findExistingUploadMetadata).toHaveBeenCalledWith({
+      driveFileId: validRegisterPayload.drive_file_id,
+      path: validRegisterPayload.path,
+    });
     expect(filesService.getUploadPresignedUrl).not.toHaveBeenCalled();
     expect(filesService.getBatchUploadPresignedUrls).not.toHaveBeenCalled();
+  });
+
+  it('returns duplicate=true without creating a second row when metadata already exists', async () => {
+    filesService.findExistingUploadMetadata.mockResolvedValueOnce({
+      id: 'file-existing',
+      name: 'sanitized-name.dxf',
+      original_name: 'sanitized-name.dxf',
+      size: 123456,
+      mime_type: 'application/dxf',
+      path: `${FOLDER_ID}/sanitized-name.dxf`,
+      folder_id: FOLDER_ID,
+      company_id: 123,
+      uploaded_by: 'admin',
+      inquiry_number: null,
+      is_downloaded: false,
+      created_at: '2026-06-19T09:00:00.000Z',
+      updated_at: '2026-06-19T09:00:00.000Z',
+      deleted_at: null,
+      deleted_by: null,
+      storage_provider: 'google_drive',
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/integration/files/register')
+      .set('X-API-Key', EXTERNAL_WEBHARD_KEY)
+      .send(validRegisterPayload)
+      .expect(201);
+
+    expect(response.body).toEqual({
+      file_id: 'file-existing',
+      order_id: 'ord-001',
+      duplicate: true,
+      status: 'FILE_RECEIVED',
+    });
+    expect(filesService.confirmUpload).not.toHaveBeenCalled();
   });
 
   it('rejects session principals because file registration is API-key only', async () => {

@@ -90,6 +90,11 @@ type BatchDriveTarget = {
   driveFolderId: string;
 };
 
+type FindExistingUploadMetadataInput = {
+  driveFileId?: string | null;
+  path: string;
+};
+
 type UploadPresignBatchContext = {
   folderAccessCache: Map<string, Promise<{ id: string; companyId: number | null }>>;
   routingCache: Map<string, Promise<{ folderId: string; companyId: number } | null>>;
@@ -1299,6 +1304,33 @@ export class FilesService {
     }
 
     return this.mapToDto(file);
+  }
+
+  async findExistingUploadMetadata(
+    input: FindExistingUploadMetadataInput
+  ): Promise<FileResponseDto | null> {
+    const where: Prisma.WebhardFileWhereInput = input.driveFileId
+      ? { driveFileId: input.driveFileId }
+      : { path: input.path };
+
+    const file = await this.prisma.executeWithRetry(
+      () =>
+        this.prisma.webhardFile.findFirst({
+          where,
+          orderBy: { createdAt: 'asc' },
+          include: {
+            company: {
+              select: {
+                companyName: true,
+                managerName: true,
+              },
+            },
+          },
+        }),
+      { operationName: 'findExistingUploadMetadata' }
+    );
+
+    return file ? this.mapToDto(file) : null;
   }
 
   /**
