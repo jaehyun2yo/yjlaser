@@ -1377,6 +1377,65 @@ describe('FilesService.getUploadPresignedUrl — companyId 상속 (task 25 F6)',
   });
 });
 
+describe('FilesService.getUploadPresignedUrl logging', () => {
+  function collectLogText(spy: jest.SpyInstance): string {
+    return spy.mock.calls.map(([message]) => String(message)).join('\n');
+  }
+
+  it('R2 upload presigned 로그에 raw filename과 upload URL을 남기지 않는다', async () => {
+    const { service } = makeService();
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
+
+    await service.getUploadPresignedUrl(
+      {
+        filename: '거래처-도면-raw-name.dxf',
+        contentType: 'application/dxf',
+        size: 2048,
+      },
+      adminUser
+    );
+
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('upload presigned issued');
+    expect(logText).toContain('provider=r2');
+    expect(logText).toContain('extension=dxf');
+    expect(logText).toContain('sizeBytes=2048');
+    expect(logText).not.toContain('거래처-도면-raw-name.dxf');
+    expect(logText).not.toContain('https://r2/upload');
+  });
+
+  it('Google Drive upload session 로그에 raw filename과 upload URL을 남기지 않는다', async () => {
+    const { service, prisma } = makeService();
+    (prisma.webhardFolder.findUnique as jest.Mock).mockResolvedValue(
+      makeFolder({
+        id: 'drive-folder-1',
+        companyId: null,
+        storageProvider: StorageProvider.GOOGLE_DRIVE,
+        driveFolderId: 'drive-parent-folder-1',
+      })
+    );
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
+
+    await service.getUploadPresignedUrl(
+      {
+        folderId: 'drive-folder-1',
+        filename: '거래처-도면-raw-name.ai',
+        contentType: 'application/postscript',
+        size: 4096,
+      },
+      adminUser
+    );
+
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('upload presigned issued');
+    expect(logText).toContain('provider=google_drive');
+    expect(logText).toContain('extension=ai');
+    expect(logText).toContain('sizeBytes=4096');
+    expect(logText).not.toContain('거래처-도면-raw-name.ai');
+    expect(logText).not.toContain('https://drive-upload/');
+  });
+});
+
 // ============================================================
 // Task 25 F1-F4: confirmUpload — companyId 상속
 // admin 업로드 시 폴더의 companyId 를 상속하여 회사 격리 필터에서

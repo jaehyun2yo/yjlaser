@@ -108,6 +108,19 @@ type UploadDestination = {
   driveTarget: BatchDriveTarget | null;
 };
 
+function getSafeFileExtension(filename: string): string {
+  const basename = filename.split(/[\\/]/).pop() ?? '';
+  const dotIndex = basename.lastIndexOf('.');
+  if (dotIndex < 0 || dotIndex === basename.length - 1) {
+    return 'none';
+  }
+  return basename
+    .slice(dotIndex + 1)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .slice(0, 24);
+}
+
 type ConfirmedBatchFile = {
   file: ConfirmUploadDto;
   folderId: string | null;
@@ -794,9 +807,7 @@ export class FilesService {
         storageFileId,
       });
 
-      this.logger.log(
-        `upload presigned issued: filename=${dto.filename}, requestedFolderId=${dto.folderId ?? 'root'}, effectiveFolderId=${effectiveFolderId ?? 'root'}, companyId=${effectiveCompanyId ?? 'none'}, redirected=${redirected}, provider=google_drive`
-      );
+      this.logUploadPresignedIssued(dto, destination, 'google_drive');
 
       return {
         url: session.uploadUrl,
@@ -819,9 +830,7 @@ export class FilesService {
     );
     const result = await this.storageService.getUploadPresignedUrl(key, dto.contentType);
 
-    this.logger.log(
-      `upload presigned issued: filename=${dto.filename}, requestedFolderId=${dto.folderId ?? 'root'}, effectiveFolderId=${effectiveFolderId ?? 'root'}, companyId=${effectiveCompanyId ?? 'none'}, redirected=${redirected}, provider=r2`
-    );
+    this.logUploadPresignedIssued(dto, destination, 'r2');
 
     return {
       url: result.url,
@@ -833,6 +842,17 @@ export class FilesService {
       uploadUrl: result.url,
       driveFileIdRequired: false,
     };
+  }
+
+  private logUploadPresignedIssued(
+    dto: CreatePresignedUrlDto,
+    destination: UploadDestination,
+    provider: 'google_drive' | 'r2'
+  ): void {
+    const extension = getSafeFileExtension(dto.filename);
+    this.logger.log(
+      `upload presigned issued: extension=${extension}, sizeBytes=${dto.size ?? 0}, requestedFolderId=${dto.folderId ?? 'root'}, effectiveFolderId=${destination.effectiveFolderId ?? 'root'}, companyId=${destination.effectiveCompanyId ?? 'none'}, redirected=${destination.redirected}, provider=${provider}`
+    );
   }
 
   /**
