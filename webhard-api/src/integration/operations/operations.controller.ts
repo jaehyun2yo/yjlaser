@@ -1,10 +1,11 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { RequireIntegrationPermission } from '../auth/require-integration-permission.decorator';
+import { OperationsAccessGuard } from './operations-access.guard';
 import { OperationsService } from './operations.service';
 
 @Controller('integration/operations')
-@UseGuards(ApiKeyGuard)
+@UseGuards(ApiKeyGuard, OperationsAccessGuard)
 export class OperationsController {
   constructor(private readonly operationsService: OperationsService) {}
 

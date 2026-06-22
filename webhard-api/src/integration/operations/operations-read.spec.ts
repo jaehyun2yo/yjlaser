@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import * as cookieParser from 'cookie-parser';
 import * as request from 'supertest';
 import { AuthService } from '../../auth/auth.service';
 import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
@@ -11,10 +12,13 @@ import {
   type IntegrationWorkerType,
 } from '../auth/integration-permissions';
 import { OperationsController } from './operations.controller';
+import { OperationsAccessGuard } from './operations-access.guard';
 import { OperationsService } from './operations.service';
 
 const ADMIN_DASHBOARD_KEY = 'admin-dashboard-key';
 const MANAGEMENT_PROGRAM_KEY = 'management-program-key';
+const ADMIN_SESSION_COOKIE = 'admin-session-token';
+const COMPANY_SESSION_COOKIE = 'company-session-token';
 
 function collectLogText(spy: jest.SpyInstance): string {
   return spy.mock.calls.map(([message]) => String(message)).join('\n');
@@ -133,6 +137,7 @@ describe('Integration operations read API', () => {
       providers: [
         OperationsService,
         ApiKeyGuard,
+        OperationsAccessGuard,
         { provide: PrismaService, useValue: prisma },
         {
           provide: ApiKeyService,
@@ -154,7 +159,15 @@ describe('Integration operations read API', () => {
         {
           provide: AuthService,
           useValue: {
-            verifySession: jest.fn().mockReturnValue(null),
+            verifySession: jest.fn((cookieValue: string | undefined) => {
+              if (cookieValue === ADMIN_SESSION_COOKIE) {
+                return { userType: 'admin', userId: 'admin', companyId: 0 };
+              }
+              if (cookieValue === COMPANY_SESSION_COOKIE) {
+                return { userType: 'company', userId: 7, companyId: 7 };
+              }
+              return null;
+            }),
             verifyWorkerSession: jest.fn().mockReturnValue(null),
           },
         },
@@ -163,6 +176,7 @@ describe('Integration operations read API', () => {
 
     operationsService = moduleFixture.get(OperationsService);
     app = moduleFixture.createNestApplication();
+    app.use(cookieParser());
     app.useGlobalFilters(new GlobalExceptionFilter());
     await app.init();
   });
@@ -278,6 +292,39 @@ describe('Integration operations read API', () => {
     expect(errorText).toMatch(/elapsedMs=\d+/);
     expect(errorText).not.toContain('failure-secret');
     expect(errorText).not.toContain('database down');
+  });
+
+  it('allows admin sessions to read operation endpoints without an API key', async () => {
+    await request(app.getHttpServer())
+      .get('/integration/operations/failures')
+      .set('Cookie', [`admin-session=${ADMIN_SESSION_COOKIE}`])
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get('/integration/operations/heartbeats')
+      .set('Cookie', [`admin-session=${ADMIN_SESSION_COOKIE}`])
+      .expect(200);
+  });
+
+  it('rejects company sessions from operation endpoints before querying services', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/integration/operations/failures')
+      .set('Cookie', [`company-session=${COMPANY_SESSION_COOKIE}`])
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .get('/integration/operations/heartbeats')
+      .set('Cookie', [`company-session=${COMPANY_SESSION_COOKIE}`])
+      .expect(403);
+
+    expect(response.body).toMatchObject({
+      statusCode: 403,
+      code: 'INTEGRATION_OPERATION_ACCESS_DENIED',
+      message: 'Operation read access required',
+      path: '/integration/operations/failures',
+    });
+    expect(prisma.jobFailure.findMany).not.toHaveBeenCalled();
+    expect(prisma.programHeartbeat.findMany).not.toHaveBeenCalled();
   });
 
   it('returns ProgramHeartbeat items with online, late, and offline status summary', async () => {
