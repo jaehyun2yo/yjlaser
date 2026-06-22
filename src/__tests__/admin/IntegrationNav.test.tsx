@@ -24,5 +24,9 @@ describe('IntegrationNav', () => {
     );
     expect(screen.getByRole('link', { name: /예약관리/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /작업자관리/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /운영현황/ })).toHaveAttribute(
+      'href',
+      '/admin/integration/operations'
+    );
   });
 });
