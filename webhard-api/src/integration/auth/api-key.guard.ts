@@ -2,6 +2,7 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
@@ -11,6 +12,8 @@ import { ApiKeyService } from './api-key.service';
 import { AuthService, SessionUser } from '../../auth/auth.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { ALLOW_WORKER_SESSION_KEY } from './allow-worker-session.decorator';
+import { INTEGRATION_PERMISSION_KEY } from './require-integration-permission.decorator';
+import type { IntegrationPermission } from './integration-permissions';
 
 const API_KEY_HEADER = 'x-api-key';
 const SESSION_COOKIE_NAMES = ['admin-session', 'company-session'] as const;
@@ -47,6 +50,10 @@ export class ApiKeyGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
+    const requiredIntegrationPermission = this.reflector.getAllAndOverride<IntegrationPermission>(
+      INTEGRATION_PERMISSION_KEY,
+      [context.getHandler(), context.getClass()]
+    );
 
     // 1. 세션 쿠키 인증 시도 (admin-session, company-session 순서)
     for (const cookieName of SESSION_COOKIE_NAMES) {
@@ -75,6 +82,13 @@ export class ApiKeyGuard implements CanActivate {
     if (apiKey) {
       const keyInfo = await this.apiKeyService.validateKey(apiKey);
       if (keyInfo) {
+        if (
+          requiredIntegrationPermission &&
+          !keyInfo.permissions.includes(requiredIntegrationPermission)
+        ) {
+          throw new ForbiddenException(`${requiredIntegrationPermission} permission required`);
+        }
+
         // API Key 사용자는 admin session과 분리된 integration principal로 설정
         (request as Request & { user: SessionUser }).user = {
           userType: 'integration',
