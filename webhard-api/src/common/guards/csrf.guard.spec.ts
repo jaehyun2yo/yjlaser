@@ -1,5 +1,15 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
 import { CsrfGuard } from './csrf.guard';
+
+type LoggedSecurityEvent = {
+  project?: string;
+  component?: string;
+  feature?: string;
+  event?: string;
+  status?: string;
+  channel?: string;
+  metadata: Record<string, unknown>;
+};
 
 function makeContext(input: {
   method: string;
@@ -20,6 +30,10 @@ function makeContext(input: {
 }
 
 describe('CsrfGuard', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('계정 복구 server-to-server key 요청은 CSRF 검증을 건너뛴다', () => {
     const guard = new CsrfGuard();
 
@@ -35,6 +49,7 @@ describe('CsrfGuard', () => {
 
   it('key와 csrf token이 없는 POST 요청은 거부한다', () => {
     const guard = new CsrfGuard();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
     expect(() =>
       guard.canActivate(
@@ -67,6 +82,7 @@ describe('CsrfGuard', () => {
 
   it('로그 수집 HMAC 헤더가 있어도 다른 경로는 CSRF 검증을 우회하지 못한다', () => {
     const guard = new CsrfGuard();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
     expect(() =>
       guard.canActivate(
@@ -87,6 +103,7 @@ describe('CsrfGuard', () => {
 
   it('로그 수집 경로를 suffix로 포함한 다른 경로는 CSRF 검증을 우회하지 못한다', () => {
     const guard = new CsrfGuard();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
     expect(() =>
       guard.canActivate(
@@ -107,6 +124,7 @@ describe('CsrfGuard', () => {
 
   it('로그 수집 전용 엔드포인트여도 HMAC 필수 헤더가 빠지면 CSRF 검증을 우회하지 못한다', () => {
     const guard = new CsrfGuard();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
     expect(() =>
       guard.canActivate(
@@ -123,4 +141,61 @@ describe('CsrfGuard', () => {
       )
     ).toThrow(ForbiddenException);
   });
+
+  it('누락된 CSRF header 거부 로그에 raw csrf cookie를 남기지 않는다', () => {
+    const guard = new CsrfGuard();
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    expect(() =>
+      guard.canActivate(
+        makeContext({
+          method: 'POST',
+          cookies: { 'csrf-token': 'raw-cookie-csrf-token' },
+          path: '/api/v1/contacts',
+        })
+      )
+    ).toThrow(ForbiddenException);
+
+    const event = findJsonLogEvent(warnSpy, 'csrf_rejected');
+    const serialized = JSON.stringify(event);
+    expect(event.project).toBe('company_site');
+    expect(event.component).toBe('CsrfGuard');
+    expect(event.feature).toBe('auth');
+    expect(event.status).toBe('failure');
+    expect(event.channel).toBe('security');
+    expect(event.metadata.reason).toBe('missing_header_token');
+    expect(serialized).not.toContain('raw-cookie-csrf-token');
+  });
+
+  it('CSRF mismatch 거부 로그에 raw csrf cookie/header 값을 남기지 않는다', () => {
+    const guard = new CsrfGuard();
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    expect(() =>
+      guard.canActivate(
+        makeContext({
+          method: 'POST',
+          headers: { 'x-csrf-token': 'raw-header-csrf-token' },
+          cookies: { 'csrf-token': 'raw-cookie-csrf-token' },
+          path: '/api/v1/contacts',
+        })
+      )
+    ).toThrow(ForbiddenException);
+
+    const event = findJsonLogEvent(warnSpy, 'csrf_rejected');
+    const serialized = JSON.stringify(event);
+    expect(event.event).toBe('csrf_rejected');
+    expect(event.metadata.reason).toBe('token_mismatch');
+    expect(serialized).not.toContain('raw-cookie-csrf-token');
+    expect(serialized).not.toContain('raw-header-csrf-token');
+  });
 });
+
+function findJsonLogEvent(spy: jest.SpyInstance, eventName: string): LoggedSecurityEvent {
+  for (const [message] of spy.mock.calls) {
+    const text = String(message);
+    if (!text.includes(eventName)) continue;
+    return JSON.parse(text) as LoggedSecurityEvent;
+  }
+  throw new Error(`log event not found: ${eventName}`);
+}

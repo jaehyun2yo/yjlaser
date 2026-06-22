@@ -1,5 +1,12 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import * as crypto from 'crypto';
+import { formatLogEvent, generateCorrelationId } from '../logging/log-event';
 
 /**
  * CSRF 검증을 건너뛸 경로 목록.
@@ -28,6 +35,8 @@ const LOG_INGESTION_REQUIRED_HEADERS = [
  */
 @Injectable()
 export class CsrfGuard implements CanActivate {
+  private readonly logger = new Logger(CsrfGuard.name);
+
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<{
       method: string;
@@ -62,6 +71,11 @@ export class CsrfGuard implements CanActivate {
     const headerToken = request.headers['x-csrf-token'];
 
     if (!cookieToken || !headerToken) {
+      this.logCsrfFailure(
+        request.method,
+        requestPath,
+        getMissingTokenReason(cookieToken, headerToken)
+      );
       throw new ForbiddenException('CSRF token missing');
     }
 
@@ -69,11 +83,46 @@ export class CsrfGuard implements CanActivate {
 
     // timing-safe compare로 토큰 비교 (타이밍 공격 방지)
     if (!timingSafeEqual(cookieToken, headerTokenStr)) {
+      this.logCsrfFailure(request.method, requestPath, 'token_mismatch');
       throw new ForbiddenException('CSRF token mismatch');
     }
 
     return true;
   }
+
+  private logCsrfFailure(method: string, path: string, reason: string): void {
+    this.logger.warn(
+      formatLogEvent({
+        level: 'warn',
+        project: 'company_site',
+        component: CsrfGuard.name,
+        feature: 'auth',
+        event: 'csrf_rejected',
+        action: 'validate_csrf',
+        status: 'failure',
+        channel: 'security',
+        correlation_id: generateCorrelationId('auth'),
+        metadata: {
+          reason,
+          method,
+          path,
+        },
+      })
+    );
+  }
+}
+
+function getMissingTokenReason(
+  cookieToken: string | undefined,
+  headerToken: string | string[] | undefined
+): string {
+  if (!cookieToken && !headerToken) {
+    return 'missing_cookie_and_header_token';
+  }
+  if (!cookieToken) {
+    return 'missing_cookie_token';
+  }
+  return 'missing_header_token';
 }
 
 function isLogIngestionRequest(
