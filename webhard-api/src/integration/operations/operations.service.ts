@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
+const HEARTBEAT_LATE_THRESHOLD_MS = 120 * 1000;
+const HEARTBEAT_OFFLINE_THRESHOLD_MS = 10 * 60 * 1000;
+
 export type OperationFailuresQuery = {
   cursor?: string;
   limit?: string | number;
@@ -29,6 +32,20 @@ type JobFailureWithLastEvent = {
     stateApplyStatus: string;
   } | null;
 };
+
+type ProgramHeartbeatRead = {
+  id: string;
+  programType: string;
+  instanceName: string;
+  status: string;
+  version: string | null;
+  hostname: string | null;
+  lastSeenAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type HeartbeatStatus = 'online' | 'late' | 'offline';
 
 @Injectable()
 export class OperationsService {
@@ -105,6 +122,59 @@ export class OperationsService {
     }
   }
 
+  async getProgramHeartbeats() {
+    const startedAt = Date.now();
+
+    this.logger.log('operation heartbeats list status=start');
+
+    try {
+      const heartbeats = (await this.prisma.executeWithRetry(
+        () =>
+          this.prisma.programHeartbeat.findMany({
+            orderBy: [{ programType: 'asc' }, { instanceName: 'asc' }],
+            select: {
+              id: true,
+              programType: true,
+              instanceName: true,
+              status: true,
+              version: true,
+              hostname: true,
+              lastSeenAt: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          }),
+        { operationName: 'getProgramHeartbeats' }
+      )) as ProgramHeartbeatRead[];
+
+      const nowMs = Date.now();
+      const items = heartbeats.map((heartbeat) => this.mapHeartbeat(heartbeat, nowMs));
+      const summary = this.summarizeHeartbeats(items);
+
+      this.logger.log(
+        `operation heartbeats list status=success count=${summary.total} online=${summary.online} late=${summary.late} offline=${summary.offline} elapsedMs=${
+          Date.now() - startedAt
+        }`
+      );
+
+      return {
+        items,
+        summary,
+        threshold_seconds: {
+          late: HEARTBEAT_LATE_THRESHOLD_MS / 1000,
+          offline: HEARTBEAT_OFFLINE_THRESHOLD_MS / 1000,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `operation heartbeats list status=failure errorType=${this.getErrorType(
+          error
+        )} elapsedMs=${Date.now() - startedAt}`
+      );
+      throw error;
+    }
+  }
+
   private mapFailure(failure: JobFailureWithLastEvent) {
     return {
       failure_id: failure.id,
@@ -148,5 +218,53 @@ export class OperationsService {
 
   private getErrorType(error: unknown): string {
     return error instanceof Error && error.name ? error.name : typeof error;
+  }
+
+  private mapHeartbeat(heartbeat: ProgramHeartbeatRead, nowMs: number) {
+    const lagSeconds = Math.max(0, Math.floor((nowMs - heartbeat.lastSeenAt.getTime()) / 1000));
+
+    return {
+      heartbeat_id: heartbeat.id,
+      program_type: heartbeat.programType,
+      instance_name: heartbeat.instanceName,
+      status: this.resolveHeartbeatStatus(heartbeat, nowMs),
+      stored_status: heartbeat.status,
+      version: heartbeat.version,
+      hostname: heartbeat.hostname,
+      last_seen_at: heartbeat.lastSeenAt.toISOString(),
+      lag_seconds: lagSeconds,
+      created_at: heartbeat.createdAt.toISOString(),
+      updated_at: heartbeat.updatedAt.toISOString(),
+    };
+  }
+
+  private resolveHeartbeatStatus(
+    heartbeat: Pick<ProgramHeartbeatRead, 'status' | 'lastSeenAt'>,
+    nowMs: number
+  ): HeartbeatStatus {
+    if (heartbeat.status === 'offline') {
+      return 'offline';
+    }
+
+    const ageMs = nowMs - heartbeat.lastSeenAt.getTime();
+    if (ageMs > HEARTBEAT_OFFLINE_THRESHOLD_MS) {
+      return 'offline';
+    }
+    if (ageMs > HEARTBEAT_LATE_THRESHOLD_MS) {
+      return 'late';
+    }
+
+    return 'online';
+  }
+
+  private summarizeHeartbeats(items: Array<{ status: HeartbeatStatus }>) {
+    return items.reduce(
+      (summary, item) => {
+        summary[item.status] += 1;
+        summary.total += 1;
+        return summary;
+      },
+      { total: 0, online: 0, late: 0, offline: 0 }
+    );
   }
 }

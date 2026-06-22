@@ -13,4 +13,10 @@ export class OperationsController {
   async getFailures(@Query('cursor') cursor?: string, @Query('limit') limit?: string) {
     return this.operationsService.getUnresolvedFailures({ cursor, limit });
   }
+
+  @Get('heartbeats')
+  @RequireIntegrationPermission('operation/read')
+  async getHeartbeats() {
+    return this.operationsService.getProgramHeartbeats();
+  }
 }

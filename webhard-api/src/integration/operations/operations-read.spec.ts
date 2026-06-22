@@ -48,6 +48,32 @@ function makeFailure(id: string, createdAt: string) {
   };
 }
 
+function makeHeartbeat(
+  id: string,
+  overrides: {
+    programType: string;
+    instanceName: string;
+    status?: string;
+    lastSeenAgeMs: number;
+  }
+) {
+  const now = Date.now();
+  const lastSeenAt = new Date(now - overrides.lastSeenAgeMs);
+
+  return {
+    id,
+    programType: overrides.programType,
+    instanceName: overrides.instanceName,
+    status: overrides.status ?? 'online',
+    version: '1.0.0',
+    hostname: `host-${id}`,
+    lastSeenAt,
+    metadata: { raw: 'not exposed' },
+    createdAt: new Date(now - 60 * 60 * 1000),
+    updatedAt: lastSeenAt,
+  };
+}
+
 function makePrisma() {
   return {
     executeWithRetry: jest.fn((fn: () => unknown) => fn()),
@@ -59,6 +85,33 @@ function makePrisma() {
           makeFailure('failure-002', '2026-06-19T09:02:00Z'),
           makeFailure('failure-001', '2026-06-19T09:01:00Z'),
         ]),
+    },
+    programHeartbeat: {
+      findMany: jest.fn().mockImplementation(() =>
+        Promise.resolve([
+          makeHeartbeat('heartbeat-online', {
+            programType: 'external_webhard_sync',
+            instanceName: 'sync-01',
+            lastSeenAgeMs: 60 * 1000,
+          }),
+          makeHeartbeat('heartbeat-late', {
+            programType: 'management_program',
+            instanceName: 'management-01',
+            lastSeenAgeMs: 3 * 60 * 1000,
+          }),
+          makeHeartbeat('heartbeat-offline-age', {
+            programType: 'nesting_program',
+            instanceName: 'nesting-01',
+            lastSeenAgeMs: 11 * 60 * 1000,
+          }),
+          makeHeartbeat('heartbeat-offline-status', {
+            programType: 'management_program',
+            instanceName: 'management-02',
+            status: 'offline',
+            lastSeenAgeMs: 30 * 1000,
+          }),
+        ])
+      ),
     },
   };
 }
@@ -225,5 +278,102 @@ describe('Integration operations read API', () => {
     expect(errorText).toMatch(/elapsedMs=\d+/);
     expect(errorText).not.toContain('failure-secret');
     expect(errorText).not.toContain('database down');
+  });
+
+  it('returns ProgramHeartbeat items with online, late, and offline status summary', async () => {
+    const logSpy = jest.spyOn(operationsService['logger'], 'log').mockImplementation();
+
+    const response = await request(app.getHttpServer())
+      .get('/integration/operations/heartbeats')
+      .set('X-API-Key', ADMIN_DASHBOARD_KEY)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      summary: {
+        total: 4,
+        online: 1,
+        late: 1,
+        offline: 2,
+      },
+      threshold_seconds: {
+        late: 120,
+        offline: 600,
+      },
+    });
+    expect(response.body.items).toHaveLength(4);
+    expect(response.body.items.map((item: { status: string }) => item.status)).toEqual([
+      'online',
+      'late',
+      'offline',
+      'offline',
+    ]);
+    expect(response.body.items[0]).toMatchObject({
+      heartbeat_id: 'heartbeat-online',
+      program_type: 'external_webhard_sync',
+      instance_name: 'sync-01',
+      stored_status: 'online',
+      version: '1.0.0',
+      hostname: 'host-heartbeat-online',
+    });
+    expect(response.body.items[0]).not.toHaveProperty('metadata');
+    expect(prisma.programHeartbeat.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ programType: 'asc' }, { instanceName: 'asc' }],
+        select: expect.objectContaining({
+          id: true,
+          programType: true,
+          instanceName: true,
+          status: true,
+          version: true,
+          hostname: true,
+          lastSeenAt: true,
+          createdAt: true,
+          updatedAt: true,
+        }),
+      })
+    );
+
+    const prismaQuery = prisma.programHeartbeat.findMany.mock.calls[0][0];
+    expect(prismaQuery.select).not.toHaveProperty('metadata');
+
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('operation heartbeats list status=start');
+    expect(logText).toContain('operation heartbeats list status=success');
+    expect(logText).toContain('count=4');
+    expect(logText).toContain('online=1');
+    expect(logText).toContain('late=1');
+    expect(logText).toContain('offline=2');
+    expect(logText).toMatch(/elapsedMs=\d+/);
+    expect(logText).not.toContain('sync-01');
+    expect(logText).not.toContain('host-heartbeat-online');
+  });
+
+  it('rejects heartbeat reads for API keys without operation/read permission', async () => {
+    await request(app.getHttpServer())
+      .get('/integration/operations/heartbeats')
+      .set('X-API-Key', MANAGEMENT_PROGRAM_KEY)
+      .expect(403);
+
+    expect(prisma.programHeartbeat.findMany).not.toHaveBeenCalled();
+  });
+
+  it('logs heartbeat query failures without raw program details or error message', async () => {
+    prisma.programHeartbeat.findMany.mockRejectedValueOnce(new Error('heartbeat database down'));
+    const logSpy = jest.spyOn(operationsService['logger'], 'log').mockImplementation();
+    const errorSpy = jest.spyOn(operationsService['logger'], 'error').mockImplementation();
+
+    await expect(operationsService.getProgramHeartbeats()).rejects.toThrow(
+      'heartbeat database down'
+    );
+
+    const startText = collectLogText(logSpy);
+    const errorText = collectLogText(errorSpy);
+    expect(startText).toContain('operation heartbeats list status=start');
+    expect(errorText).toContain('operation heartbeats list status=failure');
+    expect(errorText).toContain('errorType=Error');
+    expect(errorText).toMatch(/elapsedMs=\d+/);
+    expect(errorText).not.toContain('heartbeat database down');
+    expect(errorText).not.toContain('sync-01');
+    expect(errorText).not.toContain('host-heartbeat-online');
   });
 });
