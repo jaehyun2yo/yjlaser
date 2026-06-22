@@ -3,7 +3,11 @@ import {
   ORDER_STATE_AXIS_KEYS,
   isOrderStateValue,
 } from './order-state.constants';
-import { ORDER_STATE_TRANSITIONS, getAllowedOrderStateTransitions } from './order-state-transition';
+import {
+  ORDER_STATE_TRANSITIONS,
+  getAllowedOrderStateTransitions,
+  validateOrderStateTransition,
+} from './order-state-transition';
 
 describe('ORDER_STATE_TRANSITIONS', () => {
   it('production 상태 축의 허용 전이표를 계약서 기준으로 고정한다', () => {
@@ -85,5 +89,39 @@ describe('ORDER_STATE_TRANSITIONS', () => {
       'BLOCKED',
     ]);
     expect(getAllowedOrderStateTransitions('production', 'CLOSED')).toEqual([]);
+  });
+
+  it('허용 전이는 allowed 결과를 반환한다', () => {
+    expect(validateOrderStateTransition('billing', 'SEND_PENDING', 'SENT')).toEqual({
+      allowed: true,
+      reason: null,
+      allowedTransitions: ['SENT', 'SEND_FAILED', 'BLOCKED'],
+    });
+  });
+
+  it('계약서에 없는 같은 축 전이는 reason과 허용 target을 반환하며 차단한다', () => {
+    expect(validateOrderStateTransition('billing', 'SEND_FAILED', 'SENT')).toEqual({
+      allowed: false,
+      reason: 'TRANSITION_NOT_ALLOWED',
+      allowedTransitions: ['RESEND_APPROVED', 'BLOCKED'],
+    });
+    expect(validateOrderStateTransition('production', 'RECEIVED', 'LASER_READY')).toEqual({
+      allowed: false,
+      reason: 'TRANSITION_NOT_ALLOWED',
+      allowedTransitions: ['FILE_RECEIVED', 'DRAWING_REVIEW', 'BLOCKED'],
+    });
+  });
+
+  it('축에 없는 시작/대상 상태는 reason과 함께 차단한다', () => {
+    expect(validateOrderStateTransition('production', 'UNKNOWN', 'RECEIVED')).toEqual({
+      allowed: false,
+      reason: 'UNKNOWN_FROM_STATUS',
+      allowedTransitions: [],
+    });
+    expect(validateOrderStateTransition('production', 'RECEIVED', 'SENT')).toEqual({
+      allowed: false,
+      reason: 'UNKNOWN_TO_STATUS',
+      allowedTransitions: ['FILE_RECEIVED', 'DRAWING_REVIEW', 'BLOCKED'],
+    });
   });
 });

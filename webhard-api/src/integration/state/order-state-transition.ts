@@ -16,6 +16,23 @@ export type OrderStateTransitionMatrix = {
   billing: Record<BillingStatus, readonly BillingStatus[]>;
 };
 
+export type OrderStateTransitionFailureReason =
+  | 'UNKNOWN_FROM_STATUS'
+  | 'UNKNOWN_TO_STATUS'
+  | 'TRANSITION_NOT_ALLOWED';
+
+export type OrderStateTransitionValidationResult =
+  | {
+      allowed: true;
+      reason: null;
+      allowedTransitions: readonly string[];
+    }
+  | {
+      allowed: false;
+      reason: OrderStateTransitionFailureReason;
+      allowedTransitions: readonly string[];
+    };
+
 export const ORDER_STATE_TRANSITIONS: OrderStateTransitionMatrix = {
   production: {
     RECEIVED: ['FILE_RECEIVED', 'DRAWING_REVIEW', 'BLOCKED'],
@@ -85,4 +102,41 @@ export function getAllowedOrderStateTransitions(
     case 'billing':
       return ORDER_STATE_TRANSITIONS.billing[fromStatus as BillingStatus];
   }
+}
+
+export function validateOrderStateTransition(
+  axis: OrderStateAxis,
+  fromStatus: string,
+  toStatus: string
+): OrderStateTransitionValidationResult {
+  if (!isOrderStateValue(axis, fromStatus)) {
+    return {
+      allowed: false,
+      reason: 'UNKNOWN_FROM_STATUS',
+      allowedTransitions: [],
+    };
+  }
+
+  const allowedTransitions = getAllowedOrderStateTransitions(axis, fromStatus);
+  if (!isOrderStateValue(axis, toStatus)) {
+    return {
+      allowed: false,
+      reason: 'UNKNOWN_TO_STATUS',
+      allowedTransitions,
+    };
+  }
+
+  if (!allowedTransitions.includes(toStatus)) {
+    return {
+      allowed: false,
+      reason: 'TRANSITION_NOT_ALLOWED',
+      allowedTransitions,
+    };
+  }
+
+  return {
+    allowed: true,
+    reason: null,
+    allowedTransitions,
+  };
 }
