@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { formatLogEvent, generateCorrelationId } from '../common/logging/log-event';
 import {
   AccountRecoveryMailAllowance,
   AccountRecoveryMailAllowanceInput,
@@ -16,6 +17,8 @@ interface UpstashPipelineResult {
   result?: unknown;
   error?: string;
 }
+
+type AccountRecoveryRateLimitOperation = 'fixed_window' | 'cooldown';
 
 const RATE_LIMIT_MESSAGE = '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.';
 const UNAVAILABLE_MESSAGE = '계정 복구 요청을 처리할 수 없습니다. 관리자에게 문의해주세요.';
@@ -70,27 +73,41 @@ export class AccountRecoveryRateLimitService {
     ttlSeconds: number,
     limit: number
   ): Promise<boolean> {
-    const result = await this.upstashPipeline([
-      ['INCR', key],
-      ['EXPIRE', key, String(ttlSeconds), 'NX'],
-    ]);
+    const result = await this.upstashPipeline(
+      [
+        ['INCR', key],
+        ['EXPIRE', key, String(ttlSeconds), 'NX'],
+      ],
+      'fixed_window'
+    );
     const count = Number(result[0]?.result || 0);
 
     return count <= limit;
   }
 
   private async setCooldown(key: string, ttlSeconds: number): Promise<boolean> {
-    const result = await this.upstashPipeline([['SET', key, '1', 'EX', String(ttlSeconds), 'NX']]);
+    const result = await this.upstashPipeline(
+      [['SET', key, '1', 'EX', String(ttlSeconds), 'NX']],
+      'cooldown'
+    );
     return result[0]?.result === 'OK';
   }
 
-  private async upstashPipeline(commands: string[][]): Promise<UpstashPipelineResult[]> {
+  private async upstashPipeline(
+    commands: string[][],
+    operation: AccountRecoveryRateLimitOperation
+  ): Promise<UpstashPipelineResult[]> {
     const url = this.configService.get<string>('UPSTASH_REDIS_REST_URL');
     const token = this.configService.get<string>('UPSTASH_REDIS_REST_TOKEN');
     const fingerprintSecret = this.configService.get<string>('ACCOUNT_RECOVERY_RATE_LIMIT_SECRET');
 
     if (!url || !token || !fingerprintSecret) {
-      this.logger.error('Account recovery Upstash config is missing');
+      this.logRateLimitFailure({
+        errorCode: 'ACCOUNT_RECOVERY_RATE_LIMIT_CONFIG_MISSING',
+        reason: 'config_missing',
+        operation,
+        commandCount: commands.length,
+      });
       throw new ServiceUnavailableException(UNAVAILABLE_MESSAGE);
     }
 
@@ -105,20 +122,35 @@ export class AccountRecoveryRateLimitService {
       });
 
       if (!response.ok) {
-        this.logger.error('Account recovery Upstash pipeline failed', {
-          status: response.status,
+        this.logRateLimitFailure({
+          errorCode: 'ACCOUNT_RECOVERY_RATE_LIMIT_UPSTASH_HTTP_ERROR',
+          reason: 'upstash_http_error',
+          operation,
+          commandCount: commands.length,
+          upstashStatus: response.status,
         });
         throw new ServiceUnavailableException(UNAVAILABLE_MESSAGE);
       }
 
       const data = (await response.json()) as unknown;
       if (!Array.isArray(data)) {
+        this.logRateLimitFailure({
+          errorCode: 'ACCOUNT_RECOVERY_RATE_LIMIT_UPSTASH_INVALID_RESPONSE',
+          reason: 'upstash_invalid_response',
+          operation,
+          commandCount: commands.length,
+        });
         throw new ServiceUnavailableException(UNAVAILABLE_MESSAGE);
       }
 
       const results = data as UpstashPipelineResult[];
       if (results.some((item) => item.error)) {
-        this.logger.error('Account recovery Upstash command returned error');
+        this.logRateLimitFailure({
+          errorCode: 'ACCOUNT_RECOVERY_RATE_LIMIT_UPSTASH_COMMAND_ERROR',
+          reason: 'upstash_command_error',
+          operation,
+          commandCount: commands.length,
+        });
         throw new ServiceUnavailableException(UNAVAILABLE_MESSAGE);
       }
 
@@ -128,8 +160,48 @@ export class AccountRecoveryRateLimitService {
         throw error;
       }
 
-      this.logger.error('Account recovery Upstash request failed', error);
+      this.logRateLimitFailure({
+        errorCode: 'ACCOUNT_RECOVERY_RATE_LIMIT_UPSTASH_REQUEST_FAILED',
+        reason: 'upstash_request_failed',
+        operation,
+        commandCount: commands.length,
+        error,
+      });
       throw new ServiceUnavailableException(UNAVAILABLE_MESSAGE);
     }
+  }
+
+  private logRateLimitFailure(input: {
+    errorCode: string;
+    reason: string;
+    operation: AccountRecoveryRateLimitOperation;
+    commandCount: number;
+    upstashStatus?: number;
+    error?: unknown;
+  }): void {
+    const errorType = input.error instanceof Error ? input.error.name : undefined;
+    this.logger.error(
+      formatLogEvent({
+        level: 'error',
+        project: 'company_site',
+        component: AccountRecoveryRateLimitService.name,
+        feature: 'auth',
+        event: 'account_recovery_rate_limit_failed',
+        action: 'enforce_rate_limit',
+        status: 'failure',
+        channel: 'security',
+        correlation_id: generateCorrelationId('account-recovery'),
+        count: input.commandCount,
+        error_code: input.errorCode,
+        error_type: errorType,
+        metadata: {
+          reason: input.reason,
+          operation: input.operation,
+          command_count: input.commandCount,
+          upstash_status: input.upstashStatus,
+          error_type: errorType,
+        },
+      })
+    );
   }
 }
