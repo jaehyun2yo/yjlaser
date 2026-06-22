@@ -9,7 +9,7 @@ import {
   type LogIngestionAuthContext,
   type LogIngestionRequest,
 } from './auth/log-ingestion-auth';
-import type { LogProject } from './dto/log-event.dto';
+import { LOG_PROJECTS, type LogProject } from './dto/log-event.dto';
 import { LogEventBatchDto } from './dto/log-event.dto';
 import { LogEventRequestPipe } from './log-event-request.pipe';
 import { LogEventsService, type LogEventCollectResponse } from './log-events.service';
@@ -20,29 +20,38 @@ export class LogEventsController {
 
   constructor(
     private readonly authVerifier: LogIngestionAuthVerifier,
-    private readonly logEventsService: LogEventsService
+    private readonly logEventsService: LogEventsService,
+    private readonly requestPipe: LogEventRequestPipe
   ) {}
 
   @Post()
-  async collect(
-    @Req() request: LogIngestionRequest,
-    @Body(LogEventRequestPipe) batchPayload: unknown
-  ) {
-    const batch = batchPayload as LogEventBatchDto;
+  async collect(@Req() request: LogIngestionRequest, @Body() batchPayload: unknown) {
     const startedAt = Date.now();
-    const projects = this.getProjects(batch);
-    const correlationId = this.getCorrelationId(batch);
-    this.logIngestionStarted(batch, projects, correlationId);
+    const authProjects = this.getProjectsForAuth(batchPayload);
+    let batch: LogEventBatchDto | undefined;
+    let projects = authProjects;
+    let correlationId = generateCorrelationId('log-ingestion');
 
     try {
-      const authContext = await this.authVerifier.verifyRequest(request, projects);
+      const authContext = await this.authVerifier.verifyRequest(request, authProjects);
+      batch = this.requestPipe.transform(batchPayload);
+      projects = this.getProjects(batch);
+      correlationId = this.getCorrelationId(batch);
+      this.logIngestionStarted(batch, projects, correlationId);
       const response = await this.logEventsService.collect(authContext, batch);
       const elapsedMs = Date.now() - startedAt;
       this.logIngestionSucceeded(authContext, batch, response, elapsedMs, correlationId);
       return response;
     } catch (error) {
       const elapsedMs = Date.now() - startedAt;
-      this.logIngestionFailed(error, request, batch, projects, elapsedMs, correlationId);
+      this.logIngestionFailed(
+        error,
+        request,
+        batch ?? batchPayload,
+        projects,
+        elapsedMs,
+        correlationId
+      );
       throw error;
     }
   }
@@ -53,6 +62,19 @@ export class LogEventsController {
 
   private getCorrelationId(batch: LogEventBatchDto): string {
     return batch.events[0]?.correlation_id || generateCorrelationId('log-ingestion');
+  }
+
+  private getProjectsForAuth(payload: unknown): LogProject[] {
+    if (!isRecord(payload) || !Array.isArray(payload.events)) {
+      return [];
+    }
+
+    const validProjects = new Set<string>(LOG_PROJECTS);
+    const projects = payload.events
+      .map((event) => (isRecord(event) && typeof event.project === 'string' ? event.project : null))
+      .filter((project): project is LogProject => Boolean(project && validProjects.has(project)));
+
+    return [...new Set(projects)];
   }
 
   private logIngestionStarted(
@@ -117,7 +139,7 @@ export class LogEventsController {
   private logIngestionFailed(
     error: unknown,
     request: LogIngestionRequest,
-    batch: LogEventBatchDto,
+    payload: unknown,
     projects: LogProject[],
     elapsedMs: number,
     correlationId: string
@@ -136,17 +158,25 @@ export class LogEventsController {
         channel: errorCode?.startsWith('LOG_') ? 'security' : 'error',
         correlation_id: correlationId,
         duration_ms: elapsedMs,
-        count: batch.events.length,
+        count: this.getEventCount(payload),
         actor_type: clientIdHash ? 'log_client' : undefined,
         actor_id_hash: clientIdHash,
         error_type: this.getErrorName(error),
         error_code: errorCode,
         metadata: {
-          event_count: batch.events.length,
+          event_count: this.getEventCount(payload),
           project_count: projects.length,
         },
       })
     );
+  }
+
+  private getEventCount(payload: unknown): number | undefined {
+    if (isRecord(payload) && Array.isArray(payload.events)) {
+      return payload.events.length;
+    }
+
+    return undefined;
   }
 
   private getErrorName(error: unknown): string {

@@ -37,13 +37,14 @@ The verifier enforces:
 - nonce replay rejection
 - per-client/IP in-memory rate limit
 - timing-safe signature comparison
-- optional in-memory abuse disable after repeated invalid signatures
+- explicit disabled-key rejection without automatic lockout
 
 Configured clients are loaded from `LOG_INGESTION_CLIENT_KEYS_JSON` as a JSON
 array. Each item must include `clientId`, `keyId`, `secret`, `allowedProjects`,
 and `hashKeyVersion`. Secrets must be at least 32 bytes. If the variable is not
-set, no client is accepted. `LOG_INGESTION_MAX_AUTH_FAILURES` can enable the
-in-memory repeated-invalid-signature disable threshold for this shell.
+set, no client is accepted. Repeated invalid signatures are recorded by the key
+store boundary for later audit, but this shell does not automatically disable
+keys. Client key disablement is an explicit operator/configuration action.
 
 Identifier fields such as `actor_id_hash` and `target_id_hash` are generated
 with HMAC-SHA256. The preferred key is `LOG_IDENTIFIER_HASH_SECRET`; the
@@ -100,6 +101,11 @@ Rejection responses use safe codes only, for example:
 - `LOG_RAW_SENSITIVE_VALUE`
 - `LOG_METADATA_TOO_DEEP`
 - `LOG_INVALID_REQUEST`
+
+Authentication happens before this payload scan inside the controller, so a
+missing or invalid HMAC request still returns `401` even when the body contains
+raw sensitive values. Authenticated requests with raw sensitive payloads return
+`400` and log only safe rejection codes/metadata.
 
 ## CSRF And Existing Auth Separation
 

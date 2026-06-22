@@ -173,6 +173,30 @@ describe('LogEventsController', () => {
     });
   });
 
+  it('인증이 없는 raw-sensitive payload는 payload validation 전에 401로 거부한다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const payload = makePayload('missing auth sensitive') as ReturnType<typeof makePayload> & {
+      access_token?: string;
+    };
+    payload.access_token = 'raw-sensitive-token';
+
+    const response = await request(app.getHttpServer())
+      .post('/integration/log-events')
+      .send(payload)
+      .expect(401);
+
+    expect(response.body).toMatchObject({
+      statusCode: 401,
+      code: 'LOG_AUTH_REQUIRED',
+      message: 'LOG_AUTH_REQUIRED',
+    });
+
+    const events = parseJsonLogEvents(warnSpy);
+    expect(events.some((event) => event.event === 'log_event_payload_rejected')).toBe(false);
+    expect(events.some((event) => event.event === 'log_ingestion_failed')).toBe(true);
+    expect(serializeLoggerCalls(warnSpy)).not.toContain('raw-sensitive-token');
+  });
+
   it('유효한 서명과 안전한 이벤트 배치는 accepted로 저장한다', async () => {
     const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation();
     const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();

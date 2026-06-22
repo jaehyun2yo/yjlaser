@@ -17,12 +17,14 @@ import {
   InMemoryLogEventRepository,
   LOG_EVENT_REPOSITORY,
 } from './repositories/log-event.repository';
+import { LogEventRequestPipe } from './log-event-request.pipe';
 
 @Module({
   imports: [ConfigModule],
   controllers: [LogEventsController],
   providers: [
     LogEventsService,
+    LogEventRequestPipe,
     LogIngestionAuthVerifier,
     {
       provide: LOG_EVENT_REPOSITORY,
