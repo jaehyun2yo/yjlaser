@@ -11,6 +11,7 @@ import {
   sanitizeIntegrationEventData,
   sanitizeIntegrationEventText,
 } from '../../common/sensitive-data-sanitizer.util';
+import { resolveOrderStateEventEffects } from '../state/order-state-event-effect';
 
 // 이벤트 타입 -> 자동 상태 전환 매핑
 const AUTO_STATUS_MAP: Record<string, string> = {
@@ -22,7 +23,6 @@ const AUTO_STATUS_MAP: Record<string, string> = {
 
 const JOB_EVENT_STATE_APPLY_FAILED = 'STATE_APPLY_FAILED';
 const JOB_EVENT_WORKER_REPORTED_FAILED = 'WORKER_REPORTED_FAILED';
-const DRAWING_CLASSIFIED_EVENT = 'drawing.classified';
 
 type JobEventFailureDetails = {
   errorCode: string;
@@ -263,36 +263,34 @@ export class EventsService {
     tx: Prisma.TransactionClient,
     dto: EventEnvelopeDto
   ): Promise<EventAppliedStateChangeDto[]> {
-    if (dto.event_type !== DRAWING_CLASSIFIED_EVENT) {
+    const resolution = resolveOrderStateEventEffects(dto.event_type, dto.payload);
+    if (!resolution.ok) {
+      throw new Error('Invalid order state event payload');
+    }
+    if (resolution.effects.length === 0) {
       return [];
     }
-
-    const classificationStatus = this.getStringPayloadValue(dto, 'classification_status');
-    if (!dto.order_id || !classificationStatus) {
-      throw new Error('Invalid drawing classification payload');
+    if (!dto.order_id) {
+      throw new Error('Order state event requires order_id');
     }
 
+    const data = Object.fromEntries(
+      resolution.effects.map((effect) => [effect.dbField, effect.value])
+    ) as Prisma.OrderUpdateManyMutationInput;
     const updateResult = await tx.order.updateMany({
       where: { id: dto.order_id },
-      data: { classificationStatus },
+      data,
     });
     if (updateResult.count !== 1) {
-      throw new Error('Drawing classification target order not found');
+      throw new Error('Order state event target order not found');
     }
 
-    return [
-      {
-        target: 'order',
-        id: dto.order_id,
-        field: 'classification_status',
-        value: classificationStatus,
-      },
-    ];
-  }
-
-  private getStringPayloadValue(dto: EventEnvelopeDto, field: string): string | null {
-    const value = dto.payload[field];
-    return typeof value === 'string' && value.length > 0 ? value : null;
+    return resolution.effects.map((effect) => ({
+      target: effect.target,
+      id: dto.order_id as string,
+      field: effect.eventField,
+      value: effect.value,
+    }));
   }
 
   private getStateApplyFailureMessage(eventType: string): string {
