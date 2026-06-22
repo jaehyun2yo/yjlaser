@@ -15,6 +15,14 @@ import {
   buildFeedbackNotificationHtml,
   buildFeedbackNotificationText,
 } from './templates/feedback-notification';
+import {
+  formatLogEvent,
+  generateCorrelationId,
+  hashIdentifier,
+  type BackendLogChannel,
+  type BackendLogLevel,
+  type BackendLogStatus,
+} from '../common/logging/log-event';
 
 interface SendMailOptions {
   to: string;
@@ -40,6 +48,7 @@ interface UsernameReminderData {
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
+  private readonly logFeature = 'mail';
   private transporter: Transporter<SMTPTransport.SentMessageInfo> | null = null;
 
   private readonly MAX_RETRIES = 3;
@@ -64,16 +73,38 @@ export class MailService {
     // Gmail deduplication fix: use SMTP_USER directly as admin email
     const configAdminEmail = this.configService.get<string>('ADMIN_EMAIL') || '';
     if (configAdminEmail === 'service@yjlaser.net' && smtpUser) {
-      this.logger.warn(
-        'ADMIN_EMAIL=service@yjlaser.net causes Gmail dedup — using SMTP_USER instead'
-      );
+      this.logMailEvent('warn', {
+        level: 'warn',
+        event: 'mail_admin_email_fallback_applied',
+        action: 'configure',
+        status: 'degraded',
+        channel: 'audit',
+        correlationId: this.getMailCorrelationId(),
+        metadata: {
+          reason: 'gmail_dedup_avoidance',
+          smtp_user_present: true,
+        },
+      });
       this.adminEmail = smtpUser;
     } else {
       this.adminEmail = configAdminEmail;
     }
 
     if (!smtpHost || !smtpPort || !smtpUser || !smtpPassword) {
-      this.logger.warn('SMTP not configured — email sending disabled');
+      this.logMailEvent('warn', {
+        level: 'warn',
+        event: 'mail_smtp_unconfigured',
+        action: 'configure',
+        status: 'skipped',
+        channel: 'error',
+        correlationId: this.getMailCorrelationId(),
+        metadata: {
+          smtp_host_present: !!smtpHost,
+          smtp_port_present: !!smtpPort,
+          smtp_user_present: !!smtpUser,
+          smtp_auth_present: !!smtpPassword,
+        },
+      });
       return;
     }
 
@@ -84,7 +115,17 @@ export class MailService {
       auth: { user: smtpUser, pass: smtpPassword },
     });
 
-    this.logger.log(`Mail transporter initialized (${smtpHost}:${smtpPort})`);
+    this.logMailEvent('log', {
+      level: 'info',
+      event: 'mail_transport_initialized',
+      action: 'configure',
+      status: 'success',
+      channel: 'audit',
+      correlationId: this.getMailCorrelationId(),
+      metadata: {
+        secure: Number(smtpPort) === 465,
+      },
+    });
   }
 
   canSendEmail(): boolean {
@@ -207,9 +248,26 @@ export class MailService {
   }
 
   /** Core send with retry (exponential backoff) */
-  private async sendMail(options: SendMailOptions, attempt = 1, required = false): Promise<void> {
+  private async sendMail(
+    options: SendMailOptions,
+    attempt = 1,
+    required = false,
+    correlationId = this.getMailCorrelationId()
+  ): Promise<void> {
     if (!this.transporter) {
-      this.logger.warn(`Email skipped (SMTP not configured): ${options.subject}`);
+      this.logMailEvent('warn', {
+        level: 'warn',
+        event: 'mail_send_skipped',
+        action: 'send',
+        status: 'skipped',
+        channel: 'error',
+        correlationId,
+        subject: options.subject,
+        metadata: {
+          reason: 'smtp_not_configured',
+          required,
+        },
+      });
       if (required) {
         throw new Error('SMTP not configured');
       }
@@ -217,7 +275,19 @@ export class MailService {
     }
 
     if (!options.to) {
-      this.logger.warn(`Email skipped (recipient not set): ${options.subject}`);
+      this.logMailEvent('warn', {
+        level: 'warn',
+        event: 'mail_send_skipped',
+        action: 'send',
+        status: 'skipped',
+        channel: 'error',
+        correlationId,
+        subject: options.subject,
+        metadata: {
+          reason: 'recipient_missing',
+          required,
+        },
+      });
       if (required) {
         throw new Error('Email recipient not set');
       }
@@ -233,20 +303,61 @@ export class MailService {
         html: options.html,
         text: options.text,
       });
-      this.logger.log(`Email sent: ${options.subject}`);
+      this.logMailEvent('log', {
+        level: 'info',
+        event: 'mail_sent',
+        action: 'send',
+        status: 'success',
+        channel: 'external',
+        correlationId,
+        subject: options.subject,
+        metadata: {
+          attempt,
+          required,
+          reply_to_present: !!options.replyTo,
+        },
+      });
     } catch (error) {
       const reason = this.classifyMailFailure(error);
-      this.logger.error(`Email failed (${attempt}/${this.MAX_RETRIES}): ${reason}`);
+      const willRetry = attempt < this.MAX_RETRIES;
+      this.logMailEvent('error', {
+        level: 'error',
+        event: 'mail_send_attempt_failed',
+        action: 'send',
+        status: willRetry ? 'retry' : 'failure',
+        channel: 'error',
+        correlationId,
+        subject: options.subject,
+        errorType: error instanceof Error ? error.name : typeof error,
+        metadata: {
+          attempt,
+          max_attempts: this.MAX_RETRIES,
+          reason,
+          required,
+        },
+      });
 
-      if (attempt < this.MAX_RETRIES) {
+      if (willRetry) {
         const delay = 1000 * Math.pow(2, attempt - 1);
         await new Promise((resolve) => setTimeout(resolve, delay));
-        return this.sendMail(options, attempt + 1, required);
+        return this.sendMail(options, attempt + 1, required, correlationId);
       }
 
-      this.logger.error(
-        `Email permanently failed after ${this.MAX_RETRIES} retries: ${options.subject}`
-      );
+      this.logMailEvent('error', {
+        level: 'error',
+        event: 'mail_send_permanently_failed',
+        action: 'send',
+        status: 'failure',
+        channel: 'error',
+        correlationId,
+        subject: options.subject,
+        errorType: error instanceof Error ? error.name : typeof error,
+        metadata: {
+          max_attempts: this.MAX_RETRIES,
+          reason,
+          required,
+        },
+      });
       if (required) {
         throw error;
       }
@@ -272,5 +383,52 @@ export class MailService {
     }
 
     return 'mail_delivery_failed';
+  }
+
+  private getMailCorrelationId(): string {
+    return generateCorrelationId('mail');
+  }
+
+  private logMailEvent(
+    method: 'log' | 'warn' | 'error',
+    input: {
+      level: BackendLogLevel;
+      event: string;
+      action: string;
+      status: BackendLogStatus;
+      channel: BackendLogChannel;
+      correlationId: string;
+      subject?: string;
+      errorType?: string;
+      metadata?: Record<string, unknown>;
+    }
+  ): void {
+    const message = formatLogEvent({
+      level: input.level,
+      project: 'company_site',
+      component: MailService.name,
+      feature: this.logFeature,
+      event: input.event,
+      action: input.action,
+      status: input.status,
+      channel: input.channel,
+      correlation_id: input.correlationId,
+      target_type: input.subject ? 'mail_subject' : undefined,
+      target_id_hash: input.subject ? hashIdentifier(input.subject) : undefined,
+      error_type: input.errorType,
+      metadata: input.metadata,
+    });
+
+    if (method === 'log') {
+      this.logger.log(message);
+      return;
+    }
+
+    if (method === 'warn') {
+      this.logger.warn(message);
+      return;
+    }
+
+    this.logger.error(message);
   }
 }

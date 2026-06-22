@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountRecoveryFlow } from './account-recovery.types';
+import { formatLogEvent, generateCorrelationId, hashIdentifier } from '../common/logging/log-event';
 
 export interface UsernameReminderMailInput {
   companyId: number;
@@ -23,6 +24,7 @@ export interface PasswordResetLinkMailInput {
 @Injectable()
 export class AccountRecoveryMailDispatcher {
   private readonly logger = new Logger(AccountRecoveryMailDispatcher.name);
+  private readonly logFeature = 'auth';
 
   constructor(
     private readonly mailService: MailService,
@@ -75,12 +77,21 @@ export class AccountRecoveryMailDispatcher {
     error: unknown;
   }): void {
     const reason = this.classifyFailure(input.error);
-    this.logger.error('Account recovery mail dispatch failed', {
-      flow: input.flow,
-      companyId: input.companyId,
-      fingerprint: input.fingerprint,
-      reason,
-    });
+    this.logger.error(
+      this.formatDispatcherEvent({
+        event: 'account_recovery_mail_dispatch_failed',
+        action: 'dispatch_mail',
+        status: 'failure',
+        channel: 'security',
+        companyId: input.companyId,
+        fingerprint: input.fingerprint,
+        errorType: input.error instanceof Error ? input.error.name : typeof input.error,
+        metadata: {
+          flow: input.flow,
+          reason,
+        },
+      })
+    );
 
     void this.prisma.notification
       .create({
@@ -99,7 +110,21 @@ export class AccountRecoveryMailDispatcher {
         },
       })
       .catch((error: unknown) => {
-        this.logger.error('Failed to create account recovery failure notification', error);
+        this.logger.error(
+          this.formatDispatcherEvent({
+            event: 'account_recovery_mail_failure_notification_failed',
+            action: 'create_notification',
+            status: 'failure',
+            channel: 'error',
+            companyId: input.companyId,
+            fingerprint: input.fingerprint,
+            errorType: error instanceof Error ? error.name : typeof error,
+            metadata: {
+              flow: input.flow,
+              reason,
+            },
+          })
+        );
       });
   }
 
@@ -113,5 +138,34 @@ export class AccountRecoveryMailDispatcher {
     }
 
     return 'mail_delivery_failed';
+  }
+
+  private formatDispatcherEvent(input: {
+    event: string;
+    action: string;
+    status: 'failure';
+    channel: 'security' | 'error';
+    companyId: number;
+    fingerprint: string;
+    errorType: string;
+    metadata: Record<string, unknown>;
+  }): string {
+    return formatLogEvent({
+      level: 'error',
+      project: 'company_site',
+      component: AccountRecoveryMailDispatcher.name,
+      feature: this.logFeature,
+      event: input.event,
+      action: input.action,
+      status: input.status,
+      channel: input.channel,
+      correlation_id: generateCorrelationId('account-recovery-mail'),
+      actor_type: 'company',
+      actor_id_hash: hashIdentifier(input.companyId),
+      target_type: 'account_recovery_fingerprint',
+      target_id_hash: hashIdentifier(input.fingerprint),
+      error_type: input.errorType,
+      metadata: input.metadata,
+    });
   }
 }
