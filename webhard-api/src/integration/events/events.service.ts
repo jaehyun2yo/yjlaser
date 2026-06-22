@@ -539,7 +539,9 @@ export class EventsService {
         }
       });
     } catch (err) {
-      this.logger.warn(`Auto stock out failed for order ${orderId}: ${err}`);
+      this.logger.warn(
+        `Auto stock out failed: orderId=${orderId}, error=${this.getErrorType(err)}`
+      );
     }
   }
 

@@ -45,6 +45,15 @@ const failedEnvelope: EventEnvelopeDto = {
   },
 };
 
+const legacyNestingEvent = {
+  orderId: '11111111-1111-4111-8111-111111111111',
+  eventType: 'nesting_completed',
+  source: 'management_program',
+  data: {
+    plywood_usage: [{ item_id: 'item-001', quantity: 2 }],
+  },
+};
+
 function makeSuccessPrisma() {
   const tx = {
     jobEvent: {
@@ -85,6 +94,36 @@ function makeFailurePrisma() {
 function makeThrowingPrisma() {
   return {
     executeWithRetry: jest.fn().mockRejectedValue(new Error('token=raw-token')),
+  };
+}
+
+function makeLegacyAutoStockOutFailurePrisma() {
+  return {
+    executeWithRetry: jest.fn((fn: () => Promise<unknown>) => fn()),
+    order: {
+      findUnique: jest.fn().mockResolvedValue({ status: 'nesting_queued' }),
+    },
+    orderEvent: {
+      create: jest.fn().mockResolvedValue({
+        id: 'order-event-log-001',
+        orderId: legacyNestingEvent.orderId,
+        eventType: legacyNestingEvent.eventType,
+        fromStatus: 'nesting_queued',
+        toStatus: 'nesting_complete',
+        source: legacyNestingEvent.source,
+        actorName: null,
+        data: legacyNestingEvent.data,
+        message: null,
+        createdAt: new Date('2026-06-19T09:30:00+09:00'),
+      }),
+    },
+    $transaction: jest.fn().mockRejectedValue(new Error('token=raw-token path=C:\\Users\\jaehy')),
+  };
+}
+
+function makeOrdersService() {
+  return {
+    updateOrderStatus: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -170,5 +209,22 @@ describe('EventsService logging', () => {
     expect(errorMessages).toMatch(/elapsedMs=\d+/);
     expect(errorMessages).not.toContain(successEnvelope.idempotency_key);
     expect(errorMessages).not.toContain('raw-token');
+  });
+
+  it('자동 출고 실패 로그에는 error type만 남기고 raw error message를 남기지 않는다', async () => {
+    const service = new EventsService(
+      makeLegacyAutoStockOutFailurePrisma() as unknown as PrismaService,
+      makeOrdersService() as unknown as OrdersService
+    );
+
+    await service.createEvent(legacyNestingEvent);
+
+    const warnMessages = warnSpy.mock.calls.map(([message]) => String(message)).join('\n');
+
+    expect(warnMessages).toContain('Auto stock out failed');
+    expect(warnMessages).toContain(`orderId=${legacyNestingEvent.orderId}`);
+    expect(warnMessages).toContain('error=Error');
+    expect(warnMessages).not.toContain('raw-token');
+    expect(warnMessages).not.toContain('C:\\Users\\jaehy');
   });
 });
