@@ -9,6 +9,7 @@
 import { ContactsGateway } from './contacts.gateway';
 import { AuthService } from '../auth/auth.service';
 import { Server } from 'socket.io';
+import { Logger } from '@nestjs/common';
 
 function makeEmitter() {
   const emit = jest.fn();
@@ -260,6 +261,20 @@ describe('ContactsGateway', () => {
       gateway.emitContactCreated(contact);
 
       expect(emit).toHaveBeenCalledWith('contact:created', contact);
+    });
+
+    it('emitContactProcessStageChanged 는 socket emit 실패 시에도 요청 경로로 throw 하지 않는다', () => {
+      emit.mockImplementation(() => {
+        throw new Error('socket adapter unavailable');
+      });
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      expect(() => gateway.emitContactProcessStageChanged({ id: 'contact-1' })).not.toThrow();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Socket emit failed for contact:process_stage_changed')
+      );
+
+      warnSpy.mockRestore();
     });
   });
 });

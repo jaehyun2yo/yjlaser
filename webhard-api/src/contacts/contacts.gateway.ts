@@ -96,11 +96,17 @@ export class ContactsGateway implements OnGatewayConnection, OnGatewayDisconnect
    */
   private safeEmit(event: string, payload: unknown, rooms: string[] = ['admin', 'worker']) {
     if (!this.server) return;
-    const target = rooms.reduce<ReturnType<Server['to']> | Server>(
-      (acc, room) => acc.to(room),
-      this.server
-    );
-    target.emit(event, payload);
+    try {
+      const target = rooms.reduce<ReturnType<Server['to']> | Server>(
+        (acc, room) => acc.to(room),
+        this.server
+      );
+      target.emit(event, payload);
+    } catch (err) {
+      this.logger.warn(
+        `Socket emit failed for ${event}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   /**
