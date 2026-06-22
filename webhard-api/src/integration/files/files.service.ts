@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SessionUser } from '../../auth/auth.service';
 import { ConfirmUploadDto } from '../../files/dto/file.dto';
 import { FilesService } from '../../files/files.service';
-import { FileRegisterDto, type FileRegisterStorageProvider } from './dto/file-register.dto';
+import { FileRegisterDto } from './dto/file-register.dto';
 
 export interface FileRegisterResponseDto {
   file_id: string;
@@ -15,15 +15,6 @@ const FILE_REGISTER_SYSTEM_USER: SessionUser = {
   userType: 'admin',
   userId: 'integration:file-register',
   companyId: null,
-};
-
-const FILE_REGISTER_PROVIDER_TO_CONFIRM_PROVIDER: Record<
-  FileRegisterStorageProvider,
-  ConfirmUploadDto['storageProvider']
-> = {
-  google_drive: 'google_drive',
-  r2_legacy: 'r2',
-  local_test: 'r2',
 };
 
 @Injectable()
@@ -94,7 +85,7 @@ export class IntegrationFilesService {
       originalName: dto.original_name_safe,
       size: dto.size_bytes,
       mimeType: dto.mime_type,
-      storageProvider: this.toConfirmStorageProvider(dto.storage_provider),
+      storageProvider: 'google_drive',
     };
 
     if (dto.folder_id) {
@@ -108,12 +99,6 @@ export class IntegrationFilesService {
     }
 
     return confirmDto;
-  }
-
-  private toConfirmStorageProvider(
-    provider: FileRegisterStorageProvider
-  ): ConfirmUploadDto['storageProvider'] {
-    return FILE_REGISTER_PROVIDER_TO_CONFIRM_PROVIDER[provider];
   }
 
   private formatRegisterLog(

@@ -36,7 +36,7 @@ function makeFileResponse(id = 'file-001') {
     updated_at: '2026-06-19T09:00:00.000Z',
     deleted_at: null,
     deleted_by: null,
-    storage_provider: 'r2' as const,
+    storage_provider: 'google_drive' as const,
   };
 }
 
@@ -74,30 +74,4 @@ describe('IntegrationFilesService storage provider mapping', () => {
       expect.objectContaining({ userType: 'admin', userId: 'integration:file-register' })
     );
   });
-
-  it.each(['r2_legacy', 'local_test'] as const)(
-    'maps %s register payloads to the internal r2 metadata branch',
-    async (storageProvider) => {
-      const { service, filesService } = makeService();
-      jest.spyOn(service['logger'], 'log').mockImplementation();
-      const dto: FileRegisterDto = {
-        ...baseRegisterDto,
-        storage_provider: storageProvider,
-        folder_id: undefined,
-        drive_file_id: undefined,
-      };
-
-      await service.registerFile(dto);
-
-      expect(filesService.confirmUpload).toHaveBeenCalledWith(
-        expect.objectContaining({
-          storageProvider: 'r2',
-          key: baseRegisterDto.path,
-          name: baseRegisterDto.original_name_safe,
-          mimeType: baseRegisterDto.mime_type,
-        }),
-        expect.objectContaining({ userType: 'admin', userId: 'integration:file-register' })
-      );
-    }
-  );
 });

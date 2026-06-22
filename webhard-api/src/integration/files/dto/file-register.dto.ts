@@ -15,7 +15,7 @@ import {
   type IntegrationWorkerType,
 } from '../../auth/integration-permissions';
 
-export const FILE_REGISTER_STORAGE_PROVIDERS = ['google_drive', 'r2_legacy', 'local_test'] as const;
+export const FILE_REGISTER_STORAGE_PROVIDERS = ['google_drive'] as const;
 export type FileRegisterStorageProvider = (typeof FILE_REGISTER_STORAGE_PROVIDERS)[number];
 
 export class FileRegisterDto {

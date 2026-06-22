@@ -66,15 +66,13 @@ describe('FileRegisterDto', () => {
     );
   });
 
-  it('allows local_test payloads without Google Drive ids', async () => {
-    const input = {
+  it.each(['r2_legacy', 'local_test'])('rejects legacy provider %s', async (storageProvider) => {
+    const errors = await validateRegister({
       ...validFileRegister,
-      storage_provider: 'local_test',
-      drive_file_id: undefined,
-      folder_id: undefined,
-    };
+      storage_provider: storageProvider,
+    });
 
-    await expect(validateRegister(input)).resolves.toHaveLength(0);
+    expect(errors.map((error) => error.property)).toContain('storage_provider');
   });
 
   it('rejects unknown source_worker and storage_provider values', async () => {
