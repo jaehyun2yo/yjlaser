@@ -1,6 +1,6 @@
 # Central Log Ingestion API Shell
 
-Status: implemented shell, no production persistence
+Status: implemented API/auth shell, no production persistence
 Date: 2026-06-22
 
 ## Scope
@@ -9,9 +9,9 @@ Date: 2026-06-22
 YJLaser-wide structured log ingestion.
 
 This phase intentionally does not add a production database table, migration,
-secret, or deployment setting. It uses an in-memory repository and empty default
-key store so production acceptance requires a later explicit key/config and
-persistence task.
+production secret, or deployment setting. It uses an in-memory repository and
+an empty default key store, so production acceptance still requires a later
+explicit key/config and persistence task.
 
 ## Authentication
 
@@ -37,6 +37,13 @@ The verifier enforces:
 - nonce replay rejection
 - per-client/IP in-memory rate limit
 - timing-safe signature comparison
+- optional in-memory abuse disable after repeated invalid signatures
+
+Configured clients are loaded from `LOG_INGESTION_CLIENT_KEYS_JSON` as a JSON
+array. Each item must include `clientId`, `keyId`, `secret`, `allowedProjects`,
+and `hashKeyVersion`. Secrets must be at least 32 bytes. If the variable is not
+set, no client is accepted. `LOG_INGESTION_MAX_AUTH_FAILURES` can enable the
+in-memory repeated-invalid-signature disable threshold for this shell.
 
 ## Payload
 
@@ -48,22 +55,26 @@ The request body is:
     {
       "schema_version": 1,
       "event_id": "evt-...",
-      "trace_id": "trace-...",
-      "occurred_at": "2026-06-22T00:00:00.000Z",
+      "timestamp": "2026-06-22T00:00:00.000Z",
+      "level": "info",
       "project": "company_site",
-      "subsystem": "api",
-      "event_type": "example.event",
-      "severity": "info",
-      "message": "safe summary",
-      "metadata": { "processed_count": 1 },
-      "payload_hash": "sha256-or-client-hash",
+      "component": "ExampleClient",
+      "feature": "log_collection",
+      "event": "example_event",
+      "action": "collect",
+      "status": "success",
+      "channel": "audit",
+      "correlation_id": "log-20260622-100000-abcdef",
+      "count": 1,
+      "metadata": { "safe_count": 1 },
       "hash_key_version": "v1"
     }
   ]
 }
 ```
 
-Batch limit is 100 events. The route-specific JSON body limit is 256 KiB.
+Batch limit is 100 events and returns `413 LOG_BATCH_TOO_LARGE` when exceeded.
+The route-specific JSON body limit is 256 KiB.
 
 ## Sensitive Data Gate
 
@@ -91,8 +102,8 @@ present. The same headers do not bypass CSRF on any other route.
 
 Current storage is in-memory:
 
-- identical `(client_id, event_id, payload_hash)` returns duplicate
-- same `(client_id, event_id)` with a different payload hash returns conflict
+- identical `(client_id, event_id, server-calculated event payload hash)` returns duplicate
+- same `(client_id, event_id)` with a different server-calculated event payload hash returns conflict
 
 Production persistence, secret rotation, Redis-backed nonce/rate limit, and
 operational dashboards remain separate follow-up tasks.

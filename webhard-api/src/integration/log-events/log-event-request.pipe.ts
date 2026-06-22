@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, PipeTransform } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  PayloadTooLargeException,
+  PipeTransform,
+} from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { LogEventBatchDto } from './dto/log-event.dto';
@@ -21,6 +27,13 @@ export class LogEventRequestPipe implements PipeTransform {
         message: scanResult.code,
         reason: scanResult.reason,
         match_count: scanResult.match_count,
+      });
+    }
+
+    if (Array.isArray(payload.events) && payload.events.length > 100) {
+      throw new PayloadTooLargeException({
+        code: 'LOG_BATCH_TOO_LARGE',
+        message: 'LOG_BATCH_TOO_LARGE',
       });
     }
 

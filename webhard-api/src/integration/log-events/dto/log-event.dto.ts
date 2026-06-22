@@ -17,16 +17,27 @@ import {
 
 export const LOG_PROJECTS = [
   'company_site',
-  'management_program',
-  'external_webhard_sync',
+  'webhard_sync',
+  'invoice_manager',
   'laser_nesting',
   'computeroff',
 ] as const;
 
-export const LOG_SEVERITIES = ['debug', 'info', 'warn', 'error'] as const;
+export const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'critical'] as const;
+export const LOG_STATUSES = [
+  'start',
+  'success',
+  'failure',
+  'skipped',
+  'retry',
+  'degraded',
+] as const;
+export const LOG_CHANNELS = ['debug', 'audit', 'security', 'perf', 'error', 'external'] as const;
 
 export type LogProject = (typeof LOG_PROJECTS)[number];
-export type LogSeverity = (typeof LOG_SEVERITIES)[number];
+export type LogLevel = (typeof LOG_LEVELS)[number];
+export type LogStatus = (typeof LOG_STATUSES)[number];
+export type LogChannel = (typeof LOG_CHANNELS)[number];
 
 export class LogEventDto {
   @IsIn([1])
@@ -38,28 +49,38 @@ export class LogEventDto {
 
   @IsString()
   @MaxLength(100)
-  trace_id!: string;
+  correlation_id!: string;
 
   @IsISO8601()
-  occurred_at!: string;
+  timestamp!: string;
+
+  @IsIn(LOG_LEVELS)
+  level!: LogLevel;
 
   @IsIn(LOG_PROJECTS)
   project!: LogProject;
 
   @IsString()
   @MaxLength(80)
-  subsystem!: string;
+  component!: string;
+
+  @IsString()
+  @MaxLength(80)
+  feature!: string;
 
   @IsString()
   @MaxLength(120)
-  event_type!: string;
-
-  @IsIn(LOG_SEVERITIES)
-  severity!: LogSeverity;
+  event!: string;
 
   @IsString()
-  @MaxLength(240)
-  message!: string;
+  @MaxLength(80)
+  action!: string;
+
+  @IsIn(LOG_STATUSES)
+  status!: LogStatus;
+
+  @IsIn(LOG_CHANNELS)
+  channel!: LogChannel;
 
   @IsOptional()
   @IsObject()
@@ -74,15 +95,52 @@ export class LogEventDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  processed_count?: number;
+  count?: number;
 
-  @IsString()
-  @MaxLength(128)
-  payload_hash!: string;
-
+  @IsOptional()
   @IsString()
   @MaxLength(40)
-  hash_key_version!: string;
+  actor_type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  actor_id_hash?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  target_type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  target_id_hash?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  error_type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  error_code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  error_message?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  hash_key_version?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  span_id?: string;
 }
 
 export class LogEventBatchDto {

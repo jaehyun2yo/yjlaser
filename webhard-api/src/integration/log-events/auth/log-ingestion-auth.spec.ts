@@ -5,6 +5,7 @@ import {
   InMemoryLogIngestionRateLimiter,
   InMemoryLogIngestionReplayStore,
   LogIngestionAuthVerifier,
+  parseLogIngestionClientKeys,
   type LogIngestionRequest,
 } from './log-ingestion-auth';
 
@@ -24,15 +25,17 @@ function makeRawBody(project = 'company_site'): Buffer {
         {
           schema_version: 1,
           event_id: 'evt-auth-1',
-          trace_id: 'trace-auth-1',
-          occurred_at: '2026-06-22T00:00:00.000Z',
+          timestamp: '2026-06-22T00:00:00.000Z',
+          level: 'info',
           project,
-          subsystem: 'api',
-          event_type: 'test.event',
-          severity: 'info',
-          message: 'safe event',
+          component: 'LogIngestionAuthSpec',
+          feature: 'log_collection',
+          event: 'auth_test',
+          action: 'collect',
+          status: 'success',
+          channel: 'audit',
+          correlation_id: 'log-20260622-000000-auth',
           metadata: { safe_count: 1 },
-          payload_hash: 'hash-auth-1',
           hash_key_version: 'v1',
         },
       ],
@@ -86,6 +89,46 @@ function makeVerifier(input?: { maxRequests?: number }) {
 }
 
 describe('LogIngestionAuthVerifier', () => {
+  it('환경변수 JSON에서 active client key를 로드한다', () => {
+    const keys = parseLogIngestionClientKeys(
+      JSON.stringify([
+        {
+          clientId: 'desktop-sync-1',
+          keyId: 'v1',
+          secret: 'test-env-log-hmac-key-32-bytes-minimum',
+          allowedProjects: ['webhard_sync'],
+          hashKeyVersion: 'v1',
+        },
+      ])
+    );
+
+    expect(keys).toEqual([
+      {
+        clientId: 'desktop-sync-1',
+        keyId: 'v1',
+        secret: 'test-env-log-hmac-key-32-bytes-minimum',
+        allowedProjects: ['webhard_sync'],
+        hashKeyVersion: 'v1',
+      },
+    ]);
+  });
+
+  it('환경변수 client key secret이 32 bytes 미만이면 원문 없이 설정 오류로 거부한다', () => {
+    expect(() =>
+      parseLogIngestionClientKeys(
+        JSON.stringify([
+          {
+            clientId: 'desktop-sync-1',
+            keyId: 'v1',
+            secret: 'short',
+            allowedProjects: ['webhard_sync'],
+            hashKeyVersion: 'v1',
+          },
+        ])
+      )
+    ).toThrow('LOG_INGESTION_SECRET_TOO_SHORT');
+  });
+
   it('필수 HMAC 헤더가 없으면 401로 거부한다', async () => {
     const verifier = makeVerifier();
     const request = makeRequest({});
@@ -110,6 +153,19 @@ describe('LogIngestionAuthVerifier', () => {
     );
   });
 
+  it('비허용 project라도 signature가 invalid이면 project allowlist보다 먼저 401로 거부한다', async () => {
+    const verifier = makeVerifier();
+    const request = makeRequest({
+      nonce: 'nonce-invalid-signature-before-project-allowlist',
+      project: 'invoice_manager',
+      signature: 'bad-signature',
+    });
+
+    await expect(verifier.verifyRequest(request, ['invoice_manager'])).rejects.toThrow(
+      UnauthorizedException
+    );
+  });
+
   it('허용된 프로젝트와 유효한 서명은 인증 컨텍스트를 반환한다', async () => {
     const verifier = makeVerifier();
     const context = await verifier.verifyRequest(makeRequest({ nonce: 'nonce-3' }), [
@@ -125,9 +181,9 @@ describe('LogIngestionAuthVerifier', () => {
 
   it('클라이언트 allowlist 밖의 프로젝트는 403으로 거부한다', async () => {
     const verifier = makeVerifier();
-    const request = makeRequest({ nonce: 'nonce-4', project: 'management_program' });
+    const request = makeRequest({ nonce: 'nonce-4', project: 'invoice_manager' });
 
-    await expect(verifier.verifyRequest(request, ['management_program'])).rejects.toThrow(
+    await expect(verifier.verifyRequest(request, ['invoice_manager'])).rejects.toThrow(
       ForbiddenException
     );
   });
@@ -158,6 +214,19 @@ describe('LogIngestionAuthVerifier', () => {
     );
   });
 
+  it('같은 nonce 동시 요청은 하나만 허용하고 하나는 replay로 거부한다', async () => {
+    const verifier = makeVerifier();
+    const request = makeRequest({ nonce: 'nonce-concurrent-1' });
+
+    const results = await Promise.allSettled([
+      verifier.verifyRequest(request, ['company_site']),
+      verifier.verifyRequest(request, ['company_site']),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  });
+
   it('rate limit을 넘으면 429로 거부한다', async () => {
     const verifier = makeVerifier({ maxRequests: 1 });
 
@@ -167,5 +236,44 @@ describe('LogIngestionAuthVerifier', () => {
     ).rejects.toMatchObject({
       status: 429,
     });
+  });
+
+  it('반복 invalid signature는 in-memory test key를 disabled 상태로 전환한다', async () => {
+    const keyStore = new InMemoryLogIngestionKeyStore(
+      [
+        {
+          clientId: CLIENT_ID,
+          keyId: KEY_ID,
+          secret: HMAC_KEY,
+          allowedProjects: ['company_site'],
+          hashKeyVersion: 'v1',
+        },
+      ],
+      { maxAuthFailures: 2 }
+    );
+    const verifier = new LogIngestionAuthVerifier(
+      keyStore,
+      new InMemoryLogIngestionReplayStore(),
+      new InMemoryLogIngestionRateLimiter({
+        maxRequests: 100,
+        windowMs: 60_000,
+      }),
+      { allowedClockSkewMs: 300_000 }
+    );
+
+    await expect(
+      verifier.verifyRequest(makeRequest({ nonce: 'nonce-bad-signature-1', signature: 'bad-1' }), [
+        'company_site',
+      ])
+    ).rejects.toThrow(UnauthorizedException);
+    await expect(
+      verifier.verifyRequest(makeRequest({ nonce: 'nonce-bad-signature-2', signature: 'bad-2' }), [
+        'company_site',
+      ])
+    ).rejects.toThrow(UnauthorizedException);
+
+    await expect(
+      verifier.verifyRequest(makeRequest({ nonce: 'nonce-after-disable' }), ['company_site'])
+    ).rejects.toThrow(UnauthorizedException);
   });
 });

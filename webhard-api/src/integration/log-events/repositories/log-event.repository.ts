@@ -7,6 +7,7 @@ export const LOG_EVENT_REPOSITORY = Symbol('LOG_EVENT_REPOSITORY');
 export type LogEventSaveInput = {
   authContext: LogIngestionAuthContext;
   event: LogEventDto;
+  payloadHash: string;
 };
 
 export type LogEventSaveResult = {
@@ -26,14 +27,14 @@ export class InMemoryLogEventRepository implements LogEventRepository {
     const existing = this.events.get(mapKey);
 
     if (existing) {
-      if (existing.payloadHash === input.event.payload_hash) {
+      if (existing.payloadHash === input.payloadHash) {
         return { status: 'duplicate' };
       }
 
       return { status: 'conflict' };
     }
 
-    this.events.set(mapKey, { payloadHash: input.event.payload_hash });
+    this.events.set(mapKey, { payloadHash: input.payloadHash });
     return { status: 'accepted' };
   }
 }

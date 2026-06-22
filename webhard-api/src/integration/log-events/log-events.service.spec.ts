@@ -7,15 +7,17 @@ function makeEvent(input?: Partial<LogEventDto>): LogEventDto {
   return {
     schema_version: 1,
     event_id: input?.event_id ?? 'evt-service-1',
-    trace_id: input?.trace_id ?? 'trace-service-1',
-    occurred_at: input?.occurred_at ?? '2026-06-22T00:00:00.000Z',
+    timestamp: input?.timestamp ?? '2026-06-22T00:00:00.000Z',
+    level: input?.level ?? 'info',
     project: input?.project ?? 'company_site',
-    subsystem: input?.subsystem ?? 'api',
-    event_type: input?.event_type ?? 'service.test',
-    severity: input?.severity ?? 'info',
-    message: input?.message ?? 'safe event',
+    component: input?.component ?? 'LogEventsServiceSpec',
+    feature: input?.feature ?? 'log_collection',
+    event: input?.event ?? 'service_test',
+    action: input?.action ?? 'collect',
+    status: input?.status ?? 'success',
+    channel: input?.channel ?? 'audit',
+    correlation_id: input?.correlation_id ?? 'log-20260622-000000-service',
     metadata: input?.metadata ?? { processed_count: 1 },
-    payload_hash: input?.payload_hash ?? 'hash-service-1',
     hash_key_version: input?.hash_key_version ?? 'v1',
   };
 }
@@ -41,10 +43,13 @@ describe('LogEventsService', () => {
     const service = new LogEventsService(new InMemoryLogEventRepository());
     const authContext = { clientId: 'company-site', keyId: 'local-test-key', hashKeyVersion: 'v1' };
 
-    await service.collect(authContext, makeBatch([makeEvent({ payload_hash: 'hash-a' })]));
+    await service.collect(
+      authContext,
+      makeBatch([makeEvent({ metadata: { processed_count: 1 } })])
+    );
 
     await expect(
-      service.collect(authContext, makeBatch([makeEvent({ payload_hash: 'hash-b' })]))
+      service.collect(authContext, makeBatch([makeEvent({ metadata: { processed_count: 2 } })]))
     ).rejects.toThrow(ConflictException);
   });
 });

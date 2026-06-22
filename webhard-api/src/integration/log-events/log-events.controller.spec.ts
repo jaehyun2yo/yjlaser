@@ -21,16 +21,18 @@ function makePayload(message = 'safe event') {
       {
         schema_version: 1,
         event_id: `evt-controller-${message.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`,
-        trace_id: 'trace-controller-1',
-        occurred_at: '2026-06-22T00:00:00.000Z',
+        timestamp: '2026-06-22T00:00:00.000Z',
+        level: 'info',
         project: 'company_site',
-        subsystem: 'api',
-        event_type: 'controller.test',
-        severity: 'info',
-        message,
-        metadata: { processed_count: 1 },
-        payload_hash: `hash-controller-${message.length}`,
+        component: 'LogEventsControllerSpec',
+        feature: 'log_collection',
+        event: 'controller_test',
+        action: 'collect',
+        status: 'success',
+        channel: 'audit',
+        correlation_id: 'log-20260622-000000-controller',
         hash_key_version: 'v1',
+        metadata: { processed_count: 1 },
       },
     ],
   };
@@ -159,5 +161,27 @@ describe('LogEventsController', () => {
     };
 
     await request(app.getHttpServer()).post('/integration/log-events').send(payload).expect(413);
+  });
+
+  it('100개를 넘는 log ingestion batch는 413으로 거부한다', async () => {
+    const payload = {
+      events: Array.from({ length: 101 }, (_, index) => ({
+        ...makePayload('batch-too-large').events[0],
+        event_id: `evt-controller-batch-${index}`,
+      })),
+    };
+    const rawBody = Buffer.from(JSON.stringify(payload));
+
+    const response = await request(app.getHttpServer())
+      .post('/integration/log-events')
+      .set(signedHeaders(rawBody, 'nonce-controller-4'))
+      .send(payload)
+      .expect(413);
+
+    expect(response.body).toMatchObject({
+      statusCode: 413,
+      code: 'LOG_BATCH_TOO_LARGE',
+      message: 'LOG_BATCH_TOO_LARGE',
+    });
   });
 });

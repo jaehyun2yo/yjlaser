@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import {
   InMemoryLogIngestionKeyStore,
   InMemoryLogIngestionRateLimiter,
@@ -8,6 +9,7 @@ import {
   LOG_INGESTION_RATE_LIMITER,
   LOG_INGESTION_REPLAY_STORE,
   LogIngestionAuthVerifier,
+  parseLogIngestionClientKeys,
 } from './auth/log-ingestion-auth';
 import { LogEventsController } from './log-events.controller';
 import { LogEventsService } from './log-events.service';
@@ -17,6 +19,7 @@ import {
 } from './repositories/log-event.repository';
 
 @Module({
+  imports: [ConfigModule],
   controllers: [LogEventsController],
   providers: [
     LogEventsService,
@@ -27,7 +30,19 @@ import {
     },
     {
       provide: LOG_INGESTION_KEY_STORE,
-      useValue: new InMemoryLogIngestionKeyStore(),
+      useFactory: (configService: ConfigService) => {
+        const rawMaxAuthFailures = configService.get<string>('LOG_INGESTION_MAX_AUTH_FAILURES');
+        const maxAuthFailures = rawMaxAuthFailures
+          ? Number.parseInt(rawMaxAuthFailures, 10)
+          : undefined;
+        return new InMemoryLogIngestionKeyStore(
+          parseLogIngestionClientKeys(configService.get<string>('LOG_INGESTION_CLIENT_KEYS_JSON')),
+          {
+            maxAuthFailures: Number.isFinite(maxAuthFailures) ? maxAuthFailures : undefined,
+          }
+        );
+      },
+      inject: [ConfigService],
     },
     {
       provide: LOG_INGESTION_REPLAY_STORE,

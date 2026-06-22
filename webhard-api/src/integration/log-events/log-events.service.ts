@@ -1,4 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import type { LogEventBatchDto, LogEventDto } from './dto/log-event.dto';
 import type { LogIngestionAuthContext } from './auth/log-ingestion-auth';
 import {
@@ -43,7 +44,11 @@ export class LogEventsService {
     };
 
     for (const event of batch.events) {
-      const result = await this.repository.save({ authContext, event });
+      const result = await this.repository.save({
+        authContext,
+        event,
+        payloadHash: this.hashEventPayload(event),
+      });
       response[result.status] += 1;
       response.results.push({ event_id: event.event_id, status: result.status });
     }
@@ -65,5 +70,9 @@ export class LogEventsService {
     );
 
     return response;
+  }
+
+  private hashEventPayload(event: LogEventDto): string {
+    return createHash('sha256').update(JSON.stringify(event)).digest('hex');
   }
 }

@@ -9,7 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
-import type { LogProject } from '../dto/log-event.dto';
+import { LOG_PROJECTS, type LogProject } from '../dto/log-event.dto';
 
 export const LOG_INGESTION_KEY_STORE = Symbol('LOG_INGESTION_KEY_STORE');
 export const LOG_INGESTION_REPLAY_STORE = Symbol('LOG_INGESTION_REPLAY_STORE');
@@ -53,6 +53,7 @@ export type LogIngestionAuthOptions = {
 
 export interface LogIngestionKeyStore {
   getActiveKey(clientId: string, keyId: string): Promise<LogIngestionClientKey | null>;
+  recordAuthFailure?(clientId: string, keyId: string, reason: 'signature_invalid'): Promise<void>;
 }
 
 export interface LogIngestionReplayStore {
@@ -69,8 +70,12 @@ export interface LogIngestionRateLimiter {
 
 export class InMemoryLogIngestionKeyStore implements LogIngestionKeyStore {
   private readonly keys = new Map<string, LogIngestionClientKey>();
+  private readonly authFailures = new Map<string, number>();
 
-  constructor(keys: LogIngestionClientKey[] = []) {
+  constructor(
+    keys: LogIngestionClientKey[] = [],
+    private readonly options: { maxAuthFailures?: number } = {}
+  ) {
     for (const key of keys) {
       if (Buffer.byteLength(key.secret, 'utf8') < 32) {
         throw new Error('LOG_INGESTION_SECRET_TOO_SHORT');
@@ -88,9 +93,101 @@ export class InMemoryLogIngestionKeyStore implements LogIngestionKeyStore {
     return key;
   }
 
+  async recordAuthFailure(
+    clientId: string,
+    keyId: string,
+    _reason: 'signature_invalid'
+  ): Promise<void> {
+    if (!this.options.maxAuthFailures) {
+      return;
+    }
+
+    const mapKey = this.getMapKey(clientId, keyId);
+    const nextCount = (this.authFailures.get(mapKey) ?? 0) + 1;
+    this.authFailures.set(mapKey, nextCount);
+
+    if (nextCount >= this.options.maxAuthFailures) {
+      const key = this.keys.get(mapKey);
+      if (key) {
+        this.keys.set(mapKey, { ...key, disabled: true });
+      }
+    }
+  }
+
   private getMapKey(clientId: string, keyId: string): string {
     return `${clientId}:${keyId}`;
   }
+}
+
+export function parseLogIngestionClientKeys(
+  serializedKeys: string | null | undefined
+): LogIngestionClientKey[] {
+  if (!serializedKeys?.trim()) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(serializedKeys);
+  } catch {
+    throw new Error('LOG_INGESTION_CLIENT_KEYS_INVALID');
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error('LOG_INGESTION_CLIENT_KEYS_INVALID');
+  }
+
+  return parsed.map((entry) => parseLogIngestionClientKey(entry));
+}
+
+function parseLogIngestionClientKey(entry: unknown): LogIngestionClientKey {
+  if (!isRecord(entry)) {
+    throw new Error('LOG_INGESTION_CLIENT_KEYS_INVALID');
+  }
+
+  const clientId = readRequiredString(entry, 'clientId');
+  const keyId = readRequiredString(entry, 'keyId');
+  const secret = readRequiredString(entry, 'secret');
+  const hashKeyVersion = readRequiredString(entry, 'hashKeyVersion');
+  const allowedProjects = readAllowedProjects(entry.allowedProjects);
+  const disabled = typeof entry.disabled === 'boolean' ? entry.disabled : undefined;
+
+  if (Buffer.byteLength(secret, 'utf8') < 32) {
+    throw new Error('LOG_INGESTION_SECRET_TOO_SHORT');
+  }
+
+  return {
+    clientId,
+    keyId,
+    secret,
+    allowedProjects,
+    hashKeyVersion,
+    disabled,
+  };
+}
+
+function readRequiredString(entry: Record<string, unknown>, key: string): string {
+  const value = entry[key];
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('LOG_INGESTION_CLIENT_KEYS_INVALID');
+  }
+  return value;
+}
+
+function readAllowedProjects(value: unknown): LogProject[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('LOG_INGESTION_CLIENT_KEYS_INVALID');
+  }
+
+  const validProjects = new Set<string>(LOG_PROJECTS);
+  const projects = value.map((project) => {
+    if (typeof project !== 'string' || !validProjects.has(project)) {
+      throw new Error('LOG_INGESTION_CLIENT_KEYS_INVALID');
+    }
+    return project as LogProject;
+  });
+
+  return [...new Set(projects)];
 }
 
 export class InMemoryLogIngestionReplayStore implements LogIngestionReplayStore {
@@ -177,9 +274,14 @@ export class LogIngestionAuthVerifier {
     }
 
     this.verifyTimestamp(headers.timestamp);
-    this.verifyProjectAllowlist(key, projects);
     await this.verifyRateLimit(headers.clientId, request.ip);
-    this.verifySignature(request, key.secret, headers);
+    try {
+      this.verifySignature(request, key.secret, headers);
+    } catch (error) {
+      await this.keyStore.recordAuthFailure?.(headers.clientId, headers.keyId, 'signature_invalid');
+      throw error;
+    }
+    this.verifyProjectAllowlist(key, projects);
     await this.verifyReplay(headers.clientId, headers.nonce, headers.timestamp);
 
     return {
@@ -302,6 +404,10 @@ export class LogIngestionAuthVerifier {
       });
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function timingSafeStringEqual(actual: string, expected: string): boolean {
