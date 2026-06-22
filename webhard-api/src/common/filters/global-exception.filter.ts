@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { redactErrorMessage, redactLogValue, redactRequestUrl } from '../logging/request-redaction';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -29,8 +30,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     if (status >= 500) {
       this.logger.error(
-        `${request.method} ${request.url} ${status}`,
-        exception instanceof Error ? exception.stack : String(exception)
+        `${request.method} ${redactRequestUrl(request.url)} ${status}`,
+        redactErrorMessage(exception instanceof Error ? exception.stack : String(exception))
       );
     }
 
@@ -51,16 +52,16 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         if (key === 'statusCode' || key === 'message' || key === 'timestamp' || key === 'path') {
           continue;
         }
-        extraFields[key] = value;
+        extraFields[key] = redactLogValue(value);
       }
     }
 
     response.status(status).json({
       statusCode: status,
-      message: errorMessage,
+      message: redactLogValue(errorMessage),
       ...extraFields,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: redactRequestUrl(request.url),
     });
   }
 }

@@ -27,13 +27,15 @@ const SENSITIVE_KEY_PARTS = [
 ] as const;
 
 const SENSITIVE_ASSIGNMENT_RE =
-  /\b(password|passwd|secret|token|auth|credential|jwt|api_key|apikey|service_role|anon_key|access_key|refresh_token|private_key|session|cookie|authorization)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;]+)/i;
-const LOCAL_PATH_RE = /[A-Z]:\\Users\\[^\\\s]+\\[^\s,;]+/i;
-const UNC_PATH_RE = /\\\\[^\s\\]+\\[^\s]+/i;
-const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
-const PHONE_RE = /(?:\+?82[-\s]?)?0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}\b/;
+  /\b(password|passwd|secret|token|auth|credential|jwt|api_key|apikey|service_role|anon_key|access_key|refresh_token|private_key|session|cookie|authorization)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;]+)/gi;
+const AUTHORIZATION_HEADER_RE = /\bAuthorization:\s*[^\r\n]*/gi;
+const COOKIE_HEADER_RE = /\bCookie:\s*[^\r\n]*/gi;
+const LOCAL_PATH_RE = /[A-Z]:\\Users\\[^\\\s]+\\[^\s,;]+/gi;
+const UNC_PATH_RE = /\\\\[^\s\\]+\\[^\s]+/gi;
+const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const PHONE_RE = /(?:\+?82[-\s]?)?0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}\b/g;
 const PRESIGNED_URL_RE =
-  /https?:\/\/[^\s"'<>]+(?:X-Amz-Signature|X-Amz-Credential|X-Goog-Signature|Expires=|Signature=)[^\s"'<>]*/i;
+  /https?:\/\/[^\s"'<>]+(?:X-Amz-Signature|X-Amz-Credential|X-Goog-Signature|Expires=|Signature=)[^\s"'<>]*/gi;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -46,6 +48,8 @@ export function isSensitiveKey(key: string): boolean {
 
 export function maskText(value: string): string {
   return value
+    .replace(AUTHORIZATION_HEADER_RE, 'Authorization: [REDACTED]')
+    .replace(COOKIE_HEADER_RE, 'Cookie: [REDACTED]')
     .replace(SENSITIVE_ASSIGNMENT_RE, '$1=[REDACTED]')
     .replace(PRESIGNED_URL_RE, REDACTED_URL)
     .replace(LOCAL_PATH_RE, REDACTED_PATH)
@@ -68,13 +72,20 @@ export function maskSensitive(value: unknown): unknown {
 
 function hasRawSensitiveText(value: string): boolean {
   return (
-    SENSITIVE_ASSIGNMENT_RE.test(value) ||
-    PRESIGNED_URL_RE.test(value) ||
-    LOCAL_PATH_RE.test(value) ||
-    UNC_PATH_RE.test(value) ||
-    EMAIL_RE.test(value) ||
-    PHONE_RE.test(value)
+    testPattern(SENSITIVE_ASSIGNMENT_RE, value) ||
+    testPattern(AUTHORIZATION_HEADER_RE, value) ||
+    testPattern(COOKIE_HEADER_RE, value) ||
+    testPattern(PRESIGNED_URL_RE, value) ||
+    testPattern(LOCAL_PATH_RE, value) ||
+    testPattern(UNC_PATH_RE, value) ||
+    testPattern(EMAIL_RE, value) ||
+    testPattern(PHONE_RE, value)
   );
+}
+
+function testPattern(pattern: RegExp, value: string): boolean {
+  pattern.lastIndex = 0;
+  return pattern.test(value);
 }
 
 export function containsRawSensitiveValue(value: unknown): boolean {

@@ -1,5 +1,5 @@
 import { buildLogEvent, generateCorrelationId } from '@/lib/logging/event';
-import { containsRawSensitiveValue, maskSensitive } from '@/lib/logging/masking';
+import { containsRawSensitiveValue, maskSensitive, maskText } from '@/lib/logging/masking';
 
 describe('YJLaser logging contract', () => {
   it('masks nested sensitive keys and string assignments', () => {
@@ -21,6 +21,25 @@ describe('YJLaser logging contract', () => {
         metadata: { message: 'password=secret-value' },
       })
     ).toBe(true);
+  });
+
+  it('masks repeated sensitive values in one text field', () => {
+    const masked = maskText(
+      'Authorization: Bearer raw-bearer\nAuthorization: Basic raw-basic\nAuthorization: ApiKey raw-api-key\nCookie: session=raw-cookie; other=raw-other-cookie\ntoken=raw-token password=raw-password api_key=raw-text-api-key email=one@example.com phone=010-1234-5678 url=https://storage.example.com/file?X-Amz-Signature=raw-signature path=C:\\Users\\jaehy\\a.dxf'
+    );
+
+    expect(masked).not.toContain('raw-bearer');
+    expect(masked).not.toContain('raw-basic');
+    expect(masked).not.toContain('raw-api-key');
+    expect(masked).not.toContain('raw-cookie');
+    expect(masked).not.toContain('raw-other-cookie');
+    expect(masked).not.toContain('raw-token');
+    expect(masked).not.toContain('raw-password');
+    expect(masked).not.toContain('raw-text-api-key');
+    expect(masked).not.toContain('one@example.com');
+    expect(masked).not.toContain('010-1234-5678');
+    expect(masked).not.toContain('raw-signature');
+    expect(masked).not.toContain('C:\\Users\\jaehy');
   });
 
   it('builds required v1 event fields', () => {
