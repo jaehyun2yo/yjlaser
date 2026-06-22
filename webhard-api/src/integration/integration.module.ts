@@ -17,6 +17,7 @@ import { OperationsModule } from './operations/operations.module';
 import { ApiKeyModule } from './auth/api-key.module';
 import { ApiKeyController } from './auth/api-key.controller';
 import { FileTransferController } from './file-transfer/file-transfer.controller';
+import { LogEventsModule } from './log-events/log-events.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { FileTransferController } from './file-transfer/file-transfer.controller
     NestingTasksModule,
     IntegrationFilesModule,
     OperationsModule,
+    LogEventsModule,
   ],
   controllers: [ApiKeyController, FileTransferController],
   exports: [
@@ -53,6 +55,7 @@ import { FileTransferController } from './file-transfer/file-transfer.controller
     NestingTasksModule,
     IntegrationFilesModule,
     OperationsModule,
+    LogEventsModule,
   ],
 })
 export class IntegrationModule {}

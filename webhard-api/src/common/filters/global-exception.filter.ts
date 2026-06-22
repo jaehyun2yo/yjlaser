@@ -18,10 +18,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
 
     const status =
-      exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : getNonHttpExceptionStatus(exception);
 
     const message =
-      exception instanceof HttpException ? exception.getResponse() : 'Internal server error';
+      exception instanceof HttpException
+        ? exception.getResponse()
+        : getNonHttpExceptionResponse(status);
 
     if (status >= 500) {
       this.logger.error(
@@ -59,4 +63,31 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       path: request.url,
     });
   }
+}
+
+function getNonHttpExceptionStatus(exception: unknown): HttpStatus {
+  if (typeof exception !== 'object' || exception === null) {
+    return HttpStatus.INTERNAL_SERVER_ERROR;
+  }
+
+  const status =
+    (exception as { status?: unknown }).status ??
+    (exception as { statusCode?: unknown }).statusCode;
+
+  if (typeof status === 'number' && status >= 400 && status < 600) {
+    return status;
+  }
+
+  return HttpStatus.INTERNAL_SERVER_ERROR;
+}
+
+function getNonHttpExceptionResponse(status: HttpStatus): string | Record<string, string> {
+  if (status === HttpStatus.PAYLOAD_TOO_LARGE) {
+    return {
+      code: 'REQUEST_ENTITY_TOO_LARGE',
+      message: 'REQUEST_ENTITY_TOO_LARGE',
+    };
+  }
+
+  return 'Internal server error';
 }

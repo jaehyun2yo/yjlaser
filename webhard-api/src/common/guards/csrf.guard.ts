@@ -6,6 +6,14 @@ import * as crypto from 'crypto';
  * 로그인 엔드포인트는 세션이 없는 상태에서 호출되므로 CSRF 토큰이 존재하지 않음.
  */
 const CSRF_EXEMPT_PATHS = ['/api/v1/erp/workers/pin-login'];
+const LOG_INGESTION_PATH = '/api/v1/integration/log-events';
+const LOG_INGESTION_REQUIRED_HEADERS = [
+  'x-log-client-id',
+  'x-log-key-id',
+  'x-log-timestamp',
+  'x-log-nonce',
+  'x-log-signature',
+] as const;
 
 /**
  * Double Submit Cookie 패턴 기반 CSRF 보호 Guard.
@@ -25,6 +33,9 @@ export class CsrfGuard implements CanActivate {
       method: string;
       headers: Record<string, string | string[] | undefined>;
       cookies?: Record<string, string>;
+      path?: string;
+      originalUrl?: string;
+      url?: string;
     }>();
 
     // GET / HEAD / OPTIONS는 상태를 변경하지 않으므로 스킵
@@ -38,8 +49,12 @@ export class CsrfGuard implements CanActivate {
     }
 
     // 세션 없이 호출되는 엔드포인트는 CSRF 검증 불가 — 스킵
-    const requestPath = (request as { path?: string }).path ?? '';
+    const requestPath = (request.path ?? request.originalUrl ?? request.url ?? '').split('?')[0];
     if (CSRF_EXEMPT_PATHS.some((exempt) => requestPath.endsWith(exempt))) {
+      return true;
+    }
+
+    if (isLogIngestionRequest(requestPath, request.headers, request.method)) {
       return true;
     }
 
@@ -59,6 +74,18 @@ export class CsrfGuard implements CanActivate {
 
     return true;
   }
+}
+
+function isLogIngestionRequest(
+  requestPath: string,
+  headers: Record<string, string | string[] | undefined>,
+  method: string
+): boolean {
+  return (
+    method === 'POST' &&
+    requestPath === LOG_INGESTION_PATH &&
+    LOG_INGESTION_REQUIRED_HEADERS.every((header) => Boolean(headers[header]))
+  );
 }
 
 /**
