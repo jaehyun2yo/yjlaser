@@ -121,6 +121,24 @@ function getSafeFileExtension(filename: string): string {
     .slice(0, 24);
 }
 
+function getSafeSizeBytes(size: number | bigint | null | undefined): number {
+  const numericSize = Number(size ?? 0);
+  if (!Number.isFinite(numericSize) || numericSize < 0) {
+    return 0;
+  }
+
+  return Math.floor(numericSize);
+}
+
+function getSafeUploadLogFields(input: {
+  filename: string;
+  size?: number | bigint | null;
+}): string {
+  return `extension=${getSafeFileExtension(input.filename)}, sizeBytes=${getSafeSizeBytes(
+    input.size
+  )}`;
+}
+
 type ConfirmedBatchFile = {
   file: ConfirmUploadDto;
   folderId: string | null;
@@ -286,7 +304,11 @@ export class FilesService {
       await this.syncLogService.createPipelineEvent(input);
     } catch (err) {
       this.logger.warn(
-        `webhard pipeline trace write failed: stage=${input.stage}, reason=${input.reasonCode}, filename=${input.filename}, error=${err instanceof Error ? err.message : String(err)}`
+        `webhard pipeline trace write failed: stage=${input.stage}, reason=${
+          input.reasonCode
+        }, extension=${getSafeFileExtension(input.filename)}, error=${
+          err instanceof Error ? err.message : String(err)
+        }`
       );
     }
   }
@@ -1104,7 +1126,10 @@ export class FilesService {
         // routing 실패 → dto.folderId fallback. confirm 자체는 막지 않는다 (R2 orphan 방지).
         const msg = err instanceof Error ? err.message : String(err);
         this.logger.warn(
-          `confirmUpload routing failed — folderId=${dto.folderId} key=${dto.key} filename=${dto.name} error=${msg}`
+          `confirmUpload routing failed: folderId=${dto.folderId}, ${getSafeUploadLogFields({
+            filename: dto.name,
+            size: dto.size,
+          })}, error=${msg}`
         );
         await this.recordPipelineEvent({
           filename: dto.name,
@@ -1137,13 +1162,16 @@ export class FilesService {
       effectiveCompanyId = dto.companyId ?? folder?.companyId ?? null;
     }
 
+    const size = Math.floor(Number(dto.size));
+
     if (redirected) {
       this.logger.log(
-        `confirmUpload routed — original=${dto.folderId} → routed=${routedFolderId} companyId=${routedCompanyId} key=${dto.key}`
+        `confirmUpload routed: requestedFolderId=${dto.folderId}, effectiveFolderId=${routedFolderId}, companyId=${routedCompanyId}, ${getSafeUploadLogFields(
+          { filename: dto.name, size }
+        )}`
       );
     }
 
-    const size = Math.floor(Number(dto.size));
     // uploaded_by: admin(세션/API Key 모두) → 'admin', company → userId 문자열
     const uploadedBy = user.userType === 'admin' ? 'admin' : String(user.userId);
 
@@ -1213,7 +1241,14 @@ export class FilesService {
         });
 
       this.logger.log(
-        `webhard file uploaded: fileId=${file.id}, name=${file.name}, originalName=${file.originalName}, folderId=${driveTarget.folderId}, companyId=${effectiveCompanyId ?? 'none'}, uploadedBy=${uploadedBy}, redirected=${redirected}, provider=google_drive, driveConfirmSource=${driveConfirm.source}`
+        `webhard file uploaded: fileId=${file.id}, ${getSafeUploadLogFields({
+          filename: dto.originalName,
+          size,
+        })}, folderId=${driveTarget.folderId}, companyId=${
+          effectiveCompanyId ?? 'none'
+        }, uploadedBy=${uploadedBy}, redirected=${redirected}, provider=google_drive, driveConfirmSource=${
+          driveConfirm.source
+        }`
       );
 
       void this.createFileUploadedNotification(file).catch((err) =>
@@ -1242,7 +1277,10 @@ export class FilesService {
 
       if (driveTarget.folderId) {
         this.logger.log(
-          `auto contact hook queued: fileId=${file.id}, originalName=${dto.originalName}, folderId=${driveTarget.folderId}, companyId=${effectiveCompanyId ?? 'none'}`
+          `auto contact hook queued: fileId=${file.id}, ${getSafeUploadLogFields({
+            filename: dto.originalName,
+            size,
+          })}, folderId=${driveTarget.folderId}, companyId=${effectiveCompanyId ?? 'none'}`
         );
         this.triggerAutoContact({
           folderId: driveTarget.folderId,
@@ -1284,7 +1322,12 @@ export class FilesService {
     );
 
     this.logger.log(
-      `webhard file uploaded: fileId=${file.id}, name=${file.name}, originalName=${file.originalName}, folderId=${effectiveFolderId ?? 'root'}, companyId=${effectiveCompanyId ?? 'none'}, uploadedBy=${uploadedBy}, redirected=${redirected}, provider=r2`
+      `webhard file uploaded: fileId=${file.id}, ${getSafeUploadLogFields({
+        filename: dto.originalName,
+        size,
+      })}, folderId=${effectiveFolderId ?? 'root'}, companyId=${
+        effectiveCompanyId ?? 'none'
+      }, uploadedBy=${uploadedBy}, redirected=${redirected}, provider=r2`
     );
 
     void this.createFileUploadedNotification(file).catch((err) =>
@@ -1313,7 +1356,10 @@ export class FilesService {
 
     if (effectiveFolderId) {
       this.logger.log(
-        `auto contact hook queued: fileId=${file.id}, originalName=${dto.originalName}, folderId=${effectiveFolderId}, companyId=${effectiveCompanyId ?? 'none'}`
+        `auto contact hook queued: fileId=${file.id}, ${getSafeUploadLogFields({
+          filename: dto.originalName,
+          size,
+        })}, folderId=${effectiveFolderId}, companyId=${effectiveCompanyId ?? 'none'}`
       );
       this.triggerAutoContact({
         folderId: effectiveFolderId,
@@ -1447,7 +1493,9 @@ export class FilesService {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.logger.warn(
-          `batchConfirmUpload routing failed [${idx}/${validFiles.length}] folderId=${f.folderId} key=${f.key} filename=${f.name} error=${msg}`
+          `batchConfirmUpload routing failed [${idx}/${validFiles.length}] folderId=${
+            f.folderId
+          }, ${getSafeUploadLogFields({ filename: f.name, size: f.size })}, error=${msg}`
         );
         await this.recordPipelineEvent({
           filename: f.name,
@@ -2921,7 +2969,9 @@ export class FilesService {
       const folder = folderMap.get(item.folderId);
       if (!folder) {
         this.logger.warn(
-          `auto contact batch skipped: folder metadata missing for folderId=${item.folderId}, file=${item.originalName}`
+          `auto contact batch skipped: folder metadata missing for folderId=${
+            item.folderId
+          }, extension=${getSafeFileExtension(item.originalName)}`
         );
         return;
       }
@@ -2944,7 +2994,11 @@ export class FilesService {
           companyName,
         };
       } catch (err) {
-        this.logger.warn(`AutoContact hook failed for ${item.originalName}: ${err}`);
+        this.logger.warn(
+          `AutoContact hook failed: extension=${getSafeFileExtension(
+            item.originalName
+          )}, error=${err}`
+        );
       }
     });
 
@@ -2972,10 +3026,16 @@ export class FilesService {
             companyId: item.companyId !== null ? String(item.companyId) : null,
           });
           this.logger.log(
-            `auto contact batch dispatched: file=${item.originalName}, folderId=${item.folderId}, folderPath=${item.folderPath}, company=${item.companyName}, companyId=${item.companyId ?? 'none'}`
+            `auto contact batch dispatched: extension=${getSafeFileExtension(
+              item.originalName
+            )}, folderId=${item.folderId}, companyId=${item.companyId ?? 'none'}`
           );
         } catch (err) {
-          this.logger.warn(`AutoContact hook failed for ${item.originalName}: ${err}`);
+          this.logger.warn(
+            `AutoContact hook failed: extension=${getSafeFileExtension(
+              item.originalName
+            )}, error=${err}`
+          );
         }
       }
     });
@@ -3023,7 +3083,9 @@ export class FilesService {
 
     if (!folder) {
       this.logger.warn(
-        `auto contact hook skipped: folder not found for folderId=${params.folderId}, file=${params.fileName}`
+        `auto contact hook skipped: folder not found for folderId=${
+          params.folderId
+        }, extension=${getSafeFileExtension(params.fileName)}`
       );
       return;
     }
@@ -3063,7 +3125,9 @@ export class FilesService {
       companyId: params.companyId,
     });
     this.logger.log(
-      `auto contact dispatched: file=${params.fileName}, folderId=${params.folderId}, folderPath=${folderPath}, company=${companyName}, companyId=${params.companyId ?? 'none'}`
+      `auto contact dispatched: extension=${getSafeFileExtension(params.fileName)}, folderId=${
+        params.folderId
+      }, companyId=${params.companyId ?? 'none'}`
     );
   }
 
@@ -3183,7 +3247,9 @@ export class FilesService {
       );
     }
     this.logger.warn(
-      `webhard_company_mismatch: folderId=${folderId}, fileName=${fileName} (resolveCompanyFolder returned null)`
+      `webhard_company_mismatch: folderId=${folderId}, extension=${getSafeFileExtension(
+        fileName
+      )} (resolveCompanyFolder returned null)`
     );
   }
 }
