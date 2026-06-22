@@ -55,8 +55,13 @@ function makeService() {
 }
 
 describe('IntegrationFilesService storage provider mapping', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('maps google_drive register payloads to Google Drive confirm metadata', async () => {
     const { service, filesService } = makeService();
+    jest.spyOn(service['logger'], 'log').mockImplementation();
 
     await service.registerFile(baseRegisterDto);
 
@@ -74,6 +79,7 @@ describe('IntegrationFilesService storage provider mapping', () => {
     'maps %s register payloads to the internal r2 metadata branch',
     async (storageProvider) => {
       const { service, filesService } = makeService();
+      jest.spyOn(service['logger'], 'log').mockImplementation();
       const dto: FileRegisterDto = {
         ...baseRegisterDto,
         storage_provider: storageProvider,

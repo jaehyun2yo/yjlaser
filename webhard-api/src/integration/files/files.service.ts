@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { SessionUser } from '../../auth/auth.service';
 import { ConfirmUploadDto } from '../../files/dto/file.dto';
 import { FilesService } from '../../files/files.service';
@@ -28,33 +28,63 @@ const FILE_REGISTER_PROVIDER_TO_CONFIRM_PROVIDER: Record<
 
 @Injectable()
 export class IntegrationFilesService {
+  private readonly logger = new Logger(IntegrationFilesService.name);
+
   constructor(private readonly filesService: FilesService) {}
 
   async registerFile(dto: FileRegisterDto): Promise<FileRegisterResponseDto> {
-    const existingFile = await this.filesService.findExistingUploadMetadata({
-      driveFileId: dto.drive_file_id,
-      path: dto.path,
-    });
-    if (existingFile) {
+    const startedAt = Date.now();
+    this.logger.log(this.formatRegisterLog('start', dto));
+
+    try {
+      const existingFile = await this.filesService.findExistingUploadMetadata({
+        driveFileId: dto.drive_file_id,
+        path: dto.path,
+      });
+      if (existingFile) {
+        this.logger.log(
+          this.formatRegisterLog('success', dto, {
+            duplicate: true,
+            fileId: existingFile.id,
+            elapsedMs: Date.now() - startedAt,
+          })
+        );
+        return {
+          file_id: existingFile.id,
+          order_id: dto.order_id ?? null,
+          duplicate: true,
+          status: 'FILE_RECEIVED',
+        };
+      }
+
+      const file = await this.filesService.confirmUpload(
+        this.toConfirmUploadDto(dto),
+        FILE_REGISTER_SYSTEM_USER
+      );
+
+      this.logger.log(
+        this.formatRegisterLog('success', dto, {
+          duplicate: false,
+          fileId: file.id,
+          elapsedMs: Date.now() - startedAt,
+        })
+      );
+
       return {
-        file_id: existingFile.id,
+        file_id: file.id,
         order_id: dto.order_id ?? null,
-        duplicate: true,
+        duplicate: false,
         status: 'FILE_RECEIVED',
       };
+    } catch (error) {
+      this.logger.error(
+        this.formatRegisterLog('failure', dto, {
+          elapsedMs: Date.now() - startedAt,
+          errorType: this.getErrorType(error),
+        })
+      );
+      throw error;
     }
-
-    const file = await this.filesService.confirmUpload(
-      this.toConfirmUploadDto(dto),
-      FILE_REGISTER_SYSTEM_USER
-    );
-
-    return {
-      file_id: file.id,
-      order_id: dto.order_id ?? null,
-      duplicate: false,
-      status: 'FILE_RECEIVED',
-    };
   }
 
   private toConfirmUploadDto(dto: FileRegisterDto): ConfirmUploadDto {
@@ -84,5 +114,43 @@ export class IntegrationFilesService {
     provider: FileRegisterStorageProvider
   ): ConfirmUploadDto['storageProvider'] {
     return FILE_REGISTER_PROVIDER_TO_CONFIRM_PROVIDER[provider];
+  }
+
+  private formatRegisterLog(
+    status: 'start' | 'success' | 'failure',
+    dto: FileRegisterDto,
+    details: {
+      duplicate?: boolean;
+      fileId?: string;
+      elapsedMs?: number;
+      errorType?: string;
+    } = {}
+  ): string {
+    const parts = [
+      'integration file register',
+      `status=${status}`,
+      `sourceWorker=${dto.source_worker}`,
+      `provider=${dto.storage_provider}`,
+      'count=1',
+    ];
+
+    if (typeof details.duplicate === 'boolean') {
+      parts.push(`duplicate=${details.duplicate}`);
+    }
+    if (details.fileId) {
+      parts.push(`fileId=${details.fileId}`);
+    }
+    if (typeof details.elapsedMs === 'number') {
+      parts.push(`elapsedMs=${details.elapsedMs}`);
+    }
+    if (details.errorType) {
+      parts.push(`errorType=${details.errorType}`);
+    }
+
+    return parts.join(' ');
+  }
+
+  private getErrorType(error: unknown): string {
+    return error instanceof Error ? error.name : typeof error;
   }
 }
