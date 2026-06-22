@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'crypto';
+import { createHmac, randomBytes } from 'crypto';
 import { redactErrorMessage, redactLogValue } from './request-redaction';
 
 export type BackendLogLevel = 'debug' | 'info' | 'warn' | 'error' | 'critical';
@@ -44,6 +44,12 @@ export interface BackendLogEvent extends Omit<BackendLogEventInput, 'metadata'> 
 }
 
 const PREFIX_RE = /[^a-z0-9_-]+/g;
+const PROCESS_LOCAL_IDENTIFIER_HASH_SECRET = randomBytes(32);
+const IDENTIFIER_HASH_SECRET_ENV_KEYS = [
+  'LOG_IDENTIFIER_HASH_SECRET',
+  'LOG_HASH_SECRET',
+  'SESSION_SECRET',
+] as const;
 
 export function generateCorrelationId(prefix: string): string {
   const normalized = normalizePrefix(prefix, '');
@@ -62,7 +68,7 @@ export function generateEventId(prefix = 'evt'): string {
 }
 
 export function hashIdentifier(value: unknown): string {
-  return createHash('sha256')
+  return createHmac('sha256', getIdentifierHashSecret())
     .update(String(value ?? ''))
     .digest('hex')
     .slice(0, 16);
@@ -121,6 +127,26 @@ function timestampParts(): { date: string; time: string } {
     date: now.toISOString().slice(0, 10).replace(/-/g, ''),
     time: now.toISOString().slice(11, 19).replace(/:/g, ''),
   };
+}
+
+function getIdentifierHashSecret(): Buffer {
+  for (const key of IDENTIFIER_HASH_SECRET_ENV_KEYS) {
+    const value = process.env[key];
+    if (!value?.trim()) {
+      continue;
+    }
+
+    if (Buffer.byteLength(value, 'utf8') < 32) {
+      if (key === 'SESSION_SECRET') {
+        continue;
+      }
+      throw new Error('LOG_IDENTIFIER_HASH_SECRET_TOO_SHORT');
+    }
+
+    return Buffer.from(value, 'utf8');
+  }
+
+  return PROCESS_LOCAL_IDENTIFIER_HASH_SECRET;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

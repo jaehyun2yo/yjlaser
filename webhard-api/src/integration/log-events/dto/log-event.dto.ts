@@ -90,7 +90,7 @@ export class LogEventDto {
   @IsNumber()
   @Min(0)
   @Max(86_400_000)
-  elapsed_ms?: number;
+  duration_ms?: number;
 
   @IsOptional()
   @IsNumber()

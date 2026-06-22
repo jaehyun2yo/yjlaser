@@ -16,6 +16,7 @@ YJLaser 공통 로깅 시스템 구축 Task 7의 회사사이트 slice로 NestJS
 - `AutoContactService` 내부 detect/classify/duplicate/update/create/error/prefix 로그에서 raw filename, fileUrl, folderPath, companyName을 제거한다.
 - 중앙 로그 수집 API/Auth shell을 표준 `LogEvent v1` 계약으로 정렬하고, HMAC header 인증, client/project allowlist, nonce replay, 100건 batch 제한, 256 KiB body 제한, raw sensitive payload 거부, 환경변수 기반 client key store를 검증한다.
 - 중앙 로그 수집 controller/service/request pipe의 start/success/failure/conflict/payload rejection 로그를 `LogEvent v1` JSON으로 통일하고, raw client id/key id/signature/payload 값 대신 hash/count/reason code만 기록한다.
+- 중앙 로그 수집 DTO의 처리시간 필드를 표준 `duration_ms`로 맞추고, 공통 식별자 hash를 unsalted SHA-256이 아닌 HMAC-SHA256 기반으로 보강했다.
 - 계정 복구 rate limit의 Upstash 설정 누락/HTTP 실패/command error/request 실패 로그를 `LogEvent v1` JSON으로 통일하고, raw Redis URL/token/secret/companyId/fingerprint/Error 원문 대신 operation/count/reason/error type만 기록한다.
 - `IntegrationGateway` 연결/인증/거부/room join/leave 로그를 `LogEvent v1` JSON으로 통일하고, raw cookie/API key/socket room 원문 대신 socket/room hash와 room type만 기록한다.
 - `NotificationsGateway`, `BookingsGateway`, `ActivityLogsGateway`, `FeedbackGateway` 연결/거부/room join/disconnect 로그를 공통 WebSocket gateway `LogEvent v1` helper로 통일하고, raw cookie/socket room/client id 대신 socket/room hash와 room type만 기록한다.
@@ -47,6 +48,7 @@ pnpm test -- src/backup/backup.service.spec.ts --runInBand
 pnpm test -- src/feedback/__tests__/feedback.service.spec.ts --runInBand
 pnpm test -- src/activity-logs/activity-logs.service.spec.ts --runInBand
 pnpm test -- src/settings/settings.service.spec.ts --runInBand
+pnpm test -- src/common/logging/log-event.spec.ts src/integration/log-events/log-event-request.pipe.spec.ts --runInBand
 npx tsc --noEmit --pretty false
 ```
 

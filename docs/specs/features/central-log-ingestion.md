@@ -45,6 +45,14 @@ and `hashKeyVersion`. Secrets must be at least 32 bytes. If the variable is not
 set, no client is accepted. `LOG_INGESTION_MAX_AUTH_FAILURES` can enable the
 in-memory repeated-invalid-signature disable threshold for this shell.
 
+Identifier fields such as `actor_id_hash` and `target_id_hash` are generated
+with HMAC-SHA256. The preferred key is `LOG_IDENTIFIER_HASH_SECRET`; the
+compatibility key is `LOG_HASH_SECRET`; `SESSION_SECRET` can be used only when it
+is at least 32 bytes. If no configured key exists, this no-persistence shell uses
+a process-local random key, which is safe against raw value disclosure but does
+not provide cross-restart hash correlation. Explicit `LOG_IDENTIFIER_HASH_SECRET`
+or `LOG_HASH_SECRET` values shorter than 32 bytes fail closed.
+
 ## Payload
 
 The request body is:
@@ -65,6 +73,7 @@ The request body is:
       "status": "success",
       "channel": "audit",
       "correlation_id": "log-20260622-100000-abcdef",
+      "duration_ms": 12,
       "count": 1,
       "metadata": { "safe_count": 1 },
       "hash_key_version": "v1"
