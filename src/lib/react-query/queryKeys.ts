@@ -355,6 +355,8 @@ export const queryKeys = {
         [...queryKeys.integration.orders.all(), 'list', filters] as const,
       detail: (id: string) => [...queryKeys.integration.orders.all(), 'detail', id] as const,
       events: (id: string) => [...queryKeys.integration.orders.all(), id, 'events'] as const,
+      timeline: (id?: string | null) =>
+        [...queryKeys.integration.orders.all(), id ?? null, 'timeline'] as const,
     },
     stats: () => [...queryKeys.integration.all, 'stats'] as const,
     programs: {

@@ -64,6 +64,16 @@ export function useOrderEvents(id: string) {
   });
 }
 
+export function useOrderTimeline(id?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.integration.orders.timeline(id),
+    queryFn: () => integrationOrderApi.getOrderTimeline(id as string),
+    enabled: Boolean(id),
+    staleTime: 30 * 1000,
+    refetchInterval: 30000,
+  });
+}
+
 export function useCreateOrderMutation() {
   const queryClient = useQueryClient();
   return useMutation({

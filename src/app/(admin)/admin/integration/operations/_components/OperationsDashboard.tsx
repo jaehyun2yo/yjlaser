@@ -1,9 +1,10 @@
 'use client';
 
 import { Activity, AlertTriangle, Clock3, Server } from 'lucide-react';
-import { useOperationFailures } from '@/app/(admin)/admin/integration/_lib/hooks';
+import { useOperationFailures, useOrderTimeline } from '@/app/(admin)/admin/integration/_lib/hooks';
 import { BG_COLOR, BORDER_COLOR, TEXT_COLOR } from '@/lib/styles';
 import { OperationFailuresTable } from './OperationFailuresTable';
+import { OrderTimelinePanel } from './OrderTimelinePanel';
 
 const summaryCards = [
   {
@@ -34,10 +35,6 @@ const summaryCards = [
 
 const panels = [
   {
-    title: '주문 타임라인',
-    rows: ['order', 'source', 'eventType', 'occurredAt'],
-  },
-  {
     title: 'Worker heartbeat',
     rows: ['program', 'instance', 'status', 'lastSeen'],
   },
@@ -45,6 +42,9 @@ const panels = [
 
 export function OperationsDashboard() {
   const failuresQuery = useOperationFailures(20);
+  const timelineOrderId =
+    failuresQuery.data?.items.find((failure) => Boolean(failure.order_id))?.order_id ?? null;
+  const timelineQuery = useOrderTimeline(timelineOrderId);
   const unresolvedFailureCount = failuresQuery.data
     ? `${failuresQuery.data.items.length}${failuresQuery.data.has_more ? '+' : ''}`
     : undefined;
@@ -83,6 +83,18 @@ export function OperationsDashboard() {
             failures={failuresQuery.data?.items}
             isLoading={failuresQuery.isLoading}
             isError={failuresQuery.isError}
+          />
+        </div>
+
+        <div className={`rounded-lg border ${BORDER_COLOR.default} ${BG_COLOR.card}`}>
+          <div className={`border-b ${BORDER_COLOR.default} px-4 py-3`}>
+            <h2 className={`text-sm font-semibold ${TEXT_COLOR.primary}`}>주문 타임라인</h2>
+          </div>
+          <OrderTimelinePanel
+            orderId={timelineOrderId}
+            timeline={timelineQuery.data}
+            isLoading={failuresQuery.isLoading || timelineQuery.isLoading}
+            isError={timelineQuery.isError}
           />
         </div>
 

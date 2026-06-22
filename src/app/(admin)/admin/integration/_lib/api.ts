@@ -24,6 +24,7 @@ import type {
   SyncLogStats,
   PipelineBacklogItem,
   OperationFailuresResponse,
+  OrderTimelineResponse,
 } from './types';
 
 import { NESTJS_CLIENT_API_BASE } from '@/lib/api/api-base';
@@ -90,6 +91,10 @@ export const integrationOrderApi = {
 
   // 주문 이벤트 내역
   getOrderEvents: (id: string): Promise<OrderEvent[]> => apiFetch(`/orders/${id}/events`),
+
+  // 주문 운영 타임라인
+  getOrderTimeline: (id: string): Promise<OrderTimelineResponse> =>
+    apiFetch(`/orders/${id}/timeline`),
 
   // 주문 생성
   createOrder: (data: CreateOrderRequest): Promise<IntegrationOrder> =>

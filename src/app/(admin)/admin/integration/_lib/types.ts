@@ -43,6 +43,45 @@ export interface OrderEvent {
   metadata?: Record<string, unknown>;
 }
 
+export type OrderTimelineSourceModel = 'order_event' | 'job_event';
+
+export interface OrderTimelineEvent {
+  timeline_id: string;
+  source_model: OrderTimelineSourceModel;
+  event_id: string;
+  order_id: string;
+  event_type: string;
+  source: string;
+  source_worker: string | null;
+  occurred_at: string;
+  received_at: string | null;
+  created_at: string;
+  result: string | null;
+  state_apply_status: string | null;
+  failure_id: string | null;
+  order_event_id: string | null;
+  job_id: string | null;
+  from_status: string | null;
+  to_status: string | null;
+  actor_name: string | null;
+  message: string | null;
+  processed_count: number | null;
+  duration_ms: number | null;
+}
+
+export interface OrderTimelineResponse {
+  order_id: string;
+  contact_id: number | null;
+  company_name: string;
+  production_status: string | null;
+  confirmation_status: string | null;
+  classification_status: string | null;
+  nesting_status: string | null;
+  billing_status: string | null;
+  events: OrderTimelineEvent[];
+  failures: unknown[];
+}
+
 // 주문 필터
 export interface OrderFilters {
   status?: string;
