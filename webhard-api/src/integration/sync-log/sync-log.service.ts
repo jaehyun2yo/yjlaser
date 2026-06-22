@@ -42,10 +42,22 @@ interface PipelineMetadata {
   reasonCode?: unknown;
   fileId?: unknown;
   folderId?: unknown;
+  fileExtension?: unknown;
   context?: unknown;
 }
 
-const SENSITIVE_CONTEXT_KEY = /(url|token|api.?key|secret|password|authorization|cookie)/i;
+type SanitizedContextValue =
+  | string
+  | number
+  | boolean
+  | null
+  | SanitizedContextValue[]
+  | { [key: string]: SanitizedContextValue };
+
+const SENSITIVE_CONTEXT_KEY =
+  /(url|token|api.?key|secret|password|authorization|cookie|path|file.?name|filename|company.?name|email|phone|receiver)/i;
+const SENSITIVE_CONTEXT_TEXT =
+  /(https?:\/\/|[A-Z]:\\|\\\\|password\s*[:=]|token\s*[:=]|api[_-]?key\s*[:=]|secret\s*[:=]|authorization\s*[:=]|cookie\s*[:=])/i;
 
 @Injectable()
 export class SyncLogService {
@@ -70,7 +82,14 @@ export class SyncLogService {
         }),
       { operationName: 'syncLog.create' }
     );
-    this.logger.log(`SyncLog created: ${dto.filename} -> ${dto.status}`);
+    this.logger.log(
+      {
+        action: 'sync_log_created',
+        status: dto.status,
+        syncLogId: log.id,
+      },
+      'SyncLog created'
+    );
     return log;
   }
 
@@ -150,6 +169,7 @@ export class SyncLogService {
       reasonCode: input.reasonCode,
       fileId: input.fileId,
       folderId: input.folderId,
+      fileExtension: this.getSafeFileExtension(input.filename),
       context: this.sanitizeContext(input.context),
     };
 
@@ -157,8 +177,8 @@ export class SyncLogService {
       () =>
         this.prisma.syncLog.create({
           data: {
-            filename: input.filename,
-            companyName: input.companyName,
+            filename: this.getSafePipelineFilename(input.filename),
+            companyName: undefined,
             status,
             contactId: undefined,
             orderId: undefined,
@@ -232,8 +252,8 @@ export class SyncLogService {
 
         return {
           id: log.id,
-          filename: log.filename,
-          companyName: log.companyName ?? null,
+          filename: this.getSafePipelineFilename(log.filename),
+          companyName: null,
           stage: typeof metadata.stage === 'string' ? metadata.stage : 'unknown',
           status:
             typeof metadata.pipelineStatus === 'string' ? metadata.pipelineStatus : log.status,
@@ -257,21 +277,51 @@ export class SyncLogService {
     return value;
   }
 
-  private sanitizeContext(context?: Record<string, unknown>): Record<string, unknown> {
-    if (!context) return {};
-
-    return Object.fromEntries(
-      Object.entries(context).filter(([key, value]) => {
-        if (SENSITIVE_CONTEXT_KEY.test(key)) return false;
-        return this.isSerializableContextValue(value);
-      })
-    );
+  private getSafeFileExtension(filename: string): string {
+    const basename = filename.split(/[\\/]/).pop()?.split(/[?#]/)[0] ?? '';
+    const match = basename.match(/\.([a-z0-9]{1,12})$/i);
+    return match ? `.${match[1].toLowerCase()}` : '';
   }
 
-  private isSerializableContextValue(value: unknown): boolean {
-    if (value === null) return true;
-    if (['string', 'number', 'boolean'].includes(typeof value)) return true;
-    return this.isRecord(value) || Array.isArray(value);
+  private getSafePipelineFilename(filename: string): string {
+    const extension = this.getSafeFileExtension(filename);
+    return extension ? `file${extension}` : 'file';
+  }
+
+  private sanitizeContext(
+    context?: Record<string, unknown>
+  ): Record<string, SanitizedContextValue> {
+    if (!context) return {};
+
+    const sanitized: Record<string, SanitizedContextValue> = {};
+    for (const [key, value] of Object.entries(context)) {
+      if (SENSITIVE_CONTEXT_KEY.test(key)) continue;
+
+      const sanitizedValue = this.sanitizeContextValue(value);
+      if (sanitizedValue !== undefined) {
+        sanitized[key] = sanitizedValue;
+      }
+    }
+
+    return sanitized;
+  }
+
+  private sanitizeContextValue(value: unknown): SanitizedContextValue | undefined {
+    if (value === null) return null;
+    if (['number', 'boolean'].includes(typeof value)) return value as number | boolean;
+    if (typeof value === 'string') {
+      return SENSITIVE_CONTEXT_TEXT.test(value) ? undefined : value;
+    }
+    if (Array.isArray(value)) {
+      const sanitizedItems = value
+        .map((item) => this.sanitizeContextValue(item))
+        .filter((item): item is SanitizedContextValue => item !== undefined);
+      return sanitizedItems;
+    }
+    if (this.isRecord(value)) {
+      return this.sanitizeContext(value);
+    }
+    return undefined;
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
