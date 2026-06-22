@@ -31,15 +31,8 @@ import {
     {
       provide: LOG_INGESTION_KEY_STORE,
       useFactory: (configService: ConfigService) => {
-        const rawMaxAuthFailures = configService.get<string>('LOG_INGESTION_MAX_AUTH_FAILURES');
-        const maxAuthFailures = rawMaxAuthFailures
-          ? Number.parseInt(rawMaxAuthFailures, 10)
-          : undefined;
         return new InMemoryLogIngestionKeyStore(
-          parseLogIngestionClientKeys(configService.get<string>('LOG_INGESTION_CLIENT_KEYS_JSON')),
-          {
-            maxAuthFailures: Number.isFinite(maxAuthFailures) ? maxAuthFailures : undefined,
-          }
+          parseLogIngestionClientKeys(configService.get<string>('LOG_INGESTION_CLIENT_KEYS_JSON'))
         );
       },
       inject: [ConfigService],

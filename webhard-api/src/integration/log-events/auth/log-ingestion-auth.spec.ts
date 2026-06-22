@@ -238,19 +238,16 @@ describe('LogIngestionAuthVerifier', () => {
     });
   });
 
-  it('반복 invalid signature는 in-memory test key를 disabled 상태로 전환한다', async () => {
-    const keyStore = new InMemoryLogIngestionKeyStore(
-      [
-        {
-          clientId: CLIENT_ID,
-          keyId: KEY_ID,
-          secret: HMAC_KEY,
-          allowedProjects: ['company_site'],
-          hashKeyVersion: 'v1',
-        },
-      ],
-      { maxAuthFailures: 2 }
-    );
+  it('반복 invalid signature는 active key를 자동으로 disabled 처리하지 않는다', async () => {
+    const keyStore = new InMemoryLogIngestionKeyStore([
+      {
+        clientId: CLIENT_ID,
+        keyId: KEY_ID,
+        secret: HMAC_KEY,
+        allowedProjects: ['company_site'],
+        hashKeyVersion: 'v1',
+      },
+    ]);
     const verifier = new LogIngestionAuthVerifier(
       keyStore,
       new InMemoryLogIngestionReplayStore(),
@@ -273,7 +270,38 @@ describe('LogIngestionAuthVerifier', () => {
     ).rejects.toThrow(UnauthorizedException);
 
     await expect(
-      verifier.verifyRequest(makeRequest({ nonce: 'nonce-after-disable' }), ['company_site'])
+      verifier.verifyRequest(makeRequest({ nonce: 'nonce-after-invalid-signatures' }), [
+        'company_site',
+      ])
+    ).resolves.toEqual({
+      clientId: CLIENT_ID,
+      keyId: KEY_ID,
+      hashKeyVersion: 'v1',
+    });
+  });
+
+  it('명시적으로 disabled 처리된 key는 유효한 서명이어도 401로 거부한다', async () => {
+    const verifier = new LogIngestionAuthVerifier(
+      new InMemoryLogIngestionKeyStore([
+        {
+          clientId: CLIENT_ID,
+          keyId: KEY_ID,
+          secret: HMAC_KEY,
+          allowedProjects: ['company_site'],
+          hashKeyVersion: 'v1',
+          disabled: true,
+        },
+      ]),
+      new InMemoryLogIngestionReplayStore(),
+      new InMemoryLogIngestionRateLimiter({
+        maxRequests: 100,
+        windowMs: 60_000,
+      }),
+      { allowedClockSkewMs: 300_000 }
+    );
+
+    await expect(
+      verifier.verifyRequest(makeRequest({ nonce: 'nonce-disabled-key' }), ['company_site'])
     ).rejects.toThrow(UnauthorizedException);
   });
 });

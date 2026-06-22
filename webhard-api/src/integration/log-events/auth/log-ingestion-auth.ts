@@ -72,10 +72,7 @@ export class InMemoryLogIngestionKeyStore implements LogIngestionKeyStore {
   private readonly keys = new Map<string, LogIngestionClientKey>();
   private readonly authFailures = new Map<string, number>();
 
-  constructor(
-    keys: LogIngestionClientKey[] = [],
-    private readonly options: { maxAuthFailures?: number } = {}
-  ) {
+  constructor(keys: LogIngestionClientKey[] = []) {
     for (const key of keys) {
       if (Buffer.byteLength(key.secret, 'utf8') < 32) {
         throw new Error('LOG_INGESTION_SECRET_TOO_SHORT');
@@ -98,20 +95,9 @@ export class InMemoryLogIngestionKeyStore implements LogIngestionKeyStore {
     keyId: string,
     _reason: 'signature_invalid'
   ): Promise<void> {
-    if (!this.options.maxAuthFailures) {
-      return;
-    }
-
     const mapKey = this.getMapKey(clientId, keyId);
     const nextCount = (this.authFailures.get(mapKey) ?? 0) + 1;
     this.authFailures.set(mapKey, nextCount);
-
-    if (nextCount >= this.options.maxAuthFailures) {
-      const key = this.keys.get(mapKey);
-      if (key) {
-        this.keys.set(mapKey, { ...key, disabled: true });
-      }
-    }
   }
 
   private getMapKey(clientId: string, keyId: string): string {
