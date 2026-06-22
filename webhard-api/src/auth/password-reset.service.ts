@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { formatLogEvent, hashIdentifier } from '../common/logging/log-event';
 import { AccountRecoveryMailDispatcher } from './account-recovery-mail.dispatcher';
 import { AccountRecoveryRateLimitService } from './account-recovery-rate-limit.service';
 import { AccountRecoveryTiming } from './account-recovery-timing.service';
@@ -53,6 +54,7 @@ export class PasswordResetService {
     const username = dto.username.trim();
     const requestedEmail = this.normalizeEmail(dto.email);
     const recoveryContext = context || this.buildFallbackContext(username, requestedEmail);
+    const correlationId = this.buildRecoveryCorrelationId(recoveryContext);
 
     try {
       const company = await this.prisma.company.findUnique({
@@ -71,9 +73,11 @@ export class PasswordResetService {
         !this.isRecoverableCompany(company) ||
         this.normalizeEmail(company.managerEmail) !== requestedEmail
       ) {
-        this.logger.warn('Password reset requested with unmatched credentials', {
-          fingerprint: recoveryContext.fingerprint,
-        });
+        this.logPasswordResetRequestRejected(
+          recoveryContext,
+          correlationId,
+          'unmatched_credentials'
+        );
         return this.genericResetResponse();
       }
 
@@ -97,6 +101,8 @@ export class PasswordResetService {
         tokenHash,
         expiresAt,
         now,
+        correlationId,
+        flow: recoveryContext.flow,
       });
 
       if (!tokenStored) {
@@ -112,10 +118,7 @@ export class PasswordResetService {
         fingerprint: recoveryContext.fingerprint,
       });
 
-      this.logger.log('Password reset link issued', {
-        companyId: company.id,
-        expiresAt: expiresAt.toISOString(),
-      });
+      this.logPasswordResetLinkIssued(company.id, expiresAt, recoveryContext, correlationId);
 
       return this.genericResetResponse();
     } finally {
@@ -166,7 +169,7 @@ export class PasswordResetService {
       });
     });
 
-    this.logger.log('Password reset completed', { companyId: resetToken.companyId });
+    this.logPasswordResetCompleted(resetToken.companyId, tokenHash);
 
     return {
       success: true,
@@ -195,6 +198,8 @@ export class PasswordResetService {
     tokenHash: string;
     expiresAt: Date;
     now: Date;
+    correlationId: string;
+    flow: string;
   }): Promise<boolean> {
     try {
       await this.prisma.$transaction([
@@ -213,10 +218,12 @@ export class PasswordResetService {
 
       return true;
     } catch (error) {
-      this.logger.error('Password reset token storage failed', {
-        companyId: input.companyId,
-        reason: this.classifyTokenStorageFailure(error),
-      });
+      this.logPasswordResetTokenStorageFailed(
+        input.companyId,
+        input.correlationId,
+        input.flow,
+        this.classifyTokenStorageFailure(error)
+      );
       return false;
     }
   }
@@ -271,6 +278,121 @@ export class PasswordResetService {
 
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private buildRecoveryCorrelationId(context: AccountRecoveryRequestContext): string {
+    return `password-reset-${hashIdentifier(`${context.flow}:${context.fingerprint}`)}`;
+  }
+
+  private buildTokenCorrelationId(tokenHash: string): string {
+    return `password-reset-${hashIdentifier(tokenHash)}`;
+  }
+
+  private logPasswordResetRequestRejected(
+    context: AccountRecoveryRequestContext,
+    correlationId: string,
+    reason: string
+  ): void {
+    this.logger.warn(
+      formatLogEvent({
+        level: 'warn',
+        project: 'company_site',
+        component: PasswordResetService.name,
+        feature: 'auth',
+        event: 'password_reset_request_rejected',
+        action: 'request_password_reset',
+        status: 'failure',
+        channel: 'security',
+        correlation_id: correlationId,
+        actor_type: 'account_recovery_request',
+        actor_id_hash: hashIdentifier(context.fingerprint),
+        metadata: {
+          reason,
+          flow: context.flow,
+        },
+      })
+    );
+  }
+
+  private logPasswordResetLinkIssued(
+    companyId: number,
+    expiresAt: Date,
+    context: AccountRecoveryRequestContext,
+    correlationId: string
+  ): void {
+    this.logger.log(
+      formatLogEvent({
+        level: 'info',
+        project: 'company_site',
+        component: PasswordResetService.name,
+        feature: 'auth',
+        event: 'password_reset_link_issued',
+        action: 'issue_password_reset_link',
+        status: 'success',
+        channel: 'security',
+        correlation_id: correlationId,
+        actor_type: 'company',
+        actor_id_hash: hashIdentifier(companyId),
+        target_type: 'password_reset_token',
+        target_id_hash: hashIdentifier(companyId),
+        metadata: {
+          flow: context.flow,
+          expiresAt: expiresAt.toISOString(),
+        },
+      })
+    );
+  }
+
+  private logPasswordResetTokenStorageFailed(
+    companyId: number,
+    correlationId: string,
+    flow: string,
+    reason: string
+  ): void {
+    this.logger.error(
+      formatLogEvent({
+        level: 'error',
+        project: 'company_site',
+        component: PasswordResetService.name,
+        feature: 'auth',
+        event: 'password_reset_token_storage_failed',
+        action: 'store_password_reset_token',
+        status: 'failure',
+        channel: 'security',
+        correlation_id: correlationId,
+        actor_type: 'company',
+        actor_id_hash: hashIdentifier(companyId),
+        target_type: 'password_reset_token',
+        target_id_hash: hashIdentifier(companyId),
+        metadata: {
+          reason,
+          flow,
+        },
+      })
+    );
+  }
+
+  private logPasswordResetCompleted(companyId: number, tokenHash: string): void {
+    this.logger.log(
+      formatLogEvent({
+        level: 'info',
+        project: 'company_site',
+        component: PasswordResetService.name,
+        feature: 'auth',
+        event: 'password_reset_completed',
+        action: 'confirm_password_reset',
+        status: 'success',
+        channel: 'security',
+        correlation_id: this.buildTokenCorrelationId(tokenHash),
+        actor_type: 'company',
+        actor_id_hash: hashIdentifier(companyId),
+        target_type: 'password_reset_token',
+        target_id_hash: hashIdentifier(companyId),
+        metadata: {
+          result: 'password_updated',
+        },
+      })
+    );
   }
 
   private normalizeEmail(email: string): string {

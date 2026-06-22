@@ -1,4 +1,4 @@
-import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -40,6 +40,20 @@ interface RateLimitMock {
 interface TimingMock {
   waitForMinimum: jest.Mock<Promise<void>, [number]>;
 }
+
+type LoggedSecurityEvent = {
+  project?: string;
+  component?: string;
+  feature?: string;
+  event?: string;
+  action?: string;
+  status?: string;
+  channel?: string;
+  correlation_id?: string;
+  actor_id_hash?: string;
+  target_id_hash?: string;
+  metadata: Record<string, unknown>;
+};
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -101,6 +115,31 @@ function makeService(overrides?: { siteUrl?: string; mailCanSend?: boolean }) {
   return { service, prisma, dispatcher, config, rateLimit, timing };
 }
 
+function spyOnPasswordResetLogs() {
+  const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+  const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  return { logSpy, warnSpy, errorSpy };
+}
+
+function serializeLoggerCalls(...spies: jest.SpyInstance[]): string {
+  return spies
+    .flatMap((spy) => spy.mock.calls)
+    .map((args) =>
+      args.map((arg: unknown) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')
+    )
+    .join('\n');
+}
+
+function findJsonLogEvent(spy: jest.SpyInstance, eventName: string): LoggedSecurityEvent {
+  for (const [message] of spy.mock.calls) {
+    const text = String(message);
+    if (!text.includes(eventName)) continue;
+    return JSON.parse(text) as LoggedSecurityEvent;
+  }
+  throw new Error(`log event not found: ${eventName}`);
+}
+
 describe('PasswordResetService', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
@@ -115,6 +154,7 @@ describe('PasswordResetService', () => {
   describe('requestReset()', () => {
     it('업체 계정과 이메일이 일치하면 기존 미사용 토큰을 무효화하고 reset link를 발송한다', async () => {
       const { service, prisma, dispatcher, rateLimit, timing } = makeService();
+      const { logSpy, warnSpy, errorSpy } = spyOnPasswordResetLogs();
       prisma.company.findUnique.mockResolvedValue({
         id: 7,
         username: 'acme',
@@ -182,6 +222,21 @@ describe('PasswordResetService', () => {
       expect(prisma.passwordResetToken.create.mock.calls[0]?.[0].data.tokenHash).toBe(
         hashToken(token ?? '')
       );
+
+      const event = findJsonLogEvent(logSpy, 'password_reset_link_issued');
+      const serialized = serializeLoggerCalls(logSpy, warnSpy, errorSpy);
+      expect(event).toMatchObject({
+        project: 'company_site',
+        component: 'PasswordResetService',
+        feature: 'auth',
+        event: 'password_reset_link_issued',
+        action: 'issue_password_reset_link',
+        status: 'success',
+        channel: 'security',
+      });
+      expect(event.target_id_hash).toMatch(/^[a-f0-9]{16}$/);
+      expect(serialized).not.toContain(token ?? '');
+      expect(serialized).not.toContain(mailInput.resetLink);
     });
 
     it('development localhost 요청 origin이 있으면 env의 production URL 대신 dev origin으로 reset link를 만든다', async () => {
@@ -271,6 +326,48 @@ describe('PasswordResetService', () => {
       expect(dispatcher.sendPasswordResetLink).not.toHaveBeenCalled();
     });
 
+    it('계정 불일치 로그는 공통 security 이벤트이며 raw username/email을 남기지 않는다', async () => {
+      const { service, prisma } = makeService();
+      const { warnSpy, logSpy, errorSpy } = spyOnPasswordResetLogs();
+      prisma.company.findUnique.mockResolvedValue({
+        id: 7,
+        username: 'acme',
+        companyName: 'ACME목형',
+        managerEmail: 'manager@example.com',
+        status: 'active',
+        isApproved: true,
+      });
+
+      await service.requestReset(
+        {
+          username: ' acme ',
+          email: 'other@example.com',
+        },
+        { flow: 'find-password', ip: '1.2.3.4', fingerprint: 'fingerprint-hash' }
+      );
+
+      const event = findJsonLogEvent(warnSpy, 'password_reset_request_rejected');
+      const serialized = serializeLoggerCalls(warnSpy, logSpy, errorSpy);
+      expect(event).toMatchObject({
+        project: 'company_site',
+        component: 'PasswordResetService',
+        feature: 'auth',
+        event: 'password_reset_request_rejected',
+        action: 'request_password_reset',
+        status: 'failure',
+        channel: 'security',
+        metadata: {
+          reason: 'unmatched_credentials',
+          flow: 'find-password',
+        },
+      });
+      expect(event.correlation_id).toMatch(/^password-reset-/);
+      expect(event.actor_id_hash).toMatch(/^[a-f0-9]{16}$/);
+      expect(serialized).not.toContain('acme');
+      expect(serialized).not.toContain('other@example.com');
+      expect(serialized).not.toContain('manager@example.com');
+    });
+
     it('post-lookup 발송 제한 초과는 reset token과 메일을 만들지 않고 generic success를 유지한다', async () => {
       const { service, prisma, dispatcher, rateLimit } = makeService();
       prisma.company.findUnique.mockResolvedValue({
@@ -328,6 +425,7 @@ describe('PasswordResetService', () => {
 
     it('reset token 테이블이 없으면 500을 내지 않고 generic success를 유지한다', async () => {
       const { service, prisma, dispatcher } = makeService();
+      const { errorSpy, logSpy, warnSpy } = spyOnPasswordResetLogs();
       prisma.company.findUnique.mockResolvedValue({
         id: 7,
         username: 'acme',
@@ -351,6 +449,24 @@ describe('PasswordResetService', () => {
         message: '입력하신 정보가 일치하면 이메일로 비밀번호 재설정 링크가 전송됩니다.',
       });
       expect(dispatcher.sendPasswordResetLink).not.toHaveBeenCalled();
+
+      const event = findJsonLogEvent(errorSpy, 'password_reset_token_storage_failed');
+      const serialized = serializeLoggerCalls(errorSpy, logSpy, warnSpy);
+      expect(event).toMatchObject({
+        project: 'company_site',
+        component: 'PasswordResetService',
+        feature: 'auth',
+        event: 'password_reset_token_storage_failed',
+        action: 'store_password_reset_token',
+        status: 'failure',
+        channel: 'security',
+        metadata: {
+          reason: 'password_reset_tokens_missing',
+        },
+      });
+      expect(event.target_id_hash).toMatch(/^[a-f0-9]{16}$/);
+      expect(serialized).not.toContain('manager@example.com');
+      expect(serialized).not.toContain('acme');
     });
 
     it('메일 전송이 비활성화된 환경이면 계정 조회 전 실패해 계정 존재 여부를 노출하지 않는다', async () => {
@@ -368,6 +484,7 @@ describe('PasswordResetService', () => {
   describe('confirmReset()', () => {
     it('유효한 토큰이면 새 비밀번호 해시를 저장하고 토큰을 사용 처리한다', async () => {
       const { service, prisma } = makeService();
+      const { logSpy, warnSpy, errorSpy } = spyOnPasswordResetLogs();
       const token = 'raw-reset-token';
       prisma.passwordResetToken.findUnique.mockResolvedValue({
         id: 'reset-token-id',
@@ -406,6 +523,21 @@ describe('PasswordResetService', () => {
         },
         data: { usedAt: expect.any(Date) },
       });
+
+      const event = findJsonLogEvent(logSpy, 'password_reset_completed');
+      const serialized = serializeLoggerCalls(logSpy, warnSpy, errorSpy);
+      expect(event).toMatchObject({
+        project: 'company_site',
+        component: 'PasswordResetService',
+        feature: 'auth',
+        event: 'password_reset_completed',
+        action: 'confirm_password_reset',
+        status: 'success',
+        channel: 'security',
+      });
+      expect(event.target_id_hash).toMatch(/^[a-f0-9]{16}$/);
+      expect(serialized).not.toContain(token);
+      expect(serialized).not.toContain('NewStrong1!');
     });
 
     it('만료되었거나 사용된 토큰이면 비밀번호를 변경하지 않는다', async () => {
