@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { nestjsFetch } from '@/lib/api/nestjs-server-client';
-import { logger } from '@/lib/utils/logger';
+import { logger, toSafeLogError } from '@/lib/utils/logger';
 
 const resetPasswordLogger = logger.createLogger('RESET_PASSWORD');
 
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      resetPasswordLogger.warn('Password reset confirm failed', {
+      resetPasswordLogger.warn('Credential reset confirm failed', {
         status: response.status,
       });
       const message =
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       message: response.data.message,
     });
   } catch (error) {
-    resetPasswordLogger.error('Reset password error', error);
+    resetPasswordLogger.error('Credential reset route failed', toSafeLogError(error));
     return NextResponse.json(
       { success: false, message: '서버 오류가 발생했습니다.' },
       { status: 500 }

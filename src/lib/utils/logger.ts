@@ -92,6 +92,12 @@ function sanitizeArgs(args: unknown[]): unknown[] {
   return args.map((arg) => sanitizeData(arg));
 }
 
+export function toSafeLogError(error: unknown): { errorType: string } {
+  return {
+    errorType: error instanceof Error ? error.name : typeof error,
+  };
+}
+
 class Logger {
   private shouldLog(level: LogLevel): boolean {
     if (isDevelopment) return true;
