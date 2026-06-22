@@ -328,3 +328,35 @@ export interface OperationFailuresResponse {
   has_more: boolean;
   limit: number;
 }
+
+export type OperationHeartbeatStatus = 'online' | 'late' | 'offline';
+
+export interface OperationHeartbeat {
+  heartbeat_id: string;
+  program_type: string;
+  instance_name: string;
+  status: OperationHeartbeatStatus;
+  stored_status: string;
+  version: string | null;
+  hostname: string | null;
+  last_seen_at: string;
+  lag_seconds: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OperationHeartbeatSummary {
+  total: number;
+  online: number;
+  late: number;
+  offline: number;
+}
+
+export interface OperationHeartbeatsResponse {
+  items: OperationHeartbeat[];
+  summary: OperationHeartbeatSummary;
+  threshold_seconds: {
+    late: number;
+    offline: number;
+  };
+}

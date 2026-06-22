@@ -4,17 +4,25 @@
 
 import { render, screen } from '@testing-library/react';
 import { OperationsDashboard } from '@/app/(admin)/admin/integration/operations/_components/OperationsDashboard';
-import { useOperationFailures, useOrderTimeline } from '@/app/(admin)/admin/integration/_lib/hooks';
+import {
+  useOperationHeartbeats,
+  useOperationFailures,
+  useOrderTimeline,
+} from '@/app/(admin)/admin/integration/_lib/hooks';
 import type {
   OperationFailure,
   OrderTimelineResponse,
 } from '@/app/(admin)/admin/integration/_lib/types';
 
 jest.mock('@/app/(admin)/admin/integration/_lib/hooks', () => ({
+  useOperationHeartbeats: jest.fn(),
   useOperationFailures: jest.fn(),
   useOrderTimeline: jest.fn(),
 }));
 
+const mockedUseOperationHeartbeats = useOperationHeartbeats as jest.MockedFunction<
+  typeof useOperationHeartbeats
+>;
 const mockedUseOperationFailures = useOperationFailures as jest.MockedFunction<
   typeof useOperationFailures
 >;
@@ -91,6 +99,50 @@ describe('OperationsDashboard', () => {
       isLoading: false,
       isError: false,
     } as ReturnType<typeof useOrderTimeline>);
+    mockedUseOperationHeartbeats.mockReturnValue({
+      data: {
+        items: [
+          {
+            heartbeat_id: 'heartbeat-late',
+            program_type: 'management_program',
+            instance_name: 'mgmt-01',
+            status: 'late',
+            stored_status: 'online',
+            version: '2.1.0',
+            hostname: 'host-late',
+            last_seen_at: '2026-06-20T00:58:00.000Z',
+            lag_seconds: 360,
+            created_at: '2026-06-20T00:04:00.000Z',
+            updated_at: '2026-06-20T00:58:00.000Z',
+          },
+          {
+            heartbeat_id: 'heartbeat-offline',
+            program_type: 'nesting_program',
+            instance_name: 'nest-01',
+            status: 'offline',
+            stored_status: 'offline',
+            version: null,
+            hostname: 'host-offline',
+            last_seen_at: '2026-06-20T00:30:00.000Z',
+            lag_seconds: 2040,
+            created_at: '2026-06-20T00:04:00.000Z',
+            updated_at: '2026-06-20T00:30:00.000Z',
+          },
+        ],
+        summary: {
+          total: 2,
+          online: 0,
+          late: 1,
+          offline: 1,
+        },
+        threshold_seconds: {
+          late: 120,
+          offline: 600,
+        },
+      },
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useOperationHeartbeats>);
   });
 
   it('renders operation failure data in read-only dashboard panels', () => {
@@ -105,6 +157,8 @@ describe('OperationsDashboard', () => {
     expect(screen.getByText('drawing.classified')).toBeInTheDocument();
     expect(screen.getByText('원컴퍼니')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Worker heartbeat' })).toBeInTheDocument();
+    expect(screen.getAllByText('management_program')).toHaveLength(2);
+    expect(screen.getByText('nesting_program')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /재시도|삭제|발송|동기화/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /retry|delete|send|sync/i })).toBeNull();
   });

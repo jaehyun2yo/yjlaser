@@ -402,6 +402,7 @@ export const queryKeys = {
       all: () => [...queryKeys.integration.all, 'operations'] as const,
       failures: (filters?: { cursor?: string; limit?: number }) =>
         [...queryKeys.integration.all, 'operations', 'failures', filters] as const,
+      heartbeats: () => [...queryKeys.integration.all, 'operations', 'heartbeats'] as const,
     },
     health: () => [...queryKeys.integration.all, 'health'] as const,
   },

@@ -24,6 +24,7 @@ import type {
   SyncLogStats,
   PipelineBacklogItem,
   OperationFailuresResponse,
+  OperationHeartbeatsResponse,
   OrderTimelineResponse,
 } from './types';
 
@@ -368,5 +369,9 @@ export const integrationOperationsApi = {
     if (filters?.limit) params.set('limit', String(filters.limit));
     const qs = params.toString();
     return apiFetch<OperationFailuresResponse>(`/operations/failures${qs ? `?${qs}` : ''}`);
+  },
+
+  async getHeartbeats(): Promise<OperationHeartbeatsResponse> {
+    return apiFetch<OperationHeartbeatsResponse>('/operations/heartbeats');
   },
 };

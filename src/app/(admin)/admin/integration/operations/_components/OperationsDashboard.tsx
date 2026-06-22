@@ -1,10 +1,15 @@
 'use client';
 
 import { Activity, AlertTriangle, Clock3, Server } from 'lucide-react';
-import { useOperationFailures, useOrderTimeline } from '@/app/(admin)/admin/integration/_lib/hooks';
+import {
+  useOperationHeartbeats,
+  useOperationFailures,
+  useOrderTimeline,
+} from '@/app/(admin)/admin/integration/_lib/hooks';
 import { BG_COLOR, BORDER_COLOR, TEXT_COLOR } from '@/lib/styles';
 import { OperationFailuresTable } from './OperationFailuresTable';
 import { OrderTimelinePanel } from './OrderTimelinePanel';
+import { WorkerHeartbeatPanel } from './WorkerHeartbeatPanel';
 
 const summaryCards = [
   {
@@ -33,15 +38,9 @@ const summaryCards = [
   },
 ];
 
-const panels = [
-  {
-    title: 'Worker heartbeat',
-    rows: ['program', 'instance', 'status', 'lastSeen'],
-  },
-];
-
 export function OperationsDashboard() {
   const failuresQuery = useOperationFailures(20);
+  const heartbeatsQuery = useOperationHeartbeats();
   const timelineOrderId =
     failuresQuery.data?.items.find((failure) => Boolean(failure.order_id))?.order_id ?? null;
   const timelineQuery = useOrderTimeline(timelineOrderId);
@@ -57,7 +56,11 @@ export function OperationsDashboard() {
           const value =
             card.label === '미해결 실패' && unresolvedFailureCount !== undefined
               ? String(unresolvedFailureCount)
-              : card.value;
+              : card.label === '지연 Worker' && heartbeatsQuery.data
+                ? String(heartbeatsQuery.data.summary.late)
+                : card.label === '오프라인' && heartbeatsQuery.data
+                  ? String(heartbeatsQuery.data.summary.offline)
+                  : card.value;
 
           return (
             <div
@@ -98,24 +101,17 @@ export function OperationsDashboard() {
           />
         </div>
 
-        {panels.map((panel) => (
-          <div
-            key={panel.title}
-            className={`rounded-lg border ${BORDER_COLOR.default} ${BG_COLOR.card}`}
-          >
-            <div className={`border-b ${BORDER_COLOR.default} px-4 py-3`}>
-              <h2 className={`text-sm font-semibold ${TEXT_COLOR.primary}`}>{panel.title}</h2>
-            </div>
-            <div className="divide-y divide-border">
-              {panel.rows.map((row) => (
-                <div key={row} className="grid grid-cols-[120px_1fr] gap-3 px-4 py-3">
-                  <span className={`text-xs ${TEXT_COLOR.muted}`}>{row}</span>
-                  <span className={`text-xs ${TEXT_COLOR.secondary}`}>-</span>
-                </div>
-              ))}
-            </div>
+        <div className={`rounded-lg border ${BORDER_COLOR.default} ${BG_COLOR.card}`}>
+          <div className={`border-b ${BORDER_COLOR.default} px-4 py-3`}>
+            <h2 className={`text-sm font-semibold ${TEXT_COLOR.primary}`}>Worker heartbeat</h2>
           </div>
-        ))}
+          <WorkerHeartbeatPanel
+            heartbeats={heartbeatsQuery.data?.items}
+            summary={heartbeatsQuery.data?.summary}
+            isLoading={heartbeatsQuery.isLoading}
+            isError={heartbeatsQuery.isError}
+          />
+        </div>
       </section>
     </>
   );

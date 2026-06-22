@@ -287,3 +287,11 @@ export function useOperationFailures(limit = 20) {
     refetchInterval: 30000,
   });
 }
+
+export function useOperationHeartbeats() {
+  return useQuery({
+    queryKey: queryKeys.integration.operations.heartbeats(),
+    queryFn: () => integrationOperationsApi.getHeartbeats(),
+    refetchInterval: 30000,
+  });
+}
