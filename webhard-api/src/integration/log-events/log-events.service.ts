@@ -1,5 +1,10 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
+import {
+  formatLogEvent,
+  generateCorrelationId,
+  hashIdentifier,
+} from '../../common/logging/log-event';
 import type { LogEventBatchDto, LogEventDto } from './dto/log-event.dto';
 import type { LogIngestionAuthContext } from './auth/log-ingestion-auth';
 import {
@@ -42,6 +47,7 @@ export class LogEventsService {
       conflict: 0,
       results: [],
     };
+    const correlationId = this.getCorrelationId(batch);
 
     for (const event of batch.events) {
       const result = await this.repository.save({
@@ -55,9 +61,7 @@ export class LogEventsService {
 
     const elapsedMs = Date.now() - startedAt;
     if (response.conflict > 0) {
-      this.logger.warn(
-        `Log event batch conflict: clientId=${authContext.clientId}, eventCount=${batch.events.length}, conflict=${response.conflict}, elapsedMs=${elapsedMs}`
-      );
+      this.logBatchConflict(authContext, batch, response, elapsedMs, correlationId);
       throw new ConflictException({
         code: 'LOG_EVENT_ID_CONFLICT',
         message: 'LOG_EVENT_ID_CONFLICT',
@@ -65,14 +69,85 @@ export class LogEventsService {
       });
     }
 
-    this.logger.debug(
-      `Log event batch stored: clientId=${authContext.clientId}, eventCount=${batch.events.length}, accepted=${response.accepted}, duplicate=${response.duplicate}, elapsedMs=${elapsedMs}`
-    );
+    this.logBatchStored(authContext, batch, response, elapsedMs, correlationId);
 
     return response;
   }
 
   private hashEventPayload(event: LogEventDto): string {
     return createHash('sha256').update(JSON.stringify(event)).digest('hex');
+  }
+
+  private getCorrelationId(batch: LogEventBatchDto): string {
+    return batch.events[0]?.correlation_id || generateCorrelationId('log-ingestion');
+  }
+
+  private logBatchStored(
+    authContext: LogIngestionAuthContext,
+    batch: LogEventBatchDto,
+    response: LogEventCollectResponse,
+    elapsedMs: number,
+    correlationId: string
+  ): void {
+    this.logger.debug(
+      formatLogEvent({
+        level: 'debug',
+        project: 'company_site',
+        component: LogEventsService.name,
+        feature: 'log_ingestion',
+        event: 'log_event_batch_stored',
+        action: 'store',
+        status: 'success',
+        channel: 'audit',
+        correlation_id: correlationId,
+        duration_ms: elapsedMs,
+        count: batch.events.length,
+        actor_type: 'log_client',
+        actor_id_hash: hashIdentifier(authContext.clientId),
+        hash_key_version: authContext.hashKeyVersion,
+        metadata: {
+          event_count: batch.events.length,
+          accepted: response.accepted,
+          duplicate: response.duplicate,
+          rejected: response.rejected,
+          conflict: response.conflict,
+        },
+      })
+    );
+  }
+
+  private logBatchConflict(
+    authContext: LogIngestionAuthContext,
+    batch: LogEventBatchDto,
+    response: LogEventCollectResponse,
+    elapsedMs: number,
+    correlationId: string
+  ): void {
+    this.logger.warn(
+      formatLogEvent({
+        level: 'warn',
+        project: 'company_site',
+        component: LogEventsService.name,
+        feature: 'log_ingestion',
+        event: 'log_event_batch_conflict',
+        action: 'store',
+        status: 'failure',
+        channel: 'security',
+        correlation_id: correlationId,
+        duration_ms: elapsedMs,
+        count: batch.events.length,
+        actor_type: 'log_client',
+        actor_id_hash: hashIdentifier(authContext.clientId),
+        error_code: 'LOG_EVENT_ID_CONFLICT',
+        hash_key_version: authContext.hashKeyVersion,
+        metadata: {
+          event_count: batch.events.length,
+          accepted: response.accepted,
+          duplicate: response.duplicate,
+          rejected: response.rejected,
+          conflict: response.conflict,
+        },
+      })
+    );
   }
 }
