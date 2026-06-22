@@ -2,6 +2,7 @@ import { Controller, Get, INestApplication, Post, UseGuards } from '@nestjs/comm
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AuthService } from '../../auth/auth.service';
+import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
 import { ApiKeyGuard } from './api-key.guard';
 import { ApiKeyService } from './api-key.service';
 import {
@@ -84,6 +85,7 @@ describe('Integration API key worker scope', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.useGlobalFilters(new GlobalExceptionFilter());
     await app.init();
   });
 
@@ -103,10 +105,19 @@ describe('Integration API key worker scope', () => {
 
     expect(response.body).toEqual({ scope: 'file/register' });
 
-    await request(app.getHttpServer())
+    const forbiddenResponse = await request(app.getHttpServer())
       .post('/integration/scope-test/files/register')
       .set('X-API-Key', MANAGEMENT_PROGRAM_KEY)
       .expect(403);
+
+    expect(forbiddenResponse.body).toMatchObject({
+      statusCode: 403,
+      code: 'INTEGRATION_PERMISSION_DENIED',
+      message: 'Integration permission required',
+      required_permission: 'file/register',
+      path: '/integration/scope-test/files/register',
+    });
+    expect(forbiddenResponse.body.timestamp).toEqual(expect.any(String));
   });
 
   it('allows management program keys to write events and read jobs', async () => {
@@ -138,5 +149,19 @@ describe('Integration API key worker scope', () => {
       .get('/integration/scope-test/operations')
       .set('X-API-Key', MANAGEMENT_PROGRAM_KEY)
       .expect(403);
+  });
+
+  it('returns a standardized 401 response when no valid API key or session is present', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/integration/scope-test/jobs')
+      .expect(401);
+
+    expect(response.body).toMatchObject({
+      statusCode: 401,
+      code: 'INTEGRATION_AUTH_REQUIRED',
+      message: 'Valid session or API key required',
+      path: '/integration/scope-test/jobs',
+    });
+    expect(response.body.timestamp).toEqual(expect.any(String));
   });
 });

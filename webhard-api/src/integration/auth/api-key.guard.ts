@@ -18,6 +18,8 @@ import type { IntegrationPermission } from './integration-permissions';
 const API_KEY_HEADER = 'x-api-key';
 const SESSION_COOKIE_NAMES = ['admin-session', 'company-session'] as const;
 const WORKER_SESSION_COOKIE_NAME = 'erp-session';
+const INTEGRATION_AUTH_REQUIRED_CODE = 'INTEGRATION_AUTH_REQUIRED';
+const INTEGRATION_PERMISSION_DENIED_CODE = 'INTEGRATION_PERMISSION_DENIED';
 
 /**
  * 통합 인증 가드: Session 쿠키 또는 API Key 헤더 중 하나로 인증
@@ -86,7 +88,11 @@ export class ApiKeyGuard implements CanActivate {
           requiredIntegrationPermission &&
           !keyInfo.permissions.includes(requiredIntegrationPermission)
         ) {
-          throw new ForbiddenException(`${requiredIntegrationPermission} permission required`);
+          throw new ForbiddenException({
+            code: INTEGRATION_PERMISSION_DENIED_CODE,
+            message: 'Integration permission required',
+            required_permission: requiredIntegrationPermission,
+          });
         }
 
         // API Key 사용자는 admin session과 분리된 integration principal로 설정
@@ -102,6 +108,9 @@ export class ApiKeyGuard implements CanActivate {
       }
     }
 
-    throw new UnauthorizedException('Valid session or API key required');
+    throw new UnauthorizedException({
+      code: INTEGRATION_AUTH_REQUIRED_CODE,
+      message: 'Valid session or API key required',
+    });
   }
 }
