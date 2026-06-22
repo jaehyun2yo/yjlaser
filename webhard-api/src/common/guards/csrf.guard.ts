@@ -14,13 +14,6 @@ import { formatLogEvent, generateCorrelationId } from '../logging/log-event';
  */
 const CSRF_EXEMPT_PATHS = ['/api/v1/erp/workers/pin-login'];
 const LOG_INGESTION_PATH = '/api/v1/integration/log-events';
-const LOG_INGESTION_REQUIRED_HEADERS = [
-  'x-log-client-id',
-  'x-log-key-id',
-  'x-log-timestamp',
-  'x-log-nonce',
-  'x-log-signature',
-] as const;
 
 /**
  * Double Submit Cookie 패턴 기반 CSRF 보호 Guard.
@@ -63,7 +56,7 @@ export class CsrfGuard implements CanActivate {
       return true;
     }
 
-    if (isLogIngestionRequest(requestPath, request.headers, request.method)) {
+    if (isLogIngestionRequest(requestPath, request.method)) {
       return true;
     }
 
@@ -125,16 +118,8 @@ function getMissingTokenReason(
   return 'missing_header_token';
 }
 
-function isLogIngestionRequest(
-  requestPath: string,
-  headers: Record<string, string | string[] | undefined>,
-  method: string
-): boolean {
-  return (
-    method === 'POST' &&
-    requestPath === LOG_INGESTION_PATH &&
-    LOG_INGESTION_REQUIRED_HEADERS.every((header) => Boolean(headers[header]))
-  );
+function isLogIngestionRequest(requestPath: string, method: string): boolean {
+  return method === 'POST' && requestPath === LOG_INGESTION_PATH;
 }
 
 /**

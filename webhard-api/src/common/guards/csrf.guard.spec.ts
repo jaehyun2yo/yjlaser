@@ -122,11 +122,10 @@ describe('CsrfGuard', () => {
     ).toThrow(ForbiddenException);
   });
 
-  it('로그 수집 전용 엔드포인트여도 HMAC 필수 헤더가 빠지면 CSRF 검증을 우회하지 못한다', () => {
+  it('로그 수집 전용 엔드포인트는 HMAC 필수 헤더가 빠져도 Auth verifier가 401을 결정하도록 CSRF 검증을 건너뛴다', () => {
     const guard = new CsrfGuard();
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
-    expect(() =>
+    expect(
       guard.canActivate(
         makeContext({
           method: 'POST',
@@ -139,7 +138,7 @@ describe('CsrfGuard', () => {
           },
         })
       )
-    ).toThrow(ForbiddenException);
+    ).toBe(true);
   });
 
   it('누락된 CSRF header 거부 로그에 raw csrf cookie를 남기지 않는다', () => {
