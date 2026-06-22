@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { StorageProvider } from '@prisma/client';
 import { GoogleDriveStorageProvider } from '../google-drive-storage.provider';
 
@@ -93,5 +94,19 @@ describe('GoogleDriveStorageProvider batch file operations', () => {
 
   it('uses the Google Drive provider identity', () => {
     expect(makeProvider().provider).toBe(StorageProvider.GOOGLE_DRIVE);
+  });
+
+  it('maps Drive auth boundary failures to a retryable service-unavailable error', async () => {
+    const provider = makeProvider();
+    const state = provider as unknown as {
+      drive: { files: { generateIds: jest.Mock } };
+    };
+    state.drive = {
+      files: {
+        generateIds: jest.fn().mockRejectedValue(new Error('Unexpected Gaxios Error')),
+      },
+    };
+
+    await expect(provider.generateIds(1)).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

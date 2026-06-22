@@ -1,4 +1,9 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { StorageProvider } from '@prisma/client';
 import { drive_v3, google } from 'googleapis';
@@ -59,12 +64,20 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
     const sharedDriveId = this.configService.get<string>('GOOGLE_DRIVE_SHARED_DRIVE_ID');
 
     if (!rawCredentials || !sharedDriveId) {
-      throw new Error('Google Drive configuration is incomplete');
+      this.logger.warn('Google Drive boundary failed: context=config, status=missing');
+      throw new ServiceUnavailableException('Google Drive storage is temporarily unavailable');
     }
 
     this.sharedDriveId = sharedDriveId;
+    let credentials: JWTInput;
+    try {
+      credentials = JSON.parse(rawCredentials) as unknown as JWTInput;
+    } catch {
+      this.logger.warn('Google Drive boundary failed: context=config, status=invalid_json');
+      throw new ServiceUnavailableException('Google Drive storage is temporarily unavailable');
+    }
     this.auth = new google.auth.GoogleAuth({
-      credentials: JSON.parse(rawCredentials) as unknown as JWTInput,
+      credentials,
       scopes: [DRIVE_SCOPE],
     });
     this.drive = google.drive({ version: 'v3', auth: this.auth });
@@ -147,28 +160,36 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
   async createUploadSession(input: CreateUploadSessionInput): Promise<UploadSessionResult> {
     const { auth } = this.ensureDrive();
     const storageFileId = input.storageFileId ?? (await this.generateIds(1))[0];
-    const client = await auth.getClient();
+    const client = await this.getAuthenticatedClient(auth, 'upload_session_auth');
     const url = new URL('https://www.googleapis.com/upload/drive/v3/files');
     url.searchParams.set('uploadType', 'resumable');
     url.searchParams.set('supportsAllDrives', 'true');
     url.searchParams.set('fields', 'id,name,mimeType,size,parents');
-    const authHeaders = await client.getRequestHeaders(url.toString());
+    const authHeaders = await this.getAuthenticatedHeaders(
+      client,
+      url.toString(),
+      'upload_session_headers'
+    );
 
-    const response = await fetch(url.toString(), {
-      method: 'POST',
-      headers: {
-        ...this.toPlainHeaders(authHeaders),
-        'Content-Type': 'application/json; charset=UTF-8',
-        'X-Upload-Content-Type': input.mimeType,
-        'X-Upload-Content-Length': String(input.size),
+    const response = await this.fetchDriveBoundary(
+      url.toString(),
+      {
+        method: 'POST',
+        headers: {
+          ...this.toPlainHeaders(authHeaders),
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Type': input.mimeType,
+          'X-Upload-Content-Length': String(input.size),
+        },
+        body: JSON.stringify({
+          id: storageFileId,
+          name: input.fileName,
+          mimeType: input.mimeType,
+          parents: [input.parentStorageFolderId],
+        }),
       },
-      body: JSON.stringify({
-        id: storageFileId,
-        name: input.fileName,
-        mimeType: input.mimeType,
-        parents: [input.parentStorageFolderId],
-      }),
-    });
+      'upload_session_fetch'
+    );
 
     if (!response.ok) {
       this.logger.warn(`Drive upload session failed: status=${response.status}`);
@@ -426,19 +447,27 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
   ): Promise<BatchStorageFileOperationResult[]> {
     const { auth } = this.ensureDrive();
     const boundary = `batch_${crypto.randomUUID().replace(/-/g, '')}`;
-    const client = await auth.getClient();
-    const authHeaders = await client.getRequestHeaders(DRIVE_BATCH_URL);
+    const client = await this.getAuthenticatedClient(auth, 'batch_auth');
+    const authHeaders = await this.getAuthenticatedHeaders(
+      client,
+      DRIVE_BATCH_URL,
+      'batch_headers'
+    );
     const body = this.buildBatchRequestBody(boundary, requests);
 
-    const response = await fetch(DRIVE_BATCH_URL, {
-      method: 'POST',
-      headers: {
-        ...this.toPlainHeaders(authHeaders),
-        'Content-Type': `multipart/mixed; boundary=${boundary}`,
+    const response = await this.fetchDriveBoundary(
+      DRIVE_BATCH_URL,
+      {
+        method: 'POST',
+        headers: {
+          ...this.toPlainHeaders(authHeaders),
+          'Content-Type': `multipart/mixed; boundary=${boundary}`,
+        },
+        body,
+        cache: 'no-store',
       },
-      body,
-      cache: 'no-store',
-    });
+      'batch_fetch'
+    );
 
     const responseText = await response.text();
     if (!response.ok) {
@@ -530,8 +559,63 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
         await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)));
         return this.withRetry(operation, attempt + 1);
       }
+      if (this.isDriveBoundaryUnavailable(error, status)) {
+        throw this.toDriveUnavailableException(error, 'drive_api');
+      }
       throw error;
     }
+  }
+
+  private async getAuthenticatedClient(auth: GoogleAuth, context: string) {
+    try {
+      return await auth.getClient();
+    } catch (error) {
+      throw this.toDriveUnavailableException(error, context);
+    }
+  }
+
+  private async getAuthenticatedHeaders(
+    client: Awaited<ReturnType<GoogleAuth['getClient']>>,
+    url: string,
+    context: string
+  ): Promise<Headers> {
+    try {
+      return await client.getRequestHeaders(url);
+    } catch (error) {
+      throw this.toDriveUnavailableException(error, context);
+    }
+  }
+
+  private async fetchDriveBoundary(
+    url: string,
+    init: RequestInit,
+    context: string
+  ): Promise<Response> {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      throw this.toDriveUnavailableException(error, context);
+    }
+  }
+
+  private isDriveBoundaryUnavailable(error: unknown, status: number | null): boolean {
+    if (status === 401 || status === 403 || status === 429) {
+      return true;
+    }
+    const message = error instanceof Error ? error.message : '';
+    return /Gaxios|invalid_grant|invalid_client|default credentials|keyFile/i.test(message);
+  }
+
+  private toDriveUnavailableException(
+    error: unknown,
+    context: string
+  ): ServiceUnavailableException {
+    const status = this.getStatus(error);
+    const errorType = error instanceof Error ? error.constructor.name : typeof error;
+    this.logger.warn(
+      `Google Drive boundary failed: context=${context}, status=${status ?? 'unknown'}, errorType=${errorType}`
+    );
+    return new ServiceUnavailableException('Google Drive storage is temporarily unavailable');
   }
 
   private getStatus(error: unknown): number | null {
