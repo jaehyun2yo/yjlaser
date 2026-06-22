@@ -24,6 +24,7 @@ YJLaser 공통 로깅 시스템 구축 Task 7의 회사사이트 slice로 NestJS
 - `BackupService` 백업 설정/파일 백업 실패/백업 완료/디렉토리 탐색 실패/예약 백업 로그를 `LogEvent v1` JSON으로 통일하고, raw NAS path/file name/storage key/Drive id/error message 대신 file/company/path hash, reason code, count, error type만 기록한다.
 - `FeedbackService` 피드백 메일 알림 실패 로그를 `LogEvent v1` JSON으로 통일하고, raw companyName/companyEmail/content/category/SMTP error 대신 company/feedback/category hash, reason code, contact presence만 기록한다.
 - `ActivityLogsService` activity log 생성 실패 로그를 `LogEvent v1` JSON으로 통일하고, raw actor/action/resource/details/IP/User-Agent/Error 대신 actor/action/resource hash, presence flag, reason code, error type만 기록한다.
+- `SettingsService` 설정 조회/수정 실패 로그를 `LogEvent v1` JSON으로 통일하고, raw userId/download path/Error 대신 user hash, user type, changed field presence, reason code, error type만 기록한다.
 - raw `X-API-Key` 값은 로그에 남기지 않고 16자리 SHA-256 hash만 `actor_id_hash`로 기록한다.
 - raw CSRF cookie/header token 값은 로그에 남기지 않는다.
 - raw upload URL과 고객 파일명은 presigned URL 발급/업로드 확정/AutoContact 로그에 남기지 않는다.
@@ -45,6 +46,7 @@ pnpm test -- src/mail/mail.service.spec.ts src/auth/account-recovery-mail.dispat
 pnpm test -- src/backup/backup.service.spec.ts --runInBand
 pnpm test -- src/feedback/__tests__/feedback.service.spec.ts --runInBand
 pnpm test -- src/activity-logs/activity-logs.service.spec.ts --runInBand
+pnpm test -- src/settings/settings.service.spec.ts --runInBand
 npx tsc --noEmit --pretty false
 ```
 

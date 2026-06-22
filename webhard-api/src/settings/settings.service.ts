@@ -4,12 +4,14 @@ import { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionUser } from '../auth/auth.service';
 import { UpdateSettingsDto, SettingsResponseDto } from './dto/settings.dto';
+import { formatLogEvent, generateCorrelationId, hashIdentifier } from '../common/logging/log-event';
 
 const SETTINGS_CACHE_TTL = 300000; // 300s in ms
 
 @Injectable()
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
+  private readonly logFeature = 'settings';
 
   constructor(
     private prisma: PrismaService,
@@ -56,7 +58,19 @@ export class SettingsService {
       await this.cacheManager.set(cacheKey, dto, SETTINGS_CACHE_TTL);
       return dto;
     } catch (error) {
-      this.logger.error(`Failed to get settings for ${userId}`, error);
+      this.logger.error(
+        this.formatSettingsLogEvent({
+          event: 'settings_load_failed',
+          action: 'load_settings',
+          user,
+          userId,
+          errorType: this.getErrorType(error),
+          metadata: {
+            reason: 'settings_load_failed',
+            user_type: user.userType,
+          },
+        })
+      );
 
       // 에러 발생 시 기본값 반환 (서비스 중단 방지)
       return {
@@ -106,7 +120,22 @@ export class SettingsService {
       await this.cacheManager.del(cacheKey);
       return this.mapToDto(settings);
     } catch (error) {
-      this.logger.error(`Failed to update settings for ${userId}`, error);
+      this.logger.error(
+        this.formatSettingsLogEvent({
+          event: 'settings_update_failed',
+          action: 'update_settings',
+          user,
+          userId,
+          errorType: this.getErrorType(error),
+          metadata: {
+            reason: 'settings_update_failed',
+            user_type: user.userType,
+            font_size_present: dto.fontSize !== undefined,
+            notifications_present: dto.notificationsEnabled !== undefined,
+            download_path_present: dto.downloadFolderPath !== undefined,
+          },
+        })
+      );
 
       // 업데이트 실패 시에도 현재 설정 반환 시도
       try {
@@ -155,5 +184,34 @@ export class SettingsService {
       createdAt: settings.createdAt.toISOString(),
       updatedAt: settings.updatedAt.toISOString(),
     };
+  }
+
+  private getErrorType(error: unknown): string {
+    return error instanceof Error ? error.name : typeof error;
+  }
+
+  private formatSettingsLogEvent(input: {
+    event: string;
+    action: string;
+    user: SessionUser;
+    userId: string;
+    errorType: string;
+    metadata: Record<string, unknown>;
+  }): string {
+    return formatLogEvent({
+      level: 'error',
+      project: 'company_site',
+      component: SettingsService.name,
+      feature: this.logFeature,
+      event: input.event,
+      action: input.action,
+      status: 'failure',
+      channel: 'error',
+      correlation_id: generateCorrelationId('settings'),
+      actor_type: input.user.userType,
+      actor_id_hash: hashIdentifier(input.userId),
+      error_type: input.errorType,
+      metadata: input.metadata,
+    });
   }
 }
