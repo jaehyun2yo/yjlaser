@@ -17,6 +17,15 @@ const FILE_REGISTER_SYSTEM_USER: SessionUser = {
   companyId: null,
 };
 
+const FILE_REGISTER_PROVIDER_TO_CONFIRM_PROVIDER: Record<
+  FileRegisterStorageProvider,
+  ConfirmUploadDto['storageProvider']
+> = {
+  google_drive: 'google_drive',
+  r2_legacy: 'r2',
+  local_test: 'r2',
+};
+
 @Injectable()
 export class IntegrationFilesService {
   constructor(private readonly filesService: FilesService) {}
@@ -74,6 +83,6 @@ export class IntegrationFilesService {
   private toConfirmStorageProvider(
     provider: FileRegisterStorageProvider
   ): ConfirmUploadDto['storageProvider'] {
-    return provider === 'google_drive' ? 'google_drive' : 'r2';
+    return FILE_REGISTER_PROVIDER_TO_CONFIRM_PROVIDER[provider];
   }
 }

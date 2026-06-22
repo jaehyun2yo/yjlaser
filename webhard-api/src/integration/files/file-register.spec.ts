@@ -276,4 +276,17 @@ describe('Integration files register API', () => {
 
     expect(filesService.confirmUpload).not.toHaveBeenCalled();
   });
+
+  it('rejects unknown storage providers before service execution', async () => {
+    await request(app.getHttpServer())
+      .post('/integration/files/register')
+      .set('X-API-Key', EXTERNAL_WEBHARD_KEY)
+      .send({
+        ...validRegisterPayload,
+        storage_provider: 'dropbox',
+      })
+      .expect(400);
+
+    expect(filesService.confirmUpload).not.toHaveBeenCalled();
+  });
 });
