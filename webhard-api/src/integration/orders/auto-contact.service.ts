@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WebhardConfigService } from '../../folders/webhard-config.service';
 import { FoldersService } from '../../folders/folders.service';
@@ -16,6 +17,41 @@ import { SyncLogService, type CreatePipelineEventInput } from '../sync-log/sync-
 export type InquiryType = 'cutting_request' | 'mold_request' | 'laser_cutting';
 
 const CLASSIFY_FAILED_NOTIFICATION_DEDUPE_MS = 60 * 60 * 1000;
+
+function getSafeFileExtension(fileName: string): string {
+  const basename = fileName.split(/[\\/]/).pop() ?? '';
+  const dotIndex = basename.lastIndexOf('.');
+  if (dotIndex < 0 || dotIndex === basename.length - 1) {
+    return 'none';
+  }
+
+  return basename
+    .slice(dotIndex + 1)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .slice(0, 24);
+}
+
+function getSafeAutoContactLogFields(input: {
+  fileName?: string | null;
+  folderId?: string | null;
+  companyId?: string | null;
+}): string {
+  const fields = [];
+  if (input.fileName) {
+    fields.push(`extension=${getSafeFileExtension(input.fileName)}`);
+  }
+  fields.push(`folderId=${input.folderId ?? 'none'}`);
+  fields.push(`companyId=${input.companyId ?? 'none'}`);
+  return fields.join(', ');
+}
+
+function getSafeErrorSummary(error: unknown): string {
+  const errorType = error instanceof Error ? error.name || 'Error' : typeof error;
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const messageHash = createHash('sha256').update(rawMessage).digest('hex').slice(0, 16);
+  return `errorType=${errorType}, messageHash=${messageHash}`;
+}
 
 interface AutoContactResult {
   contactId: string;
@@ -56,7 +92,9 @@ export class AutoContactService {
       await this.syncLogService.createPipelineEvent(input);
     } catch (err) {
       this.logger.warn(
-        `auto-contact pipeline trace write failed: reason=${input.reasonCode}, filename=${input.filename}, error=${err instanceof Error ? err.message : String(err)}`
+        `auto-contact pipeline trace write failed: reason=${
+          input.reasonCode
+        }, extension=${getSafeFileExtension(input.filename)}, ${getSafeErrorSummary(err)}`
       );
     }
   }
@@ -67,15 +105,13 @@ export class AutoContactService {
    */
   async detectAndCreate(dto: AutoContactFromFileDto): Promise<AutoContactResult | null> {
     try {
-      this.logger.log(
-        `auto contact detect started: file=${dto.fileName}, folderId=${dto.folderId}, folderPath=${dto.folderPath}, company=${dto.companyName}, companyId=${dto.companyId ?? 'none'}`
-      );
+      this.logger.log(`auto contact detect started: ${getSafeAutoContactLogFields(dto)}`);
 
       // 문의 자동생성 제외 폴더 체크
       const isExcluded = await this.webhardConfigService.isAutoContactExcluded(dto.folderPath);
       if (isExcluded) {
         this.logger.log(
-          `Auto contact skipped (excluded folder): company=${dto.companyName}, path=${dto.folderPath}`
+          `Auto contact skipped (excluded folder): ${getSafeAutoContactLogFields(dto)}`
         );
         await this.recordPipelineEvent({
           filename: dto.fileName,
@@ -93,7 +129,9 @@ export class AutoContactService {
 
       const inquiryType = await this.classifyByFolderPath(dto.folderPath);
       this.logger.log(
-        `auto contact classified: file=${dto.fileName}, folderPath=${dto.folderPath}, inquiryType=${inquiryType ?? 'unclassified'}`
+        `auto contact classified: ${getSafeAutoContactLogFields(dto)}, inquiryType=${
+          inquiryType ?? 'unclassified'
+        }`
       );
 
       // 중복 체크 (company_name + original_filename)
@@ -101,14 +139,20 @@ export class AutoContactService {
 
       if (existing) {
         this.logger.log(
-          `auto contact duplicate detected: contactId=${existing.id}, company=${dto.companyName}, file=${dto.fileName}`
+          `auto contact duplicate detected: contactId=${
+            existing.id
+          }, ${getSafeAutoContactLogFields(dto)}`
         );
         return await this.updateExistingContact(existing.id, dto);
       }
 
       return await this.createNewContact(dto, inquiryType);
     } catch (error) {
-      this.logger.error(`AutoContactService.detectAndCreate failed for ${dto.fileName}: ${error}`);
+      this.logger.error(
+        `AutoContactService.detectAndCreate failed: ${getSafeAutoContactLogFields(
+          dto
+        )}, ${getSafeErrorSummary(error)}`
+      );
       return null;
     }
   }
@@ -172,7 +216,9 @@ export class AutoContactService {
       { operationName: 'autoContact.updateExistingContact' }
     );
 
-    this.logger.log(`Contact updated (file re-upload): id=${contactId}, file=${dto.fileName}`);
+    this.logger.log(
+      `Contact updated (file re-upload): id=${contactId}, ${getSafeAutoContactLogFields(dto)}`
+    );
 
     return {
       contactId,
@@ -293,7 +339,9 @@ export class AutoContactService {
     const companyInfo = await this.matchCompanyInfo(dto.companyName);
     const isLaserOnly = isMappedLaserOnly || (companyInfo?.laserOnly ?? false);
     this.logger.log(
-      `auto contact company resolved: sourceCompany=${dto.companyName}, resolvedCompany=${companyInfo?.companyName ?? dto.companyName.trim()}, resolvedCompanyId=${companyInfo?.id ?? dto.companyId ?? 'none'}, laserOnly=${isLaserOnly}, mappedLaserOnly=${isMappedLaserOnly}`
+      `auto contact company resolved: ${getSafeAutoContactLogFields(
+        dto
+      )}, resolvedCompanyId=${companyInfo?.id ?? dto.companyId ?? 'none'}, laserOnly=${isLaserOnly}, mappedLaserOnly=${isMappedLaserOnly}`
     );
 
     // laserOnly 업체 분기: 샘플 폴더가 아닌 경우 laser_cutting으로 오버라이드
@@ -408,7 +456,13 @@ export class AutoContactService {
     );
 
     this.logger.log(
-      `auto contact created: contactId=${contactId}, company=${resolvedCompanyName}, companyId=${resolvedCompanyId ?? 'none'}, inquiry=${inquiryNumber ?? 'none'}, work=${workNumber ?? 'none'}, status=${status}, processStage=${processStage ?? 'none'}, type=${finalInquiryType ?? 'unclassified'}${isLaserOnly ? ' (laserOnly)' : ''}, folderId=${dto.folderId}`
+      `auto contact created: contactId=${contactId}, ${getSafeAutoContactLogFields(
+        dto
+      )}, resolvedCompanyId=${resolvedCompanyId ?? 'none'}, inquiry=${
+        inquiryNumber ?? 'none'
+      }, work=${workNumber ?? 'none'}, status=${status}, processStage=${
+        processStage ?? 'none'
+      }, type=${finalInquiryType ?? 'unclassified'}${isLaserOnly ? ' (laserOnly)' : ''}`
     );
 
     this.contactsGateway?.emitContactCreated({
@@ -565,7 +619,9 @@ export class AutoContactService {
 
       if (existingRecentNotification) {
         this.logger.debug(
-          `Skipped duplicate webhard_classify_failed notification (folderPath=${folderPath})`
+          `Skipped duplicate webhard_classify_failed notification: contactId=${
+            contactId ?? 'none'
+          }, extension=${getSafeFileExtension(fileName)}`
         );
         return;
       }
@@ -586,7 +642,9 @@ export class AutoContactService {
       });
     } catch (error) {
       this.logger.warn(
-        `Failed to create webhard_classify_failed notification (folderPath=${folderPath}): ${error}`
+        `Failed to create webhard_classify_failed notification: contactId=${
+          contactId ?? 'none'
+        }, extension=${getSafeFileExtension(fileName)}, ${getSafeErrorSummary(error)}`
       );
     }
   }
@@ -617,7 +675,9 @@ export class AutoContactService {
 
     if (!webhardFile) {
       this.logger.debug(
-        `WebhardFile not found for prefix update: folderId=${folderId}, name=${originalName}`
+        `WebhardFile not found for prefix update: folderId=${folderId}, extension=${getSafeFileExtension(
+          originalName
+        )}`
       );
       return;
     }
@@ -632,6 +692,10 @@ export class AutoContactService {
       data: { name: fullName },
     });
 
-    this.logger.log(`WebhardFile name prefixed: ${fullName}`);
+    this.logger.log(
+      `WebhardFile name prefixed: fileId=${webhardFile.id}, folderId=${folderId}, extension=${getSafeFileExtension(
+        webhardFile.originalName
+      )}`
+    );
   }
 }

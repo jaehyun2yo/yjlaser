@@ -244,6 +244,113 @@ describe('AutoContactService.classifyByFolderPath', () => {
   });
 });
 
+describe('AutoContactService logging', () => {
+  function makeServiceForLogging(webhardConfigService = makeWebhardConfigService()) {
+    const prisma = makePrisma();
+    const service = new AutoContactService(
+      prisma as never,
+      webhardConfigService as never,
+      makeNumberService() as never,
+      { recordChange: jest.fn() } as never,
+      { createInitialRevision: jest.fn().mockResolvedValue(undefined) } as never,
+      { isLaserOnlyFolder: jest.fn().mockResolvedValue(false) } as never,
+      makeFoldersService() as never,
+      {
+        onContactCreated: jest.fn().mockResolvedValue(undefined),
+        onInquiryTypeClassified: jest.fn().mockResolvedValue(undefined),
+        onProcessStageChanged: jest.fn().mockResolvedValue(undefined),
+      } as never
+    );
+
+    return { prisma, service };
+  }
+
+  function collectLogText(spy: jest.SpyInstance): string {
+    return spy.mock.calls.map(([message]) => String(message)).join('\n');
+  }
+
+  it('신규 자동문의 logger에 raw filename, fileUrl, folderPath, companyName을 남기지 않는다', async () => {
+    const { prisma, service } = makeServiceForLogging();
+    const rawFilename = '민감거래처-도면-raw-name.dxf';
+    const rawFileUrl = 'storage://r2/company-7/raw-sensitive-key';
+    const rawFolderPath = '/민감거래처/칼선의뢰';
+    const rawCompanyName = '민감거래처';
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
+    prisma.contact.findFirst.mockResolvedValueOnce(null);
+    prisma.contact.create.mockResolvedValueOnce({ id: 'contact-logging-1' });
+
+    await service.detectAndCreate({
+      fileName: rawFilename,
+      fileUrl: rawFileUrl,
+      folderId: 'folder-logging-1',
+      folderPath: rawFolderPath,
+      companyName: rawCompanyName,
+      companyId: '7',
+    });
+
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('auto contact detect started');
+    expect(logText).toContain('auto contact created');
+    expect(logText).toContain('extension=dxf');
+    expect(logText).toContain('folderId=folder-logging-1');
+    expect(logText).toContain('companyId=7');
+    expect(logText).not.toContain(rawFilename);
+    expect(logText).not.toContain(rawFileUrl);
+    expect(logText).not.toContain(rawFolderPath);
+    expect(logText).not.toContain(rawCompanyName);
+  });
+
+  it('중복 자동문의 업데이트 logger에 raw filename과 companyName을 남기지 않는다', async () => {
+    const { prisma, service } = makeServiceForLogging();
+    const rawFilename = '민감거래처-중복-raw-name.dxf';
+    const rawCompanyName = '민감거래처';
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
+    prisma.contact.findFirst.mockResolvedValueOnce({ id: 'contact-existing-1' });
+    prisma.contact.update.mockResolvedValueOnce({ id: 'contact-existing-1' });
+
+    await service.detectAndCreate({
+      fileName: rawFilename,
+      fileUrl: 'storage://r2/duplicate-sensitive-key',
+      folderId: 'folder-duplicate-1',
+      folderPath: '/민감거래처/칼선의뢰',
+      companyName: rawCompanyName,
+      companyId: '7',
+    });
+
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('auto contact duplicate detected');
+    expect(logText).toContain('Contact updated');
+    expect(logText).toContain('extension=dxf');
+    expect(logText).not.toContain(rawFilename);
+    expect(logText).not.toContain(rawCompanyName);
+  });
+
+  it('detectAndCreate 오류 logger에 raw filename을 남기지 않는다', async () => {
+    const webhardConfigService = makeWebhardConfigService();
+    webhardConfigService.isAutoContactExcluded.mockRejectedValueOnce(new Error('config down'));
+    const { service } = makeServiceForLogging(webhardConfigService);
+    const rawFilename = '민감거래처-오류-raw-name.dxf';
+    const errorSpy = jest.spyOn(service['logger'], 'error').mockImplementation();
+
+    await service.detectAndCreate({
+      fileName: rawFilename,
+      fileUrl: 'storage://r2/error-sensitive-key',
+      folderId: 'folder-error-1',
+      folderPath: '/민감거래처/칼선의뢰',
+      companyName: '민감거래처',
+      companyId: '7',
+    });
+
+    const errorText = collectLogText(errorSpy);
+    expect(errorText).toContain('AutoContactService.detectAndCreate failed');
+    expect(errorText).toContain('extension=dxf');
+    expect(errorText).toContain('errorType=Error');
+    expect(errorText).toContain('messageHash=');
+    expect(errorText).not.toContain(rawFilename);
+    expect(errorText).not.toContain('config down');
+  });
+});
+
 // ──────────────────────────────────────────────
 // 2. detectAndCreate — 칼선의뢰 신규 생성
 // ──────────────────────────────────────────────
