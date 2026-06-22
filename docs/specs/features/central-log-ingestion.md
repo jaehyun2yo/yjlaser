@@ -110,8 +110,10 @@ raw sensitive values. Authenticated requests with raw sensitive payloads return
 ## CSRF And Existing Auth Separation
 
 This endpoint does not use the existing `X-API-Key` integration guard. The global
-CSRF guard skips only this exact route when all `x-log-*` HMAC headers are
-present. The same headers do not bypass CSRF on any other route.
+CSRF guard skips only this exact route and delegates missing or invalid
+`x-log-*` HMAC headers to the log-ingestion auth verifier, so the API/Auth layer
+returns `401` for unauthenticated ingestion attempts. The same headers do not
+bypass CSRF on any other route.
 
 ## Persistence Phase Boundary
 
