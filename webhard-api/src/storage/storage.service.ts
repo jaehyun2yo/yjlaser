@@ -30,6 +30,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageProvider } from '@prisma/client';
 import { SessionUser } from '../auth/auth.service';
 import { extractR2Key } from '../common/r2-key.util';
+import { redactErrorMessage } from '../common/logging/request-redaction';
 import { GoogleDriveStorageProvider } from './google-drive-storage.provider';
 import {
   BatchMoveFileInput,
@@ -337,7 +338,7 @@ export class StorageService {
 
       return { url, key, expiresAt };
     } catch (error) {
-      this.logger.error('Failed to generate upload presigned URL', error);
+      this.logPresignedUrlGenerationFailure('upload', error);
       throw new InternalServerErrorException('Failed to generate upload URL');
     }
   }
@@ -365,7 +366,7 @@ export class StorageService {
 
       return { url, key, expiresAt };
     } catch (error) {
-      this.logger.error('Failed to generate download presigned URL', error);
+      this.logPresignedUrlGenerationFailure('download', error);
       throw new InternalServerErrorException('Failed to generate download URL');
     }
   }
@@ -1013,9 +1014,9 @@ export class StorageService {
         UploadId: uploadId,
         PartNumber: partNumber,
       });
-      return getSignedUrl(this.s3Client, command, { expiresIn });
+      return await getSignedUrl(this.s3Client, command, { expiresIn });
     } catch (error) {
-      this.logger.error('Failed to generate multipart presigned URL', error);
+      this.logPresignedUrlGenerationFailure('multipart', error);
       throw new InternalServerErrorException('Failed to generate part upload URL');
     }
   }
@@ -1173,6 +1174,27 @@ export class StorageService {
       .replace(/[^a-zA-Z0-9가-힣._-]/g, '_')
       .replace(/_{2,}/g, '_')
       .substring(0, 200);
+  }
+
+  private logPresignedUrlGenerationFailure(
+    operation: 'upload' | 'download' | 'multipart',
+    error: unknown
+  ): void {
+    this.logger.error(
+      `presigned_url_generation_failed action=generate_presigned_url operation=${operation} status=failure errorType=${this.getSafeErrorType(error)} messageHash=${this.getRedactedErrorMessageHash(error)}`
+    );
+  }
+
+  private getSafeErrorType(error: unknown): string {
+    const rawType = error instanceof Error && error.name ? error.name : typeof error;
+    return rawType.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80) || 'unknown';
+  }
+
+  private getRedactedErrorMessageHash(error: unknown): string {
+    const rawMessage =
+      error instanceof Error ? `${error.name}:${error.message}` : String(error ?? 'unknown');
+    const redactedMessage = redactErrorMessage(rawMessage);
+    return crypto.createHash('sha256').update(redactedMessage).digest('hex').slice(0, 16);
   }
 
   /**
