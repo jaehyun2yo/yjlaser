@@ -8,6 +8,11 @@ import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
 import { verifyBrowserGatewaySession } from '../auth/gateway-auth.util';
+import {
+  generateGatewayCorrelationId,
+  logWebSocketGatewayEvent,
+  type ScopedWebSocketGatewayLogEventInput,
+} from '../common/logging/gateway-log-event';
 
 /**
  * Activity Logs 실시간 이벤트 Gateway
@@ -27,39 +32,91 @@ export class ActivityLogsGateway implements OnGatewayConnection, OnGatewayDiscon
   @WebSocketServer()
   server: Server;
 
-  private readonly logger = new Logger('ActivityLogsGateway');
+  private readonly logger = new Logger(ActivityLogsGateway.name);
+  private readonly logFeature = 'activity_logs_gateway';
 
   constructor(private authService: AuthService) {}
 
   async handleConnection(client: Socket) {
+    const correlationId = generateGatewayCorrelationId(this.logFeature);
     try {
       const cookie = client.handshake.headers.cookie;
       let authenticated = false;
+      this.logGatewayEvent({
+        level: 'debug',
+        event: 'activity_logs_gateway_connection_started',
+        action: 'connect',
+        status: 'start',
+        channel: 'audit',
+        correlationId,
+        client,
+        metadata: {
+          browser_present: !!cookie,
+        },
+      });
 
       if (cookie) {
         const user = verifyBrowserGatewaySession(this.authService, cookie, ['admin']);
         if (user) {
           authenticated = true;
-          await client.join('admin');
-          this.logger.debug(`Client ${client.id} joined room: admin`);
+          const room = 'admin';
+          await client.join(room);
+          this.logRoomJoined(client, room, user.userType, correlationId);
         }
       }
 
       if (!authenticated) {
-        this.logger.warn(`Unauthenticated connection rejected: ${client.id}`);
+        this.logGatewayEvent({
+          level: 'warn',
+          event: 'activity_logs_gateway_connection_rejected',
+          action: 'connect',
+          status: 'failure',
+          channel: 'security',
+          correlationId,
+          client,
+          metadata: {
+            reason: 'unauthenticated',
+            browser_present: !!cookie,
+          },
+        });
         client.disconnect();
         return;
       }
 
-      this.logger.debug(`Client connected: ${client.id}`);
+      this.logGatewayEvent({
+        level: 'debug',
+        event: 'activity_logs_gateway_connected',
+        action: 'connect',
+        status: 'success',
+        channel: 'audit',
+        correlationId,
+        client,
+      });
     } catch (err) {
-      this.logger.error(`Connection error: ${err}`);
+      this.logGatewayEvent({
+        level: 'error',
+        event: 'activity_logs_gateway_connection_error',
+        action: 'connect',
+        status: 'failure',
+        channel: 'error',
+        correlationId,
+        client,
+        errorType: err instanceof Error ? err.name : typeof err,
+      });
       client.disconnect();
     }
   }
 
   handleDisconnect(client: Socket) {
-    this.logger.debug(`Client disconnected: ${client.id}`);
+    this.logGatewayEvent({
+      level: 'debug',
+      event: 'activity_logs_gateway_disconnected',
+      action: 'disconnect',
+      status: 'success',
+      channel: 'audit',
+      correlationId: generateGatewayCorrelationId(this.logFeature),
+      client,
+    });
   }
 
   /**
@@ -67,5 +124,34 @@ export class ActivityLogsGateway implements OnGatewayConnection, OnGatewayDiscon
    */
   emitActivityCreated(activityLog: Record<string, unknown>) {
     this.server.to('admin').emit('activity:created', activityLog);
+  }
+
+  private logRoomJoined(
+    client: Socket,
+    room: string,
+    userType: string,
+    correlationId: string
+  ): void {
+    this.logGatewayEvent({
+      level: 'debug',
+      event: 'activity_logs_gateway_room_joined',
+      action: 'join_room',
+      status: 'success',
+      channel: 'audit',
+      correlationId,
+      client,
+      targetRoom: room,
+      metadata: {
+        user_type: userType,
+      },
+    });
+  }
+
+  private logGatewayEvent(input: ScopedWebSocketGatewayLogEventInput): void {
+    logWebSocketGatewayEvent(this.logger, {
+      ...input,
+      component: ActivityLogsGateway.name,
+      feature: this.logFeature,
+    });
   }
 }
