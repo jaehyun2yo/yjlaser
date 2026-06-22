@@ -27,6 +27,34 @@ export interface FolderAliasBackfillResult {
   externalRootFound: boolean;
 }
 
+interface FolderAliasBackfillLogSummary {
+  relocated: number;
+  skipped: number;
+  movedFolders: number;
+  movedFiles: number;
+  deletedExternalFolders: number;
+  conflictCount: number;
+  externalRootFound: boolean;
+}
+
+function summarizeFolderAliasBackfillForLog(
+  backfill: FolderAliasBackfillResult | undefined
+): FolderAliasBackfillLogSummary | undefined {
+  if (!backfill) {
+    return undefined;
+  }
+
+  return {
+    relocated: backfill.relocated,
+    skipped: backfill.skipped,
+    movedFolders: backfill.movedFolders,
+    movedFiles: backfill.movedFiles,
+    deletedExternalFolders: backfill.deletedExternalFolders,
+    conflictCount: backfill.conflicts.length,
+    externalRootFound: backfill.externalRootFound,
+  };
+}
+
 @Injectable()
 export class FolderAliasService {
   private readonly logger = new Logger(FolderAliasService.name);
@@ -109,12 +137,13 @@ export class FolderAliasService {
 
       this.logger.log(
         {
+          action: 'folder_alias_approved',
+          status: 'success',
           aliasId: id,
-          folderName: alias.folderName,
           companyId: alias.companyId,
           approvedBy,
           cascadeBackfill: !!dto.cascadeBackfill,
-          backfill,
+          ...(backfill ? { backfill: summarizeFolderAliasBackfillForLog(backfill) } : {}),
         },
         'folder alias approved'
       );
@@ -192,12 +221,13 @@ export class FolderAliasService {
 
       this.logger.log(
         {
+          action: 'folder_alias_created_manual',
+          status: 'success',
           aliasId: alias.id,
-          folderName: dto.folderName,
           companyId: dto.companyId,
           approvedBy,
           cascadeBackfill,
-          backfill,
+          ...(backfill ? { backfill: summarizeFolderAliasBackfillForLog(backfill) } : {}),
         },
         'folder alias created (manual)'
       );
