@@ -21,6 +21,7 @@ YJLaser 공통 로깅 시스템 구축 Task 7의 회사사이트 slice로 NestJS
 - `NotificationsGateway`, `BookingsGateway`, `ActivityLogsGateway`, `FeedbackGateway` 연결/거부/room join/disconnect 로그를 공통 WebSocket gateway `LogEvent v1` helper로 통일하고, raw cookie/socket room/client id 대신 socket/room hash와 room type만 기록한다.
 - `EventsGateway`, `ContactsGateway` 연결/인증/거부/subscribe/emit failure 로그를 공통 WebSocket gateway `LogEvent v1` 규칙으로 통일하고, raw cookie/socket token/client id/folder room/error message 대신 hash, room type, reason code만 기록한다.
 - `MailService`와 `AccountRecoveryMailDispatcher` 메일 설정/skip/send failure/계정복구 발송 실패 로그를 `LogEvent v1` JSON으로 통일하고, raw recipient email/subject/reset token/SMTP error/fingerprint 대신 subject/company/fingerprint hash, reason code, attempt count만 기록한다.
+- `BackupService` 백업 설정/파일 백업 실패/백업 완료/디렉토리 탐색 실패/예약 백업 로그를 `LogEvent v1` JSON으로 통일하고, raw NAS path/file name/storage key/Drive id/error message 대신 file/company/path hash, reason code, count, error type만 기록한다.
 - raw `X-API-Key` 값은 로그에 남기지 않고 16자리 SHA-256 hash만 `actor_id_hash`로 기록한다.
 - raw CSRF cookie/header token 값은 로그에 남기지 않는다.
 - raw upload URL과 고객 파일명은 presigned URL 발급/업로드 확정/AutoContact 로그에 남기지 않는다.
@@ -39,6 +40,7 @@ pnpm test -- src/integration/gateway/integration.gateway.spec.ts --runInBand
 pnpm test -- src/notifications/notifications.gateway.spec.ts src/bookings/bookings.gateway.spec.ts src/activity-logs/activity-logs.gateway.spec.ts src/feedback/feedback.gateway.spec.ts --runInBand
 pnpm test -- src/events/__tests__/events.gateway.spec.ts src/contacts/contacts.gateway.spec.ts --runInBand
 pnpm test -- src/mail/mail.service.spec.ts src/auth/account-recovery-mail.dispatcher.spec.ts --runInBand
+pnpm test -- src/backup/backup.service.spec.ts --runInBand
 npx tsc --noEmit --pretty false
 ```
 
