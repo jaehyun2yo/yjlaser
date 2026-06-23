@@ -99,7 +99,10 @@ export async function getFolderPath(folderId: string | null): Promise<string> {
     // Redis 캐시를 사용하여 폴더 경로 조회 (캐시 미스 시 DB 조회 후 캐시)
     return await folderPathCache.get(folderId);
   } catch (_error) {
-    activityLogger.error('Error getting folder path', _error);
+    activityLogger.error('Error getting folder location', {
+      folderIdPresent: Boolean(folderId),
+      errorType: _error instanceof Error ? _error.name : typeof _error,
+    });
     return '/';
   }
 }

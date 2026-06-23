@@ -14,7 +14,7 @@ jest.mock('@/lib/utils/logger', () => ({
 }));
 
 import { cookies } from 'next/headers';
-import { nestjsFetch } from '@/lib/api/nestjs/core.client';
+import { nestjsFetch, routeTemplateForLog } from '@/lib/api/nestjs/core.client';
 
 const mockedCookies = cookies as jest.MockedFunction<typeof cookies>;
 
@@ -67,6 +67,16 @@ describe('nestjsFetch', () => {
     expect(response.data.cookie).toContain(
       'flash-message=%EA%B4%80%EB%A6%AC%EC%9E%90%EC%97%90%EA%B2%8C%20%EC%82%AD%EC%A0%9C%20%EC%9A%94%EC%B2%AD%ED%95%B4%EC%A3%BC%EC%84%B8%EC%9A%94'
     );
+  });
+
+  it('routeTemplateForLog strips query strings and dynamic route segments', () => {
+    expect(
+      routeTemplateForLog('/contacts/018f00aa-1111-2222-3333-abcdefabcdef/process-stage?token=raw')
+    ).toBe('/contacts/:value/process-stage');
+    expect(routeTemplateForLog('/files/customer-slug/download?presigned=raw')).toBe(
+      '/files/:value/download'
+    );
+    expect(routeTemplateForLog('/auth/find-id/request')).toBe('/auth/find-id/request');
   });
 
   it('forwardedCookieNames 옵션은 지정한 쿠키만 NestJS로 전달한다', async () => {

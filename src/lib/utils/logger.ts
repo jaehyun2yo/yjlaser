@@ -35,6 +35,30 @@ const SENSITIVE_KEYS = [
   'authorization',
 ] as const;
 
+function sanitizeText(text: string): string {
+  return text
+    .replace(/\b(authorization:\s*(?:bearer|basic)\s+)[^\s,;]+/gi, '$1[REDACTED]')
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/gi, '$1 [REDACTED]')
+    .replace(
+      /("?(?:access[_-]?token|refresh[_-]?token|api[_-]?key|secret|token|password|session)"?\s*:\s*")([^"]*)(")/gi,
+      '$1[REDACTED]$3'
+    )
+    .replace(/([?&](?:token|api[_-]?key|secret|password|session)=)[^&\s]+/gi, '$1[REDACTED]')
+    .replace(
+      /((?:api[_-]?key|secret|token|password|session)\s*[:=]\s*)[^&\s,;]+/gi,
+      '$1[REDACTED]'
+    );
+}
+
+function sanitizeError(error: Error): Record<string, string> {
+  const code =
+    'code' in error && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : undefined;
+
+  return code ? { errorType: error.name, errorCode: code } : { errorType: error.name };
+}
+
 /**
  * 민감 정보를 마스킹합니다
  * @param data - 마스킹할 데이터
@@ -47,7 +71,7 @@ function sanitizeData(data: unknown): unknown {
 
   // 문자열인 경우 그대로 반환 (키-값 쌍이 아니므로)
   if (typeof data === 'string') {
-    return data;
+    return sanitizeText(data);
   }
 
   // 숫자, 불리언 등 원시 타입은 그대로 반환
@@ -58,6 +82,10 @@ function sanitizeData(data: unknown): unknown {
   // 배열인 경우 각 요소를 재귀적으로 처리
   if (Array.isArray(data)) {
     return data.map((item) => sanitizeData(item));
+  }
+
+  if (data instanceof Error) {
+    return sanitizeError(data);
   }
 
   // 객체인 경우 각 키-값 쌍을 처리
@@ -74,11 +102,8 @@ function sanitizeData(data: unknown): unknown {
     if (isSensitive) {
       // 민감 정보는 마스킹
       sanitized[key] = '[REDACTED]';
-    } else if (typeof value === 'object' && value !== null) {
-      // 중첩 객체는 재귀적으로 처리
-      sanitized[key] = sanitizeData(value);
     } else {
-      sanitized[key] = value;
+      sanitized[key] = sanitizeData(value);
     }
   }
 
@@ -116,7 +141,7 @@ class Logger {
   info(message: string, ...args: unknown[]): void {
     if (this.shouldLog('info')) {
       // 민감 정보 필터링 적용
-      console.log(`[INFO] ${message}`, ...sanitizeArgs(args));
+      console.info(`[INFO] ${message}`, ...sanitizeArgs(args));
     }
   }
 

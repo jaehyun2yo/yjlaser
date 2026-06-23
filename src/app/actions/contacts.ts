@@ -1151,7 +1151,7 @@ export async function submitContact(formData: FormData) {
             contactsLogger.warn(`Integration Order 생성 실패: ${orderResponse.status}`);
           }
         } else {
-          contactsLogger.debug('INTEGRATION_API_KEY not set, skipping order creation');
+          contactsLogger.debug('Integration credential missing, skipping order creation');
         }
       } catch (orderError) {
         contactsLogger.warn('Integration Order 생성 중 오류 (non-blocking)', orderError);

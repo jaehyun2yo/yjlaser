@@ -231,7 +231,10 @@ export async function createFolderStructureAction(formData: FormData): Promise<{
         const folderId = await ensureFolderPath(companyId, targetFolderId, folderPath);
         folderMap[folderPath] = folderId;
       } catch (error) {
-        webhardLogger.error('Error creating folder path', { folderPath, error });
+        webhardLogger.error('Error creating folder location', {
+          folderDepth: folderPath.split('/').filter(Boolean).length,
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
         return {
           success: false,
           folderMap,

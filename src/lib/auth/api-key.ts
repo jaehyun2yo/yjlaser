@@ -35,14 +35,13 @@ export async function verifyApiKey(): Promise<{
   const expectedKey = process.env.MIGRATION_API_KEY;
 
   if (!expectedKey) {
-    apiKeyLogger.warn('MIGRATION_API_KEY not configured');
+    apiKeyLogger.warn('Migration credential not configured');
     return { isValid: false, error: 'API Key not configured on server' };
   }
 
   const headersList = await headers();
   const apiKey =
-    headersList.get('x-api-key') ||
-    headersList.get('authorization')?.replace('Bearer ', '');
+    headersList.get('x-api-key') || headersList.get('authorization')?.replace('Bearer ', '');
 
   if (!apiKey) {
     return { isValid: false, error: 'API Key not provided' };

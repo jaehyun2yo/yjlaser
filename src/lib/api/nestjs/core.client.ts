@@ -22,6 +22,36 @@ const RECOVERY_API_KEY_MISSING_MESSAGE =
   '계정 복구 설정이 누락되었습니다. 관리자에게 문의해주세요.';
 const CSRF_COOKIE_NAME = 'csrf-token';
 const SESSION_COOKIE_NAMES = ['admin-session', 'company-session', 'worker-session', 'erp-session'];
+const SAFE_ROUTE_SEGMENTS = new Set([
+  'activity-logs',
+  'admin',
+  'auth',
+  'batch',
+  'batch-delete',
+  'check-duplicate',
+  'complete',
+  'contacts',
+  'count',
+  'download',
+  'find-id',
+  'find-password',
+  'folders',
+  'files',
+  'integration',
+  'list',
+  'multipart',
+  'notes',
+  'presign',
+  'process-stage',
+  'request',
+  'sessions',
+  'share-links',
+  'status',
+  'storage',
+  'sync-logs',
+  'upload',
+  'webhard-consistency',
+]);
 
 export interface NestJSRequestOptions {
   method?: string;
@@ -66,6 +96,27 @@ function createCsrfToken(): string {
 
 function isUnsafeMethod(method: string): boolean {
   return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
+}
+
+export function routeTemplateForLog(endpoint: string): string {
+  return endpoint
+    .split('?')[0]
+    .split('/')
+    .map((segment) => {
+      if (!segment) return segment;
+      return SAFE_ROUTE_SEGMENTS.has(segment) ? segment : ':value';
+    })
+    .join('/');
+}
+
+function classifyConnectionFailure(errorMessage: string): string {
+  if (errorMessage.includes('ECONNREFUSED')) return 'connection_refused';
+  if (errorMessage.includes('ECONNRESET')) return 'connection_reset';
+  if (errorMessage.includes('ETIMEDOUT') || errorMessage.includes('UND_ERR_CONNECT_TIMEOUT')) {
+    return 'timeout';
+  }
+  if (errorMessage.includes('fetch failed')) return 'fetch_failed';
+  return 'unknown';
 }
 
 /**
@@ -139,10 +190,10 @@ export async function nestjsFetch<T>(
         headers['X-CSRF-Token'] = csrfToken;
       }
     } catch (error) {
-      nestjsLogger.error('Session cookies unavailable for session-scoped NestJS request', {
-        endpoint,
+      nestjsLogger.error('Browser credentials unavailable for scoped NestJS request', {
+        routeTemplate: routeTemplateForLog(endpoint),
         method,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        errorType: error instanceof Error ? error.name : typeof error,
       });
       return {
         ok: false,
@@ -195,29 +246,26 @@ export async function nestjsFetch<T>(
 
       if (!response.ok) {
         nestjsLogger.warn('NestJS API error', {
-          endpoint,
+          routeTemplate: routeTemplateForLog(endpoint),
           method,
           status: response.status,
-          data,
+          responseType: contentType.includes('application/json') ? 'json' : 'text',
         });
       }
 
       return { ok: response.ok, status: response.status, data };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      const isConnectionError =
-        errorMessage.includes('fetch failed') ||
-        errorMessage.includes('ECONNREFUSED') ||
-        errorMessage.includes('ECONNRESET') ||
-        errorMessage.includes('ETIMEDOUT') ||
-        errorMessage.includes('UND_ERR_CONNECT_TIMEOUT');
+      const failureKind = classifyConnectionFailure(errorMessage);
+      const isConnectionError = failureKind !== 'unknown';
 
       if (!isConnectionError || attempt >= maxRetries) {
         nestjsLogger.error('NestJS API connection failed', {
-          endpoint,
+          routeTemplate: routeTemplateForLog(endpoint),
           method,
           attempt: attempt + 1,
-          error: errorMessage,
+          errorType: error instanceof Error ? error.name : typeof error,
+          failureKind,
         });
         throw error;
       }
@@ -226,12 +274,13 @@ export async function nestjsFetch<T>(
       const delayMs = baseDelayMs * Math.pow(2, attempt); // 1s, 2s, 4s
 
       nestjsLogger.warn('NestJS API connection error, retrying', {
-        endpoint,
+        routeTemplate: routeTemplateForLog(endpoint),
         method,
         attempt: attempt + 1,
         maxRetries,
         nextRetryMs: delayMs,
-        error: errorMessage,
+        errorType: error instanceof Error ? error.name : typeof error,
+        failureKind,
       });
 
       await new Promise((resolve) => setTimeout(resolve, delayMs));

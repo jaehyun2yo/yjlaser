@@ -53,7 +53,9 @@ export async function DashboardSessions() {
     activeSessionsCount = sessionsCount;
     activeSessions = sessionsList as ActiveSession[];
   } catch (error) {
-    adminLogger.error('Error in DashboardSessions', error);
+    adminLogger.error('Dashboard active presence load failed', {
+      errorType: error instanceof Error ? error.name : typeof error,
+    });
   }
 
   return (

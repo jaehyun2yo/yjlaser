@@ -45,7 +45,7 @@ export function DownloadButton({
       try {
         const res = await fetch(apiUrl);
         if (!res.ok) {
-          componentLogger.error('presigned URL 요청 실패', { status: res.status, apiUrl });
+          componentLogger.error('download link request failed', { status: res.status });
           return;
         }
         const data = (await res.json()) as { url: string; fileName: string };
@@ -54,7 +54,7 @@ export function DownloadButton({
         try {
           const fileRes = await fetch(data.url);
           if (!fileRes.ok) {
-            componentLogger.error('파일 다운로드 실패', { status: fileRes.status, apiUrl });
+            componentLogger.error('file download failed', { status: fileRes.status });
             return;
           }
           const blob = await fileRes.blob();
@@ -68,7 +68,9 @@ export function DownloadButton({
           setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
           return;
         } catch (err) {
-          componentLogger.error('blob 다운로드 오류, 직접 링크로 전환', { error: err, apiUrl });
+          componentLogger.error('blob download failed, falling back to direct link', {
+            errorType: err instanceof Error ? err.name : typeof err,
+          });
         }
 
         const link = document.createElement('a');
@@ -78,7 +80,9 @@ export function DownloadButton({
         link.click();
         document.body.removeChild(link);
       } catch (err) {
-        componentLogger.error('다운로드 요청 오류', { error: err, apiUrl });
+        componentLogger.error('download request failed', {
+          errorType: err instanceof Error ? err.name : typeof err,
+        });
       } finally {
         setLoading(false);
       }

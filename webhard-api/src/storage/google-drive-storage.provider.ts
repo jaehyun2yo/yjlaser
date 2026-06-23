@@ -192,7 +192,7 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
     );
 
     if (!response.ok) {
-      this.logger.warn(`Drive upload session failed: status=${response.status}`);
+      this.logger.warn(`Drive upload setup failed: status=${response.status}`);
       throw new InternalServerErrorException('Failed to create Drive upload session');
     }
 

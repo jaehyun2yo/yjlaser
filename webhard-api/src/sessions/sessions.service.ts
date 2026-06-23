@@ -7,6 +7,16 @@ export class SessionsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private errorMetadata(error: unknown): string {
+    const errorType = error instanceof Error ? error.name : typeof error;
+    const errorCode =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : undefined;
+
+    return errorCode ? `errorType=${errorType} errorCode=${errorCode}` : `errorType=${errorType}`;
+  }
+
   /**
    * 활성 세션 upsert (하트비트)
    */
@@ -40,7 +50,7 @@ export class SessionsService {
       );
       return true;
     } catch (error) {
-      this.logger.error('Failed to upsert active session', error);
+      this.logger.error(`Failed to upsert active presence: ${this.errorMetadata(error)}`);
       return false;
     }
   }
@@ -56,7 +66,7 @@ export class SessionsService {
       );
       return true;
     } catch (error) {
-      this.logger.error('Failed to delete active session', error);
+      this.logger.error(`Failed to delete active presence: ${this.errorMetadata(error)}`);
       return false;
     }
   }
