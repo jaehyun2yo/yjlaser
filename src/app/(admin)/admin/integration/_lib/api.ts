@@ -23,6 +23,9 @@ import type {
   SyncLog,
   SyncLogStats,
   PipelineBacklogItem,
+  OperationFailuresResponse,
+  OperationHeartbeatsResponse,
+  OrderTimelineResponse,
 } from './types';
 
 import { NESTJS_CLIENT_API_BASE } from '@/lib/api/api-base';
@@ -89,6 +92,10 @@ export const integrationOrderApi = {
 
   // 주문 이벤트 내역
   getOrderEvents: (id: string): Promise<OrderEvent[]> => apiFetch(`/orders/${id}/events`),
+
+  // 주문 운영 타임라인
+  getOrderTimeline: (id: string): Promise<OrderTimelineResponse> =>
+    apiFetch(`/orders/${id}/timeline`),
 
   // 주문 생성
   createOrder: (data: CreateOrderRequest): Promise<IntegrationOrder> =>
@@ -345,5 +352,26 @@ export const integrationSyncLogApi = {
   async getPipelineBacklog(limit = 10): Promise<PipelineBacklogItem[]> {
     const params = new URLSearchParams({ limit: String(limit) });
     return apiFetch<PipelineBacklogItem[]>(`/sync-logs/pipeline-backlog?${params.toString()}`);
+  },
+};
+
+// ============================================================
+// Operations API
+// ============================================================
+
+export const integrationOperationsApi = {
+  async getFailures(filters?: {
+    cursor?: string;
+    limit?: number;
+  }): Promise<OperationFailuresResponse> {
+    const params = new URLSearchParams();
+    if (filters?.cursor) params.set('cursor', filters.cursor);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    const qs = params.toString();
+    return apiFetch<OperationFailuresResponse>(`/operations/failures${qs ? `?${qs}` : ''}`);
+  },
+
+  async getHeartbeats(): Promise<OperationHeartbeatsResponse> {
+    return apiFetch<OperationHeartbeatsResponse>('/operations/heartbeats');
   },
 };

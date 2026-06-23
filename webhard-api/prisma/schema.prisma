@@ -315,6 +315,11 @@ model Order {
   description               String?
   orderType                 String    @default("standard") @map("order_type") @db.VarChar(30)
   status                    String    @default("inquiry_received") @db.VarChar(30)
+  productionStatus          String?   @map("production_status") @db.VarChar(30)
+  confirmationStatus        String?   @map("confirmation_status") @db.VarChar(30)
+  classificationStatus      String?   @map("classification_status") @db.VarChar(30)
+  nestingStatus             String?   @map("nesting_status") @db.VarChar(30)
+  billingStatus             String?   @map("billing_status") @db.VarChar(30)
   priority                  String    @default("normal") @db.VarChar(10)
   drawingFileCount          Int       @default(0) @map("drawing_file_count")
   webhardFolderId           String?   @map("webhard_folder_id")
@@ -338,12 +343,18 @@ model Order {
   updatedAt                 DateTime  @default(now()) @updatedAt @map("updated_at")
 
   events       OrderEvent[]
+  jobEvents    JobEvent[]
   tasks        Task[]        @relation("OrderTasks")
   deliveries   Delivery[]
   nestingTasks NestingTask[]
 
   @@index([contactId])
   @@index([status])
+  @@index([productionStatus])
+  @@index([confirmationStatus])
+  @@index([classificationStatus])
+  @@index([nestingStatus])
+  @@index([billingStatus])
   @@index([companyName])
   @@index([inquiryNumber])
   @@index([priority, status])
@@ -392,6 +403,92 @@ model OrderEvent {
   @@index([eventType])
   @@index([source])
   @@map("order_events")
+}
+
+model JobEvent {
+  id               String   @id @default(uuid())
+  idempotencyKey   String   @unique @map("idempotency_key") @db.VarChar(255)
+  eventType        String   @map("event_type") @db.VarChar(100)
+  eventVersion     Int      @map("event_version")
+  sourceWorker     String   @map("source_worker") @db.VarChar(50)
+  sourceVersion    String?  @map("source_version") @db.VarChar(50)
+  orderId          String?  @map("order_id")
+  jobId            String?  @map("job_id")
+  integrationRunId String?  @map("integration_run_id")
+  workerLocalId    String?  @map("worker_local_id") @db.VarChar(255)
+  result           String   @db.VarChar(20)
+  occurredAt       DateTime @map("occurred_at")
+  receivedAt       DateTime @default(now()) @map("received_at")
+  durationMs       Int?     @map("duration_ms")
+  processedCount   Int?     @map("processed_count")
+  payload          Json
+  stateApplyStatus String   @default("not_applicable") @map("state_apply_status") @db.VarChar(20)
+  failureId        String?  @map("failure_id")
+  orderEventId     String?  @map("order_event_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  order                Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  integrationRun       IntegrationRun? @relation(fields: [integrationRunId], references: [id], onDelete: SetNull)
+  failure              JobFailure?   @relation("JobEventFailure", fields: [failureId], references: [id], onDelete: SetNull)
+  lastEventForFailures JobFailure[]  @relation("JobFailureLastEvent")
+
+  @@index([orderId, occurredAt(sort: Desc)])
+  @@index([jobId, occurredAt(sort: Desc)])
+  @@index([integrationRunId, occurredAt(sort: Desc)])
+  @@index([sourceWorker, occurredAt(sort: Desc)])
+  @@index([failureId])
+  @@index([occurredAt(sort: Desc)])
+  @@map("job_events")
+}
+
+model JobFailure {
+  id             String    @id @default(uuid())
+  jobId          String?   @map("job_id")
+  orderId        String?   @map("order_id")
+  sourceWorker   String    @map("source_worker") @db.VarChar(50)
+  eventType      String?   @map("event_type") @db.VarChar(100)
+  errorCode      String    @map("error_code") @db.VarChar(100)
+  message        String?   @db.Text
+  retryable      Boolean   @default(false)
+  retryCount     Int       @default(0) @map("retry_count")
+  resolvedAt     DateTime? @map("resolved_at")
+  resolvedBy     String?   @map("resolved_by") @db.VarChar(100)
+  resolutionNote String?   @map("resolution_note") @db.Text
+  lastEventId    String?   @map("last_event_id")
+  metadata       Json?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  events    JobEvent[] @relation("JobEventFailure")
+  lastEvent JobEvent?  @relation("JobFailureLastEvent", fields: [lastEventId], references: [id], onDelete: SetNull)
+
+  @@index([jobId, createdAt(sort: Desc)])
+  @@index([orderId, createdAt(sort: Desc)])
+  @@index([sourceWorker, resolvedAt, createdAt(sort: Desc)])
+  @@index([retryable, resolvedAt, createdAt(sort: Desc)])
+  @@index([lastEventId])
+  @@map("job_failures")
+}
+
+model IntegrationRun {
+  id             String    @id @default(uuid())
+  workerType     String    @map("worker_type") @db.VarChar(50)
+  sourceVersion  String?   @map("source_version") @db.VarChar(50)
+  startedAt      DateTime  @default(now()) @map("started_at")
+  finishedAt     DateTime? @map("finished_at")
+  result         String    @default("running") @db.VarChar(20)
+  processedCount Int       @default(0) @map("processed_count")
+  failedCount    Int       @default(0) @map("failed_count")
+  metadata       Json?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  jobEvents JobEvent[]
+
+  @@index([workerType, startedAt(sort: Desc)])
+  @@index([result, startedAt(sort: Desc)])
+  @@index([finishedAt])
+  @@map("integration_runs")
 }
 
 model ApiKey {

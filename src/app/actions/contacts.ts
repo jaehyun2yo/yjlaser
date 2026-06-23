@@ -378,11 +378,14 @@ export async function batchStartDeliveryWithProofFile(formData: FormData): Promi
     backendForm.append('actorName', actor.actorName);
     backendForm.append('file', file, file.name);
 
-    const response = await fetch(`${NESTJS_API_URL}/api/v1/contacts/batch-start-delivery/drive-proof`, {
-      method: 'POST',
-      headers: await buildWorkflowMutationHeaders(actor),
-      body: backendForm,
-    });
+    const response = await fetch(
+      `${NESTJS_API_URL}/api/v1/contacts/batch-start-delivery/drive-proof`,
+      {
+        method: 'POST',
+        headers: await buildWorkflowMutationHeaders(actor),
+        body: backendForm,
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: '납품 완료 실패' }));
@@ -868,9 +871,6 @@ export async function submitContact(formData: FormData) {
     }
   }
 
-  // 로그 최소화 (필요시에만 주석 해제)
-  // console.log('[CONTACT] 일정 조율 필드 추출:', { receipt_method, visit_date, visit_time_slot });
-
   // 파일 업로드 필드
   const attachment = formData.get('attachment') as File | null;
   const drawing_file = formData.get('drawing_file') as File | null;
@@ -989,9 +989,6 @@ export async function submitContact(formData: FormData) {
       portfolioReferenceUrl: portfolio_reference_url,
       portfolioReferenceInfo: portfolio_reference_info,
     });
-
-    // 로그 최소화 (필요시에만 주석 해제)
-    // console.log('[CONTACT] Inserting contact data...');
 
     // NestJS API로 contacts 생성
     const createResult = await serverCreateContact(
@@ -1154,7 +1151,7 @@ export async function submitContact(formData: FormData) {
             contactsLogger.warn(`Integration Order 생성 실패: ${orderResponse.status}`);
           }
         } else {
-          contactsLogger.debug('INTEGRATION_API_KEY not set, skipping order creation');
+          contactsLogger.debug('Integration credential missing, skipping order creation');
         }
       } catch (orderError) {
         contactsLogger.warn('Integration Order 생성 중 오류 (non-blocking)', orderError);

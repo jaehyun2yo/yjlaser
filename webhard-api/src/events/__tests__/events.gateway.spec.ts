@@ -13,6 +13,24 @@ import { EventsGateway, WebhardEvent } from '../events.gateway';
 import { AuthService, SessionUser } from '../../auth/auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Socket, Server } from 'socket.io';
+import { Logger } from '@nestjs/common';
+import { hashIdentifier } from '../../common/logging/log-event';
+
+type LoggedBackendEvent = {
+  schema_version: 1;
+  event: string;
+  level: string;
+  project: string;
+  component: string;
+  feature: string;
+  action: string;
+  status: string;
+  channel: string;
+  actor_id_hash?: string;
+  target_id_hash?: string;
+  error_type?: string;
+  metadata?: Record<string, unknown>;
+};
 
 // ============================================================
 // Mock factories
@@ -73,6 +91,36 @@ function makeCompanyUser(companyId = 123): SessionUser {
   };
 }
 
+function serializeLoggerCalls(...spies: jest.SpyInstance[]): string {
+  return JSON.stringify(
+    spies.flatMap((spy) =>
+      spy.mock.calls.flatMap((call: unknown[]) => call.map((value: unknown) => String(value)))
+    )
+  );
+}
+
+function findJsonLogEvent(spy: jest.SpyInstance, eventName: string): LoggedBackendEvent {
+  const event = spy.mock.calls
+    .flatMap((call: unknown[]) => call.map((value: unknown) => String(value)))
+    .map((value) => {
+      try {
+        return JSON.parse(value) as Partial<LoggedBackendEvent>;
+      } catch {
+        return null;
+      }
+    })
+    .find(
+      (value): value is LoggedBackendEvent =>
+        value?.schema_version === 1 && value.event === eventName
+    );
+
+  if (!event) {
+    throw new Error(`Missing JSON log event: ${eventName}`);
+  }
+
+  return event;
+}
+
 // ============================================================
 // Test Suite
 // ============================================================
@@ -99,6 +147,7 @@ describe('EventsGateway', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
   });
 
   // ─── Connection Handling ───────────────────────────────────
@@ -130,6 +179,8 @@ describe('EventsGateway', () => {
     });
 
     it('인증이 실패하면 연결을 거부해야 함', async () => {
+      jest.spyOn(Logger.prototype, 'debug').mockImplementation();
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       authService.verifySession.mockReturnValue(null);
 
       const socket = makeSocket({
@@ -141,9 +192,31 @@ describe('EventsGateway', () => {
       await gateway.handleConnection(socket);
 
       expect(socket.disconnect).toHaveBeenCalled();
+      const event = findJsonLogEvent(warnSpy, 'events_gateway_connection_rejected');
+      expect(event).toMatchObject({
+        level: 'warn',
+        project: 'company_site',
+        component: 'EventsGateway',
+        feature: 'events_gateway',
+        action: 'connect',
+        status: 'failure',
+        channel: 'security',
+        actor_id_hash: hashIdentifier('socket-1'),
+        metadata: {
+          reason: 'unauthenticated',
+          browser_present: true,
+          socket_auth_present: false,
+        },
+      });
+
+      const serialized = serializeLoggerCalls(warnSpy);
+      expect(serialized).not.toContain('invalid-token');
+      expect(serialized).not.toContain('socket-1');
+      expect(serialized).not.toContain('Unauthenticated WebSocket connection rejected');
     });
 
     it('예외 발생 시 연결을 거부해야 함', async () => {
+      const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
       authService.verifySession.mockImplementation(() => {
         throw new Error('Auth error');
       });
@@ -157,6 +230,19 @@ describe('EventsGateway', () => {
       await gateway.handleConnection(socket);
 
       expect(socket.disconnect).toHaveBeenCalled();
+      const event = findJsonLogEvent(errorSpy, 'events_gateway_connection_error');
+      expect(event).toMatchObject({
+        level: 'error',
+        project: 'company_site',
+        component: 'EventsGateway',
+        feature: 'events_gateway',
+        action: 'connect',
+        status: 'failure',
+        channel: 'error',
+        error_type: 'Error',
+      });
+      expect(serializeLoggerCalls(errorSpy)).not.toContain('Auth error');
+      expect(serializeLoggerCalls(errorSpy)).not.toContain('bad-token');
     });
   });
 
@@ -195,6 +281,8 @@ describe('EventsGateway', () => {
     });
 
     it('회사 사용자가 다른 회사 폴더 구독 시 에러를 반환해야 함', async () => {
+      jest.spyOn(Logger.prototype, 'debug').mockImplementation();
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       const socket = makeSocket();
       (socket as Socket & { userData?: SessionUser }).userData = makeCompanyUser(123);
       const folderUuid = '22222222-2222-2222-2222-222222222222';
@@ -207,6 +295,28 @@ describe('EventsGateway', () => {
         message: 'Access denied to this folder',
       });
       expect(socket.join).not.toHaveBeenCalled();
+
+      const event = findJsonLogEvent(warnSpy, 'events_gateway_folder_subscribe_denied');
+      expect(event).toMatchObject({
+        level: 'warn',
+        project: 'company_site',
+        component: 'EventsGateway',
+        feature: 'events_gateway',
+        action: 'subscribe_folder',
+        status: 'failure',
+        channel: 'security',
+        actor_id_hash: hashIdentifier('socket-1'),
+        target_id_hash: hashIdentifier(`folder:${folderUuid}`),
+        metadata: {
+          reason: 'company_mismatch',
+          room_type: 'folder',
+        },
+      });
+
+      const serialized = serializeLoggerCalls(warnSpy);
+      expect(serialized).not.toContain('socket-1');
+      expect(serialized).not.toContain(folderUuid);
+      expect(serialized).not.toContain(`folder:${folderUuid}`);
     });
 
     it('companyId가 null인 공유 폴더는 모든 사용자가 구독할 수 있어야 함', async () => {
@@ -224,11 +334,29 @@ describe('EventsGateway', () => {
 
   describe('handleUnsubscribeFolder', () => {
     it('폴더 구독을 해제할 수 있어야 함', () => {
+      const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation();
       const socket = makeSocket();
 
       gateway.handleUnsubscribeFolder(socket, 'folder-uuid-1');
 
       expect(socket.leave).toHaveBeenCalledWith('folder:folder-uuid-1');
+      const event = findJsonLogEvent(debugSpy, 'events_gateway_folder_unsubscribed');
+      expect(event).toMatchObject({
+        level: 'debug',
+        project: 'company_site',
+        component: 'EventsGateway',
+        feature: 'events_gateway',
+        action: 'unsubscribe_folder',
+        status: 'success',
+        channel: 'audit',
+        actor_id_hash: hashIdentifier('socket-1'),
+        target_id_hash: hashIdentifier('folder:folder-uuid-1'),
+        metadata: {
+          room_type: 'folder',
+        },
+      });
+      expect(serializeLoggerCalls(debugSpy)).not.toContain('folder:folder-uuid-1');
+      expect(serializeLoggerCalls(debugSpy)).not.toContain('socket-1');
     });
 
     it('루트 폴더 구독을 해제할 수 있어야 함', () => {

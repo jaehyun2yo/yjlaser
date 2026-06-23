@@ -221,21 +221,28 @@ Relations: → tasks
 
 ### orders
 
-| Column             | Type         | Notes                                                                                 |
-| ------------------ | ------------ | ------------------------------------------------------------------------------------- |
-| id                 | UUID (PK)    |                                                                                       |
-| contact_id         | BigInt?      | → contacts (nullable)                                                                 |
-| inquiry_number     | String?      |                                                                                       |
-| company_name       | VarChar(200) |                                                                                       |
-| title              | VarChar(500) |                                                                                       |
-| order_type         | VarChar(30)  | "standard" default                                                                    |
-| status             | VarChar(30)  | inquiry_received → drawing_review → confirmed → cutting → post_processing → delivered |
-| priority           | VarChar(10)  | urgent/normal/low                                                                     |
-| webhard_folder_id  | String?      | Links to webhard folder                                                               |
-| delivery_method    | VarChar(50)? |                                                                                       |
-| Various timestamps | DateTime?    | receivedAt, confirmedAt, cuttingStartedAt, etc.                                       |
+| Column                | Type         | Notes                                                                                 |
+| --------------------- | ------------ | ------------------------------------------------------------------------------------- |
+| id                    | UUID (PK)    |                                                                                       |
+| contact_id            | BigInt?      | → contacts (nullable)                                                                 |
+| inquiry_number        | String?      |                                                                                       |
+| company_name          | VarChar(200) |                                                                                       |
+| title                 | VarChar(500) |                                                                                       |
+| order_type            | VarChar(30)  | "standard" default                                                                    |
+| status                | VarChar(30)  | inquiry_received → drawing_review → confirmed → cutting → post_processing → delivered |
+| production_status     | VarChar(30)? | 신규 병렬 상태 축. null이면 아직 중앙 상태 mapper 미적용                              |
+| confirmation_status   | VarChar(30)? | 도면 컨펌 상태 축. null이면 아직 중앙 상태 mapper 미적용                              |
+| classification_status | VarChar(30)? | 관리프로그램 분류 상태 축. null이면 아직 중앙 상태 mapper 미적용                      |
+| nesting_status        | VarChar(30)? | 네스팅 상태 축. null이면 아직 중앙 상태 mapper 미적용                                 |
+| billing_status        | VarChar(30)? | 청구/발송 상태 축. null이면 아직 중앙 상태 mapper 미적용                              |
+| priority              | VarChar(10)  | urgent/normal/low                                                                     |
+| webhard_folder_id     | String?      | Links to webhard folder                                                               |
+| delivery_method       | VarChar(50)? |                                                                                       |
+| Various timestamps    | DateTime?    | receivedAt, confirmedAt, cuttingStartedAt, etc.                                       |
 
-Relations: → order_events, tasks, deliveries, nesting_tasks
+Relations: → order_events, job_events, tasks, deliveries, nesting_tasks
+
+Indexes: contact_id, status, production_status, confirmation_status, classification_status, nesting_status, billing_status, company_name, inquiry_number, (priority + status)
 
 ### nesting_tasks
 
@@ -271,6 +278,83 @@ Indexes: (status, priority, created_at), order_id
 | from_status / to_status | VarChar(30)? |                    |
 | source                  | VarChar(30)  |                    |
 | data                    | Json?        |                    |
+
+### job_events
+
+Worker 이벤트 수신 원장. `OrderEvent`를 중복 처리 source로 확장하지 않고, 외부
+프로그램 event envelope는 `idempotency_key` 기준으로 이 테이블에 1회만 저장한다.
+
+| Column             | Type          | Notes                                     |
+| ------------------ | ------------- | ----------------------------------------- |
+| id                 | UUID (PK)     |                                           |
+| idempotency_key    | VarChar(255)  | Unique. Worker 재전송 stable key          |
+| event_type         | VarChar(100)  | `drawing.classified` 같은 도메인 이벤트명 |
+| event_version      | Int           | Payload schema version                    |
+| source_worker      | VarChar(50)   | management/nesting/sync 등 source worker  |
+| source_version     | VarChar(50)?  | Worker app version                        |
+| order_id           | UUID? (FK)    | → orders (SetNull)                        |
+| job_id             | String?       | 후속 `Job` 모델 reference placeholder     |
+| integration_run_id | UUID? (FK)    | → integration_runs (SetNull)              |
+| worker_local_id    | VarChar(255)? | Worker local outbox/record reference      |
+| result             | VarChar(20)   | success/failed/partial                    |
+| occurred_at        | DateTime      | Worker에서 사건이 발생한 시각             |
+| received_at        | DateTime      | Default now                               |
+| duration_ms        | Int?          |                                           |
+| processed_count    | Int?          |                                           |
+| payload            | Json          | Sanitized event payload                   |
+| state_apply_status | VarChar(20)   | Default `not_applicable`                  |
+| failure_id         | String?       | → job_failures (SetNull)                  |
+| order_event_id     | String?       | 파생된 화면 timeline event reference      |
+| created_at         | DateTime      | Default now                               |
+
+Constraints: `idempotency_key` unique.
+
+Indexes: (order_id, occurred_at DESC), (job_id, occurred_at DESC), (integration_run_id, occurred_at DESC), (source_worker, occurred_at DESC), failure_id, occurred_at DESC
+
+### job_failures
+
+Worker 이벤트 처리 실패와 상태 적용 실패를 운영 화면에서 조회하기 위한 실패 read model. `SyncLog`의 pipeline/repair 로그를 대체하지 않고, Worker event envelope 처리 결과와 재시도 판단만 저장한다.
+
+| Column          | Type          | Notes                                     |
+| --------------- | ------------- | ----------------------------------------- |
+| id              | UUID (PK)     |                                           |
+| job_id          | String?       | 후속 `Job` 모델 reference placeholder     |
+| order_id        | UUID?         | 주문별 실패 조회용 reference              |
+| source_worker   | VarChar(50)   | management/nesting/sync 등 source worker  |
+| event_type      | VarChar(100)? | 실패를 만든 event type                    |
+| error_code      | VarChar(100)  | 정규화된 error code                       |
+| message         | Text?         | Sanitized failure message only            |
+| retryable       | Boolean       | Default false                             |
+| retry_count     | Int           | Default 0                                 |
+| resolved_at     | DateTime?     | null이면 unresolved                       |
+| resolved_by     | VarChar(100)? | 해결 처리 주체                            |
+| resolution_note | Text?         | Sanitized resolution note                 |
+| last_event_id   | UUID?         | → job_events (SetNull), 마지막 관련 event |
+| metadata        | Json?         | Sanitized metadata                        |
+| created_at      | DateTime      | Default now                               |
+| updated_at      | DateTime      | `@updatedAt`                              |
+
+Indexes: (job_id, created_at DESC), (order_id, created_at DESC), (source_worker, resolved_at, created_at DESC), (retryable, resolved_at, created_at DESC), last_event_id
+
+### integration_runs
+
+Worker batch/import/send 단위 실행 집계. 개별 이벤트 원장은 `job_events`에 남기고, 실행 단위 처리량과 실패율 조회 기준만 저장한다.
+
+| Column          | Type         | Notes                                |
+| --------------- | ------------ | ------------------------------------ |
+| id              | UUID (PK)    |                                      |
+| worker_type     | VarChar(50)  | external_webhard_sync, management 등 |
+| source_version  | VarChar(50)? | Worker app version                   |
+| started_at      | DateTime     | Default now                          |
+| finished_at     | DateTime?    | null이면 running                     |
+| result          | VarChar(20)  | running/success/failed/partial       |
+| processed_count | Int          | Default 0                            |
+| failed_count    | Int          | Default 0                            |
+| metadata        | Json?        | Sanitized run metadata               |
+| created_at      | DateTime     | Default now                          |
+| updated_at      | DateTime     | `@updatedAt`                         |
+
+Indexes: (worker_type, started_at DESC), (result, started_at DESC), finished_at
 
 ### deliveries
 

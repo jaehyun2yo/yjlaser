@@ -8,7 +8,7 @@ import {
 } from '@/lib/auth/session';
 import { verifyPassword } from '@/lib/auth/security';
 import { redirect } from 'next/navigation';
-import { logger } from '@/lib/utils/logger';
+import { logger, toSafeLogError } from '@/lib/utils/logger';
 import { logActivity } from '@/lib/activity-logger';
 import { headers } from 'next/headers';
 import {
@@ -78,7 +78,7 @@ export async function logoutAction() {
     }
   } catch (error) {
     const authLogger = logger.createLogger('AUTH');
-    authLogger.error('Logout error', error);
+    authLogger.error('Logout error', toSafeLogError(error));
   }
 
   redirect('/');
@@ -180,7 +180,7 @@ export async function loginAction(formData: FormData) {
           await resetLoginAttemptsByIP(rateLimitResult.ip);
 
           await createSession('admin', undefined, sessionOptions);
-          authLogger.info('Admin login successful', { username });
+          authLogger.info('Admin login successful', { actorType: 'admin' });
 
           await logActivity({
             actorType: 'admin',
@@ -193,22 +193,24 @@ export async function loginAction(formData: FormData) {
           });
 
           redirect('/admin');
-        } catch (sessionError) {
+        } catch (loginStateError) {
           // NEXT_REDIRECT 에러는 다시 throw
-          if (sessionError instanceof Error) {
-            const errorDigest = (sessionError as { digest?: string }).digest;
+          if (loginStateError instanceof Error) {
+            const errorDigest = (loginStateError as { digest?: string }).digest;
             if (
-              sessionError.message === 'NEXT_REDIRECT' ||
+              loginStateError.message === 'NEXT_REDIRECT' ||
               errorDigest?.startsWith('NEXT_REDIRECT')
             ) {
-              throw sessionError;
+              throw loginStateError;
             }
           }
-          authLogger.error('Session creation failed', sessionError);
+          authLogger.error('Login state creation failed', toSafeLogError(loginStateError));
           redirect(loginErrorRedirectUrl('server', nextPath));
         }
       } else {
-        authLogger.debug('Invalid admin password', { username });
+        authLogger.debug('Invalid admin credential', {
+          usernamePresent: username.trim().length > 0,
+        });
 
         // 실패한 사용자명 기록 (공격 패턴 분석용)
         recordFailedUsername(rateLimitResult.ip, username);
@@ -238,7 +240,7 @@ export async function loginAction(formData: FormData) {
     const company = await serverGetCompanyForAuth(username.trim());
 
     if (!company) {
-      authLogger.debug('Company not found', { username });
+      authLogger.debug('Company not found', { usernamePresent: username.trim().length > 0 });
 
       // 실패한 사용자명 기록
       recordFailedUsername(rateLimitResult.ip, username);
@@ -265,7 +267,6 @@ export async function loginAction(formData: FormData) {
     // 관리자 승인을 받지 않은 계정은 로그인 불가
     if (company.is_approved === false) {
       authLogger.debug('Company account not approved', {
-        username,
         companyId: company.id,
         status: company.status,
       });
@@ -297,7 +298,10 @@ export async function loginAction(formData: FormData) {
     // 계정 상태 확인
     // 보안: 비활성 계정도 invalid로 응답하여 계정 상태 노출 방지 (User Enumeration Attack 방지)
     if (company.status !== 'active') {
-      authLogger.debug('Company account inactive', { username, status: company.status });
+      authLogger.debug('Company account inactive', {
+        companyId: company.id,
+        status: company.status,
+      });
 
       // 실패한 사용자명 기록
       recordFailedUsername(rateLimitResult.ip, username);
@@ -325,7 +329,9 @@ export async function loginAction(formData: FormData) {
     // 비밀번호 검증 (bcryptjs는 이미 병렬 처리됨)
     const isValidPassword = await verifyPassword(password, company.password_hash);
     if (!isValidPassword) {
-      authLogger.debug('Invalid password for company', { username });
+      authLogger.debug('Invalid company credential', {
+        usernamePresent: username.trim().length > 0,
+      });
 
       // 실패한 사용자명 기록
       recordFailedUsername(rateLimitResult.ip, username);
@@ -355,7 +361,7 @@ export async function loginAction(formData: FormData) {
       await resetLoginAttemptsByIP(rateLimitResult.ip);
 
       await createSession('company', company.id, sessionOptions);
-      authLogger.info('Company login successful', { username, companyId: company.id });
+      authLogger.info('Company login successful', { companyId: company.id });
 
       await logActivity({
         actorType: 'company',
@@ -368,15 +374,18 @@ export async function loginAction(formData: FormData) {
       });
 
       redirect('/company/dashboard');
-    } catch (sessionError) {
+    } catch (loginStateError) {
       // NEXT_REDIRECT 에러는 다시 throw
-      if (sessionError instanceof Error) {
-        const errorDigest = (sessionError as { digest?: string }).digest;
-        if (sessionError.message === 'NEXT_REDIRECT' || errorDigest?.startsWith('NEXT_REDIRECT')) {
-          throw sessionError;
+      if (loginStateError instanceof Error) {
+        const errorDigest = (loginStateError as { digest?: string }).digest;
+        if (
+          loginStateError.message === 'NEXT_REDIRECT' ||
+          errorDigest?.startsWith('NEXT_REDIRECT')
+        ) {
+          throw loginStateError;
         }
       }
-      authLogger.error('Session creation failed', sessionError);
+      authLogger.error('Login state creation failed', toSafeLogError(loginStateError));
       redirect(loginErrorRedirectUrl('server', nextPath));
     }
   } catch (error: unknown) {
@@ -394,7 +403,7 @@ export async function loginAction(formData: FormData) {
 
     // 다른 에러는 로깅하고 서버 에러로 리다이렉트
     if (authLogger) {
-      authLogger.error('Login error', error);
+      authLogger.error('Login error', toSafeLogError(error));
     }
     redirect(loginErrorRedirectUrl('server', nextPath));
   }

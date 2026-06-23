@@ -1,4 +1,4 @@
-import { logger } from '@/lib/utils/logger';
+import { logger, toSafeLogError } from '@/lib/utils/logger';
 import {
   serverUpsertActiveSession,
   serverDeleteActiveSession,
@@ -35,7 +35,7 @@ export async function updateActiveSession(
   try {
     return await serverUpsertActiveSession(userType, userId, username, companyName);
   } catch (error) {
-    sessionLogger.error('Exception in updateActiveSession', error);
+    sessionLogger.error('Active presence update failed', toSafeLogError(error));
     return false;
   }
 }
@@ -50,7 +50,7 @@ export async function deleteActiveSession(
   try {
     return await serverDeleteActiveSession(userType, userId);
   } catch (error) {
-    sessionLogger.error('Exception in deleteActiveSession', error);
+    sessionLogger.error('Active presence delete failed', toSafeLogError(error));
     return false;
   }
 }
@@ -62,7 +62,7 @@ export async function getActiveSessionsCount(): Promise<ActiveSessionsCount> {
   try {
     return await serverGetActiveSessionsCount();
   } catch (error) {
-    sessionLogger.error('Exception in getActiveSessionsCount', error);
+    sessionLogger.error('Active presence count failed', toSafeLogError(error));
     return { total_count: 0, admin_count: 0, company_count: 0 };
   }
 }
@@ -75,7 +75,7 @@ export async function getActiveSessionsList(): Promise<ActiveSession[]> {
     const data = await serverGetActiveSessionsList();
     return data as ActiveSession[];
   } catch (error) {
-    sessionLogger.error('Exception in getActiveSessionsList', error);
+    sessionLogger.error('Active presence list failed', toSafeLogError(error));
     return [];
   }
 }

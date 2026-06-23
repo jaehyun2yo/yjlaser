@@ -1,4 +1,52 @@
+import { Logger } from '@nestjs/common';
 import { FeedbackService } from '../feedback.service';
+import { hashIdentifier } from '../../common/logging/log-event';
+
+type LoggedBackendEvent = {
+  schema_version: 1;
+  event: string;
+  level: string;
+  project: string;
+  component: string;
+  feature: string;
+  action: string;
+  status: string;
+  channel: string;
+  actor_id_hash?: string;
+  target_id_hash?: string;
+  error_type?: string;
+  metadata?: Record<string, unknown>;
+};
+
+function serializeLoggerCalls(...spies: jest.SpyInstance[]): string {
+  return JSON.stringify(
+    spies.flatMap((spy) =>
+      spy.mock.calls.flatMap((call: unknown[]) => call.map((value: unknown) => String(value)))
+    )
+  );
+}
+
+function findJsonLogEvent(spy: jest.SpyInstance, eventName: string): LoggedBackendEvent {
+  const event = spy.mock.calls
+    .flatMap((call: unknown[]) => call.map((value: unknown) => String(value)))
+    .map((value) => {
+      try {
+        return JSON.parse(value) as Partial<LoggedBackendEvent>;
+      } catch {
+        return null;
+      }
+    })
+    .find(
+      (value): value is LoggedBackendEvent =>
+        value?.schema_version === 1 && value.event === eventName
+    );
+
+  if (!event) {
+    throw new Error(`Missing JSON log event: ${eventName}`);
+  }
+
+  return event;
+}
 
 // ============================================================
 // Mock factories
@@ -134,6 +182,10 @@ describe('FeedbackService.findById', () => {
 // ============================================================
 
 describe('FeedbackService.create', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('피드백 생성 후 Gateway emitFeedbackCreated 호출', async () => {
     const feedback = makeFeedback();
     const { service, prisma, gateway } = makeService();
@@ -180,6 +232,60 @@ describe('FeedbackService.create', () => {
 
     expect(typeof result.id).toBe('number');
     expect(result.id).toBe(99);
+  });
+
+  it('메일 알림 실패 로그에 raw email, companyName, content, SMTP error를 남기지 않는다', async () => {
+    const feedback = makeFeedback({
+      id: BigInt(77),
+      companyId: 5,
+      companyName: '박스메이커스',
+      companyEmail: 'manager@example.com',
+      content: 'raw customer complaint token=raw-token',
+    });
+    const { service, prisma, mailService } = makeService();
+    (prisma.companyFeedback.create as jest.Mock).mockResolvedValue(feedback);
+    mailService.sendFeedbackNotification.mockRejectedValue(
+      new Error('SMTP rejected manager@example.com raw-token')
+    );
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+    await service.create({
+      companyId: 5,
+      companyName: '박스메이커스',
+      companyEmail: 'manager@example.com',
+      category: 'raw complaint category token=category-token',
+      content: 'raw customer complaint token=raw-token',
+    });
+    await new Promise(process.nextTick);
+
+    const event = findJsonLogEvent(errorSpy, 'feedback_notification_mail_failed');
+    expect(event).toMatchObject({
+      level: 'error',
+      project: 'company_site',
+      component: 'FeedbackService',
+      feature: 'feedback',
+      action: 'send_notification',
+      status: 'failure',
+      channel: 'external',
+      actor_id_hash: hashIdentifier(5),
+      target_id_hash: hashIdentifier(77),
+      error_type: 'Error',
+      metadata: {
+        reason: 'mail_delivery_failed',
+        category_present: true,
+        category_hash: hashIdentifier('raw complaint category token=category-token'),
+        company_contact_present: true,
+      },
+    });
+
+    const logPayload = serializeLoggerCalls(errorSpy);
+    expect(logPayload).not.toContain('manager@example.com');
+    expect(logPayload).not.toContain('박스메이커스');
+    expect(logPayload).not.toContain('raw customer complaint');
+    expect(logPayload).not.toContain('SMTP rejected');
+    expect(logPayload).not.toContain('raw-token');
+    expect(logPayload).not.toContain('raw complaint category');
+    expect(logPayload).not.toContain('category-token');
   });
 });
 

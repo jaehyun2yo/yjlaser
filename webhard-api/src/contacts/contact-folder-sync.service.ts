@@ -269,11 +269,12 @@ export class ContactFolderSyncService {
 
     this.logger.log(
       {
-        folderName,
+        action: 'relocate_after_alias_approved',
+        status: 'success',
         companyId,
-        targets: targets.length,
-        relocated,
-        skipped: 0,
+        targetCount: targets.length,
+        relocatedCount: relocated,
+        skippedCount: 0,
       },
       'relocateAfterAliasApproved completed'
     );

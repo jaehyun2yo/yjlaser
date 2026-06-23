@@ -71,9 +71,9 @@ export interface ApiListResponse<T = unknown> {
  * // 사용 시
  * const result = await createItem(input);
  * if (result.success) {
- *   console.log(result.data); // Item 타입으로 추론
+ *   const item = result.data; // Item 타입으로 추론
  * } else {
- *   console.log(result.error); // string 타입으로 추론
+ *   const message = result.error; // string 타입으로 추론
  * }
  * ```
  */

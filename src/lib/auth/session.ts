@@ -86,7 +86,9 @@ export async function createSession(
     return token;
   } catch (error) {
     // 쿠키 설정 실패 시 에러를 다시 throw하여 호출자가 처리할 수 있도록 함
-    sessionLogger.error('Session creation error', error);
+    sessionLogger.error('Browser credential creation failed', {
+      errorType: error instanceof Error ? error.name : typeof error,
+    });
     throw new Error(
       `Failed to create session: ${error instanceof Error ? error.message : 'Unknown error'}`
     );

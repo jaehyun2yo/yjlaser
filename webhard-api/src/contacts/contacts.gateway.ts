@@ -12,6 +12,12 @@ import {
   verifySignedSocketToken,
   verifyWorkerGatewaySession,
 } from '../auth/gateway-auth.util';
+import {
+  generateGatewayCorrelationId,
+  logWebSocketGatewayEvent,
+  type ScopedWebSocketGatewayLogEventInput,
+} from '../common/logging/gateway-log-event';
+import { formatLogEvent, hashIdentifier } from '../common/logging/log-event';
 
 /**
  * Contacts 실시간 이벤트 Gateway
@@ -32,29 +38,47 @@ export class ContactsGateway implements OnGatewayConnection, OnGatewayDisconnect
   @WebSocketServer()
   server: Server;
 
-  private readonly logger = new Logger('ContactsGateway');
+  private readonly logger = new Logger(ContactsGateway.name);
+  private readonly logFeature = 'contacts_gateway';
 
   constructor(private authService: AuthService) {}
 
   async handleConnection(client: Socket) {
+    const correlationId = generateGatewayCorrelationId(this.logFeature);
     try {
       const cookie = client.handshake.headers.cookie;
+      const hasSocketToken = !!client.handshake.auth?.token;
       let authenticated = false;
+      this.logGatewayEvent({
+        level: 'debug',
+        event: 'contacts_gateway_connection_started',
+        action: 'connect',
+        status: 'start',
+        channel: 'audit',
+        correlationId,
+        client,
+        metadata: {
+          browser_present: !!cookie,
+          socket_auth_present: hasSocketToken,
+        },
+      });
 
       if (cookie) {
         const adminUser = verifyBrowserGatewaySession(this.authService, cookie, ['admin']);
         if (adminUser) {
           authenticated = true;
-          await client.join('admin');
-          this.logger.debug(`Client ${client.id} joined room: admin`);
+          const room = 'admin';
+          await client.join(room);
+          this.logRoomJoined(client, room, adminUser.userType, 'browser_session', correlationId);
         }
 
         if (!authenticated) {
           const workerUser = verifyWorkerGatewaySession(this.authService, cookie);
           if (workerUser) {
             authenticated = true;
-            await client.join('worker');
-            this.logger.debug(`Client ${client.id} joined room: worker (erp-session)`);
+            const room = 'worker';
+            await client.join(room);
+            this.logRoomJoined(client, room, workerUser.userType, 'worker_session', correlationId);
           }
         }
       }
@@ -64,30 +88,70 @@ export class ContactsGateway implements OnGatewayConnection, OnGatewayDisconnect
         const tokenUser = verifySignedSocketToken(client.handshake.auth.token, ['admin', 'worker']);
         if (tokenUser?.userType === 'admin') {
           authenticated = true;
-          await client.join('admin');
-          this.logger.debug(`Client ${client.id} joined room: admin (token)`);
+          const room = 'admin';
+          await client.join(room);
+          this.logRoomJoined(client, room, tokenUser.userType, 'socket_token', correlationId);
         } else if (tokenUser?.userType === 'worker') {
           authenticated = true;
-          await client.join('worker');
-          this.logger.debug(`Client ${client.id} joined room: worker (token)`);
+          const room = 'worker';
+          await client.join(room);
+          this.logRoomJoined(client, room, tokenUser.userType, 'socket_token', correlationId);
         }
       }
 
       if (!authenticated) {
-        this.logger.warn(`Unauthenticated connection rejected: ${client.id}`);
+        this.logGatewayEvent({
+          level: 'warn',
+          event: 'contacts_gateway_connection_rejected',
+          action: 'connect',
+          status: 'failure',
+          channel: 'security',
+          correlationId,
+          client,
+          metadata: {
+            reason: 'unauthenticated',
+            browser_present: !!cookie,
+            socket_auth_present: hasSocketToken,
+          },
+        });
         client.disconnect();
         return;
       }
 
-      this.logger.debug(`Client connected: ${client.id}`);
+      this.logGatewayEvent({
+        level: 'debug',
+        event: 'contacts_gateway_connected',
+        action: 'connect',
+        status: 'success',
+        channel: 'audit',
+        correlationId,
+        client,
+      });
     } catch (err) {
-      this.logger.error(`Connection error: ${err}`);
+      this.logGatewayEvent({
+        level: 'error',
+        event: 'contacts_gateway_connection_error',
+        action: 'connect',
+        status: 'failure',
+        channel: 'error',
+        correlationId,
+        client,
+        errorType: err instanceof Error ? err.name : typeof err,
+      });
       client.disconnect();
     }
   }
 
   handleDisconnect(client: Socket) {
-    this.logger.debug(`Client disconnected: ${client.id}`);
+    this.logGatewayEvent({
+      level: 'debug',
+      event: 'contacts_gateway_disconnected',
+      action: 'disconnect',
+      status: 'success',
+      channel: 'audit',
+      correlationId: generateGatewayCorrelationId(this.logFeature),
+      client,
+    });
   }
 
   /**
@@ -96,11 +160,33 @@ export class ContactsGateway implements OnGatewayConnection, OnGatewayDisconnect
    */
   private safeEmit(event: string, payload: unknown, rooms: string[] = ['admin', 'worker']) {
     if (!this.server) return;
-    const target = rooms.reduce<ReturnType<Server['to']> | Server>(
-      (acc, room) => acc.to(room),
-      this.server
-    );
-    target.emit(event, payload);
+    try {
+      const target = rooms.reduce<ReturnType<Server['to']> | Server>(
+        (acc, room) => acc.to(room),
+        this.server
+      );
+      target.emit(event, payload);
+    } catch (err) {
+      this.logger.warn(
+        formatLogEvent({
+          level: 'warn',
+          project: 'company_site',
+          component: ContactsGateway.name,
+          feature: this.logFeature,
+          event: 'contacts_gateway_emit_failed',
+          action: 'emit',
+          status: 'failure',
+          channel: 'error',
+          correlation_id: generateGatewayCorrelationId(this.logFeature),
+          target_id_hash: hashIdentifier(event),
+          error_type: err instanceof Error ? err.name : typeof err,
+          metadata: {
+            event_name: event,
+            room_count: rooms.length,
+          },
+        })
+      );
+    }
   }
 
   /**
@@ -190,5 +276,36 @@ export class ContactsGateway implements OnGatewayConnection, OnGatewayDisconnect
     newFolderId: string;
   }) {
     this.safeEmit('file:moved', payload);
+  }
+
+  private logRoomJoined(
+    client: Socket,
+    room: string,
+    userType: string,
+    authMethod: 'browser_session' | 'worker_session' | 'socket_token',
+    correlationId: string
+  ): void {
+    this.logGatewayEvent({
+      level: 'debug',
+      event: 'contacts_gateway_room_joined',
+      action: 'join_room',
+      status: 'success',
+      channel: 'audit',
+      correlationId,
+      client,
+      targetRoom: room,
+      metadata: {
+        auth_method: authMethod,
+        user_type: userType,
+      },
+    });
+  }
+
+  private logGatewayEvent(input: ScopedWebSocketGatewayLogEventInput): void {
+    logWebSocketGatewayEvent(this.logger, {
+      ...input,
+      component: ContactsGateway.name,
+      feature: this.logFeature,
+    });
   }
 }

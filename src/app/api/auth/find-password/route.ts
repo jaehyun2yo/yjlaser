@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { nestjsFetch } from '@/lib/api/nestjs-server-client';
 import { checkAccountRecoveryRateLimit } from '@/lib/auth/rateLimit';
-import { logger } from '@/lib/utils/logger';
+import { logger, toSafeLogError } from '@/lib/utils/logger';
 
 const findPasswordLogger = logger.createLogger('FIND_PASSWORD');
 
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      findPasswordLogger.error('Password reset request failed', {
+      findPasswordLogger.error('Account recovery request failed', {
         status: response.status,
       });
       const message =
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       message: response.data.message,
     });
   } catch (error) {
-    findPasswordLogger.error('Find password error', error);
+    findPasswordLogger.error('Account recovery route failed', toSafeLogError(error));
     return NextResponse.json(
       { success: false, message: '서버 오류가 발생했습니다.' },
       { status: 500 }

@@ -3,6 +3,14 @@ import { Cron } from '@nestjs/schedule';
 import { Prisma, StorageProvider } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  formatLogEvent,
+  generateCorrelationId,
+  hashIdentifier,
+  type BackendLogChannel,
+  type BackendLogLevel,
+  type BackendLogStatus,
+} from '../common/logging/log-event';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -36,6 +44,7 @@ const BACKUP_SETTINGS_KEY = 'backup.config';
 @Injectable()
 export class BackupService {
   private readonly logger = new Logger(BackupService.name);
+  private readonly logFeature = 'backup';
   private progress: BackupStatusResponse = {
     isRunning: false,
     total: 0,
@@ -81,7 +90,18 @@ export class BackupService {
             : DEFAULT_BACKUP_CONFIG.deleteAfterBackup,
       };
     } catch (error) {
-      this.logger.error('Failed to get backup settings', error);
+      this.logBackupEvent('error', {
+        level: 'error',
+        event: 'backup_settings_load_failed',
+        action: 'load_settings',
+        status: 'failure',
+        channel: 'error',
+        correlationId: this.getBackupCorrelationId(),
+        errorType: this.getErrorType(error),
+        metadata: {
+          reason: 'settings_load_failed',
+        },
+      });
       return { ...DEFAULT_BACKUP_CONFIG };
     }
   }
@@ -222,6 +242,7 @@ export class BackupService {
     files: Awaited<ReturnType<typeof this.getEligibleFiles>>,
     settings: BackupSettingsResponse
   ): Promise<BackupExecutionResult> {
+    const correlationId = this.getBackupCorrelationId();
     let success = 0;
     let failed = 0;
 
@@ -279,7 +300,24 @@ export class BackupService {
           failed++;
           this.progress.failed++;
           const errorMessage = error instanceof Error ? error.message : String(error);
-          this.logger.error(`Failed to backup file ${file.id}: ${errorMessage}`);
+          this.logBackupEvent('error', {
+            level: 'error',
+            event: 'backup_file_failed',
+            action: 'backup_file',
+            status: 'failure',
+            channel: 'error',
+            correlationId,
+            actorType: file.companyId ? 'company' : undefined,
+            actorId: file.companyId ?? undefined,
+            targetType: 'webhard_file',
+            targetId: file.id,
+            errorType: this.getErrorType(error),
+            metadata: {
+              reason: 'backup_file_failed',
+              storage_provider: file.storageProvider,
+              delete_after_backup: settings.deleteAfterBackup,
+            },
+          });
 
           // BackupLog 기록 (failed)
           try {
@@ -301,17 +339,57 @@ export class BackupService {
               { operationName: 'backup.logFailed' }
             );
           } catch (logError) {
-            this.logger.error('Failed to create backup log entry', logError);
+            this.logBackupEvent('error', {
+              level: 'error',
+              event: 'backup_log_entry_failed',
+              action: 'create_backup_log',
+              status: 'failure',
+              channel: 'error',
+              correlationId,
+              actorType: file.companyId ? 'company' : undefined,
+              actorId: file.companyId ?? undefined,
+              targetType: 'webhard_file',
+              targetId: file.id,
+              errorType: this.getErrorType(logError),
+              metadata: {
+                reason: 'backup_log_entry_failed',
+                storage_provider: file.storageProvider,
+              },
+            });
           }
         }
       }
 
-      this.logger.log(
-        `Backup completed: ${success} success, ${failed} failed out of ${files.length} files`
-      );
+      this.logBackupEvent('log', {
+        level: 'info',
+        event: 'backup_completed',
+        action: 'run_backup',
+        status: failed > 0 ? 'degraded' : 'success',
+        channel: 'audit',
+        correlationId,
+        count: files.length,
+        metadata: {
+          success_count: success,
+          failed_count: failed,
+        },
+      });
       return { total: files.length, success, failed, skipped: false };
     } catch (error) {
-      this.logger.error('Backup failed with unexpected error', error);
+      this.logBackupEvent('error', {
+        level: 'error',
+        event: 'backup_failed',
+        action: 'run_backup',
+        status: 'failure',
+        channel: 'error',
+        correlationId,
+        count: files.length,
+        errorType: this.getErrorType(error),
+        metadata: {
+          reason: 'unexpected_backup_failure',
+          success_count: success,
+          failed_count: failed,
+        },
+      });
       return { total: files.length, success, failed, skipped: false };
     } finally {
       this.progress.isRunning = false;
@@ -419,8 +497,20 @@ export class BackupService {
         directories,
       };
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Failed to browse directory: ${normalizedPath}`, msg);
+      this.logBackupEvent('error', {
+        level: 'error',
+        event: 'backup_directory_browse_failed',
+        action: 'browse_directory',
+        status: 'failure',
+        channel: 'error',
+        correlationId: this.getBackupCorrelationId(),
+        targetType: 'backup_path',
+        targetId: normalizedPath,
+        errorType: this.getErrorType(error),
+        metadata: {
+          reason: 'directory_browse_failed',
+        },
+      });
       return {
         path: normalizedPath,
         parent: path.dirname(normalizedPath),
@@ -435,18 +525,65 @@ export class BackupService {
    */
   @Cron('0 2 * * *')
   async handleScheduledBackup(): Promise<void> {
-    this.logger.log('Starting scheduled backup...');
+    const correlationId = this.getBackupCorrelationId();
+    this.logBackupEvent('log', {
+      level: 'info',
+      event: 'scheduled_backup_started',
+      action: 'run_scheduled_backup',
+      status: 'start',
+      channel: 'audit',
+      correlationId,
+    });
     try {
       const result = await this.startBackup();
       if (result.status === 'skipped') {
-        this.logger.log(`Scheduled backup skipped: ${result.reason}`);
+        this.logBackupEvent('log', {
+          level: 'info',
+          event: 'scheduled_backup_skipped',
+          action: 'run_scheduled_backup',
+          status: 'skipped',
+          channel: 'audit',
+          correlationId,
+          metadata: {
+            reason: this.classifyStartResult(result),
+          },
+        });
       } else if (result.status === 'already_running') {
-        this.logger.warn('Scheduled backup skipped: already running');
+        this.logBackupEvent('warn', {
+          level: 'warn',
+          event: 'scheduled_backup_skipped',
+          action: 'run_scheduled_backup',
+          status: 'skipped',
+          channel: 'audit',
+          correlationId,
+          metadata: {
+            reason: 'already_running',
+          },
+        });
       } else {
-        this.logger.log(`Scheduled backup started: ${result.total} files`);
+        this.logBackupEvent('log', {
+          level: 'info',
+          event: 'scheduled_backup_dispatched',
+          action: 'run_scheduled_backup',
+          status: 'success',
+          channel: 'audit',
+          correlationId,
+          count: result.total,
+        });
       }
     } catch (error) {
-      this.logger.error('Scheduled backup failed with unexpected error', error);
+      this.logBackupEvent('error', {
+        level: 'error',
+        event: 'scheduled_backup_failed',
+        action: 'run_scheduled_backup',
+        status: 'failure',
+        channel: 'error',
+        correlationId,
+        errorType: this.getErrorType(error),
+        metadata: {
+          reason: 'unexpected_scheduled_backup_failure',
+        },
+      });
     }
   }
 
@@ -491,5 +628,87 @@ export class BackupService {
     }
 
     await this.storageService.deleteFile(file.path);
+  }
+
+  private getBackupCorrelationId(): string {
+    return generateCorrelationId('backup');
+  }
+
+  private getErrorType(error: unknown): string {
+    return error instanceof Error ? error.name : typeof error;
+  }
+
+  private classifyStartResult(result: BackupStartResult): string {
+    if (result.status === 'already_running') {
+      return 'already_running';
+    }
+
+    if (result.reason === 'Backup is disabled') {
+      return 'backup_disabled';
+    }
+
+    if (result.reason === 'NAS path is not configured') {
+      return 'nas_path_not_configured';
+    }
+
+    if (result.reason?.startsWith('NAS path not accessible:')) {
+      return 'nas_path_not_accessible';
+    }
+
+    if (result.reason === 'No eligible files found') {
+      return 'no_eligible_files';
+    }
+
+    return 'backup_skipped';
+  }
+
+  private logBackupEvent(
+    method: 'log' | 'warn' | 'error',
+    input: {
+      level: BackendLogLevel;
+      event: string;
+      action: string;
+      status: BackendLogStatus;
+      channel: BackendLogChannel;
+      correlationId: string;
+      count?: number;
+      actorType?: string;
+      actorId?: string | number;
+      targetType?: string;
+      targetId?: string | number;
+      errorType?: string;
+      metadata?: Record<string, unknown>;
+    }
+  ): void {
+    const message = formatLogEvent({
+      level: input.level,
+      project: 'company_site',
+      component: BackupService.name,
+      feature: this.logFeature,
+      event: input.event,
+      action: input.action,
+      status: input.status,
+      channel: input.channel,
+      correlation_id: input.correlationId,
+      count: input.count,
+      actor_type: input.actorType,
+      actor_id_hash: input.actorId === undefined ? undefined : hashIdentifier(input.actorId),
+      target_type: input.targetType,
+      target_id_hash: input.targetId === undefined ? undefined : hashIdentifier(input.targetId),
+      error_type: input.errorType,
+      metadata: input.metadata,
+    });
+
+    if (method === 'log') {
+      this.logger.log(message);
+      return;
+    }
+
+    if (method === 'warn') {
+      this.logger.warn(message);
+      return;
+    }
+
+    this.logger.error(message);
   }
 }

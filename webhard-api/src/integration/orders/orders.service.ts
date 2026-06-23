@@ -13,6 +13,8 @@ import {
 import { ContactTimelineService } from '../../contacts/contact-timeline.service';
 import { ContactsService } from '../../contacts/contacts.service';
 import { UpdateProcessStageDto, VALID_PROCESS_STAGES } from './dto/order.dto';
+import { mapOrderStateReadModel } from './order-state-read';
+import { buildOrderTimelineReadModel } from './order-timeline-read';
 
 @Injectable()
 export class OrdersService {
@@ -363,6 +365,89 @@ export class OrdersService {
     }));
   }
 
+  async getOrderTimeline(id: string) {
+    const order = await this.prisma.executeWithRetry(
+      () =>
+        this.prisma.order.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            contactId: true,
+            companyName: true,
+            productionStatus: true,
+            confirmationStatus: true,
+            classificationStatus: true,
+            nestingStatus: true,
+            billingStatus: true,
+          },
+        }),
+      { operationName: 'getOrderTimelineOrder' }
+    );
+    if (!order) throw new NotFoundException('Order not found');
+
+    const [orderEvents, jobEvents] = await this.prisma.executeWithRetry(
+      () =>
+        Promise.all([
+          this.prisma.orderEvent.findMany({
+            where: { orderId: id },
+            orderBy: { createdAt: 'desc' },
+            take: 100,
+            select: {
+              id: true,
+              orderId: true,
+              eventType: true,
+              fromStatus: true,
+              toStatus: true,
+              source: true,
+              actorName: true,
+              message: true,
+              createdAt: true,
+            },
+          }),
+          this.prisma.jobEvent.findMany({
+            where: { orderId: id },
+            orderBy: [{ occurredAt: 'desc' }, { receivedAt: 'desc' }],
+            take: 100,
+            select: {
+              id: true,
+              eventType: true,
+              eventVersion: true,
+              sourceWorker: true,
+              sourceVersion: true,
+              orderId: true,
+              jobId: true,
+              integrationRunId: true,
+              workerLocalId: true,
+              result: true,
+              occurredAt: true,
+              receivedAt: true,
+              durationMs: true,
+              processedCount: true,
+              stateApplyStatus: true,
+              failureId: true,
+              orderEventId: true,
+              createdAt: true,
+            },
+          }),
+        ]),
+      { operationName: 'getOrderTimelineEvents' }
+    );
+    const timeline = buildOrderTimelineReadModel({ orderId: id, orderEvents, jobEvents });
+
+    return {
+      order_id: order.id,
+      contact_id: order.contactId === null ? null : Number(order.contactId),
+      company_name: order.companyName,
+      production_status: order.productionStatus ?? null,
+      confirmation_status: order.confirmationStatus ?? null,
+      classification_status: order.classificationStatus ?? null,
+      nesting_status: order.nestingStatus ?? null,
+      billing_status: order.billingStatus ?? null,
+      events: timeline.events,
+      failures: [],
+    };
+  }
+
   /**
    * DXF 파일 파싱 결과로 Contact + Order 자동 생성
    * 관리프로그램에서 DXF 파일 분류 시 호출
@@ -648,6 +733,11 @@ export class OrdersService {
     description: string | null;
     orderType: string;
     status: string;
+    productionStatus?: string | null;
+    confirmationStatus?: string | null;
+    classificationStatus?: string | null;
+    nestingStatus?: string | null;
+    billingStatus?: string | null;
     priority: string;
     drawingFileCount: number;
     webhardFolderId: string | null;
@@ -681,6 +771,7 @@ export class OrdersService {
     description: order.description,
     order_type: order.orderType,
     status: order.status,
+    order_state: mapOrderStateReadModel(order),
     priority: order.priority,
     drawing_file_count: order.drawingFileCount,
     webhard_folder_id: order.webhardFolderId,

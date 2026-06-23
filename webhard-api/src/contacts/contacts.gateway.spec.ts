@@ -9,6 +9,24 @@
 import { ContactsGateway } from './contacts.gateway';
 import { AuthService } from '../auth/auth.service';
 import { Server } from 'socket.io';
+import { Logger } from '@nestjs/common';
+import { hashIdentifier } from '../common/logging/log-event';
+
+type LoggedBackendEvent = {
+  schema_version: 1;
+  event: string;
+  level: string;
+  project: string;
+  component: string;
+  feature: string;
+  action: string;
+  status: string;
+  channel: string;
+  actor_id_hash?: string;
+  target_id_hash?: string;
+  error_type?: string;
+  metadata?: Record<string, unknown>;
+};
 
 function makeEmitter() {
   const emit = jest.fn();
@@ -25,6 +43,36 @@ function makeServer() {
   return { server, emit, toMock: server.to as jest.Mock };
 }
 
+function serializeLoggerCalls(...spies: jest.SpyInstance[]): string {
+  return JSON.stringify(
+    spies.flatMap((spy) =>
+      spy.mock.calls.flatMap((call: unknown[]) => call.map((value: unknown) => String(value)))
+    )
+  );
+}
+
+function findJsonLogEvent(spy: jest.SpyInstance, eventName: string): LoggedBackendEvent {
+  const event = spy.mock.calls
+    .flatMap((call: unknown[]) => call.map((value: unknown) => String(value)))
+    .map((value) => {
+      try {
+        return JSON.parse(value) as Partial<LoggedBackendEvent>;
+      } catch {
+        return null;
+      }
+    })
+    .find(
+      (value): value is LoggedBackendEvent =>
+        value?.schema_version === 1 && value.event === eventName
+    );
+
+  if (!event) {
+    throw new Error(`Missing JSON log event: ${eventName}`);
+  }
+
+  return event;
+}
+
 describe('ContactsGateway', () => {
   let gateway: ContactsGateway;
 
@@ -32,8 +80,14 @@ describe('ContactsGateway', () => {
     gateway = new ContactsGateway({} as AuthService);
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   describe('connection auth', () => {
     it('유효한 erp-session은 worker verifier로 검증한 뒤 worker room에 join한다', async () => {
+      const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation();
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       const verifySession = jest.fn(() => null);
       const verifyWorkerSession = jest.fn(() => ({
         userType: 'worker',
@@ -64,6 +118,29 @@ describe('ContactsGateway', () => {
       expect(verifyWorkerSession).toHaveBeenCalledWith('valid-worker-token');
       expect(join).toHaveBeenCalledWith('worker');
       expect(disconnect).not.toHaveBeenCalled();
+
+      const event = findJsonLogEvent(debugSpy, 'contacts_gateway_room_joined');
+      expect(event).toMatchObject({
+        level: 'debug',
+        project: 'company_site',
+        component: 'ContactsGateway',
+        feature: 'contacts_gateway',
+        action: 'join_room',
+        status: 'success',
+        channel: 'audit',
+        actor_id_hash: hashIdentifier('socket-1'),
+        target_id_hash: hashIdentifier('worker'),
+        metadata: {
+          auth_method: 'worker_session',
+          user_type: 'worker',
+          room_type: 'worker',
+        },
+      });
+
+      const serialized = serializeLoggerCalls(debugSpy, warnSpy);
+      expect(serialized).not.toContain('valid-worker-token');
+      expect(serialized).not.toContain('socket-1');
+      expect(serialized).not.toContain('joined room: worker');
     });
 
     it('URL-encoded erp-session 쿠키를 decode한 뒤 worker verifier로 검증한다', async () => {
@@ -99,6 +176,8 @@ describe('ContactsGateway', () => {
     });
 
     it('검증 실패 erp-session 쿠키만으로 worker room에 join하지 않는다', async () => {
+      jest.spyOn(Logger.prototype, 'debug').mockImplementation();
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       const verifySession = jest.fn(() => null);
       const verifyWorkerSession = jest.fn(() => null);
       gateway = new ContactsGateway({
@@ -123,6 +202,28 @@ describe('ContactsGateway', () => {
       expect(verifyWorkerSession).toHaveBeenCalledWith('forged-token');
       expect(join).not.toHaveBeenCalled();
       expect(disconnect).toHaveBeenCalled();
+
+      const event = findJsonLogEvent(warnSpy, 'contacts_gateway_connection_rejected');
+      expect(event).toMatchObject({
+        level: 'warn',
+        project: 'company_site',
+        component: 'ContactsGateway',
+        feature: 'contacts_gateway',
+        action: 'connect',
+        status: 'failure',
+        channel: 'security',
+        actor_id_hash: hashIdentifier('socket-1'),
+        metadata: {
+          reason: 'unauthenticated',
+          browser_present: true,
+          socket_auth_present: false,
+        },
+      });
+
+      const serialized = serializeLoggerCalls(warnSpy);
+      expect(serialized).not.toContain('forged-token');
+      expect(serialized).not.toContain('socket-1');
+      expect(serialized).not.toContain('Unauthenticated connection rejected');
     });
 
     it('company-session은 contacts private rooms에 연결할 수 없다', async () => {
@@ -260,6 +361,31 @@ describe('ContactsGateway', () => {
       gateway.emitContactCreated(contact);
 
       expect(emit).toHaveBeenCalledWith('contact:created', contact);
+    });
+
+    it('emitContactProcessStageChanged 는 socket emit 실패 시에도 요청 경로로 throw 하지 않는다', () => {
+      emit.mockImplementation(() => {
+        throw new Error('socket adapter unavailable');
+      });
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      expect(() => gateway.emitContactProcessStageChanged({ id: 'contact-1' })).not.toThrow();
+      const event = findJsonLogEvent(warnSpy, 'contacts_gateway_emit_failed');
+      expect(event).toMatchObject({
+        level: 'warn',
+        project: 'company_site',
+        component: 'ContactsGateway',
+        feature: 'contacts_gateway',
+        action: 'emit',
+        status: 'failure',
+        channel: 'error',
+        error_type: 'Error',
+        metadata: {
+          event_name: 'contact:process_stage_changed',
+          room_count: 2,
+        },
+      });
+      expect(serializeLoggerCalls(warnSpy)).not.toContain('socket adapter unavailable');
     });
   });
 });

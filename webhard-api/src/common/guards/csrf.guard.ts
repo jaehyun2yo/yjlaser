@@ -1,11 +1,19 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import * as crypto from 'crypto';
+import { formatLogEvent, generateCorrelationId } from '../logging/log-event';
 
 /**
  * CSRF 검증을 건너뛸 경로 목록.
  * 로그인 엔드포인트는 세션이 없는 상태에서 호출되므로 CSRF 토큰이 존재하지 않음.
  */
 const CSRF_EXEMPT_PATHS = ['/api/v1/erp/workers/pin-login'];
+const LOG_INGESTION_PATH = '/api/v1/integration/log-events';
 
 /**
  * Double Submit Cookie 패턴 기반 CSRF 보호 Guard.
@@ -20,11 +28,16 @@ const CSRF_EXEMPT_PATHS = ['/api/v1/erp/workers/pin-login'];
  */
 @Injectable()
 export class CsrfGuard implements CanActivate {
+  private readonly logger = new Logger(CsrfGuard.name);
+
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<{
       method: string;
       headers: Record<string, string | string[] | undefined>;
       cookies?: Record<string, string>;
+      path?: string;
+      originalUrl?: string;
+      url?: string;
     }>();
 
     // GET / HEAD / OPTIONS는 상태를 변경하지 않으므로 스킵
@@ -38,8 +51,12 @@ export class CsrfGuard implements CanActivate {
     }
 
     // 세션 없이 호출되는 엔드포인트는 CSRF 검증 불가 — 스킵
-    const requestPath = (request as { path?: string }).path ?? '';
+    const requestPath = (request.path ?? request.originalUrl ?? request.url ?? '').split('?')[0];
     if (CSRF_EXEMPT_PATHS.some((exempt) => requestPath.endsWith(exempt))) {
+      return true;
+    }
+
+    if (isLogIngestionRequest(requestPath, request.method)) {
       return true;
     }
 
@@ -47,6 +64,11 @@ export class CsrfGuard implements CanActivate {
     const headerToken = request.headers['x-csrf-token'];
 
     if (!cookieToken || !headerToken) {
+      this.logCsrfFailure(
+        request.method,
+        requestPath,
+        getMissingTokenReason(cookieToken, headerToken)
+      );
       throw new ForbiddenException('CSRF token missing');
     }
 
@@ -54,11 +76,50 @@ export class CsrfGuard implements CanActivate {
 
     // timing-safe compare로 토큰 비교 (타이밍 공격 방지)
     if (!timingSafeEqual(cookieToken, headerTokenStr)) {
+      this.logCsrfFailure(request.method, requestPath, 'token_mismatch');
       throw new ForbiddenException('CSRF token mismatch');
     }
 
     return true;
   }
+
+  private logCsrfFailure(method: string, path: string, reason: string): void {
+    this.logger.warn(
+      formatLogEvent({
+        level: 'warn',
+        project: 'company_site',
+        component: CsrfGuard.name,
+        feature: 'auth',
+        event: 'csrf_rejected',
+        action: 'validate_csrf',
+        status: 'failure',
+        channel: 'security',
+        correlation_id: generateCorrelationId('auth'),
+        metadata: {
+          reason,
+          method,
+          path,
+        },
+      })
+    );
+  }
+}
+
+function getMissingTokenReason(
+  cookieToken: string | undefined,
+  headerToken: string | string[] | undefined
+): string {
+  if (!cookieToken && !headerToken) {
+    return 'missing_cookie_and_header_token';
+  }
+  if (!cookieToken) {
+    return 'missing_cookie_token';
+  }
+  return 'missing_header_token';
+}
+
+function isLogIngestionRequest(requestPath: string, method: string): boolean {
+  return method === 'POST' && requestPath === LOG_INGESTION_PATH;
 }
 
 /**

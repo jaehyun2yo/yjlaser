@@ -12,9 +12,12 @@ import { IntegrationDrawingRevisionsModule } from './drawing-revisions/drawing-r
 import { DxfMatchModule } from './dxf-match/dxf-match.module';
 import { LaserCompletionsModule } from './laser-completions/laser-completions.module';
 import { NestingTasksModule } from './nesting-tasks/nesting-tasks.module';
+import { IntegrationFilesModule } from './files/files.module';
+import { OperationsModule } from './operations/operations.module';
 import { ApiKeyModule } from './auth/api-key.module';
 import { ApiKeyController } from './auth/api-key.controller';
 import { FileTransferController } from './file-transfer/file-transfer.controller';
+import { LogEventsModule } from './log-events/log-events.module';
 
 @Module({
   imports: [
@@ -32,6 +35,9 @@ import { FileTransferController } from './file-transfer/file-transfer.controller
     DxfMatchModule,
     LaserCompletionsModule,
     NestingTasksModule,
+    IntegrationFilesModule,
+    OperationsModule,
+    LogEventsModule,
   ],
   controllers: [ApiKeyController, FileTransferController],
   exports: [
@@ -47,6 +53,9 @@ import { FileTransferController } from './file-transfer/file-transfer.controller
     DxfMatchModule,
     LaserCompletionsModule,
     NestingTasksModule,
+    IntegrationFilesModule,
+    OperationsModule,
+    LogEventsModule,
   ],
 })
 export class IntegrationModule {}

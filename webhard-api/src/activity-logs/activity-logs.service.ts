@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { ActivityLogsGateway } from './activity-logs.gateway';
+import { formatLogEvent, generateCorrelationId, hashIdentifier } from '../common/logging/log-event';
 
 export interface CreateActivityLogDto {
   actorType: string;
@@ -27,6 +28,7 @@ export interface FindActivityLogsOptions {
 @Injectable()
 export class ActivityLogsService {
   private readonly logger = new Logger(ActivityLogsService.name);
+  private readonly logFeature = 'activity_logs';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -66,7 +68,24 @@ export class ActivityLogsService {
       });
       return { id: log.id, success: true };
     } catch (error) {
-      this.logger.error('Failed to create activity log', error);
+      this.logger.error(
+        this.formatActivityLogEvent({
+          event: 'activity_log_create_failed',
+          action: 'create_activity_log',
+          actorId: data.actorId,
+          resourceId: data.resourceId,
+          errorType: this.getErrorType(error),
+          metadata: {
+            reason: 'activity_log_create_failed',
+            actor_type_hash: hashIdentifier(data.actorType),
+            action_hash: hashIdentifier(data.action),
+            resource_type_hash: data.resourceType ? hashIdentifier(data.resourceType) : undefined,
+            details_present: !!data.details,
+            ip_present: !!data.ipAddress,
+            user_agent_present: !!data.userAgent,
+          },
+        })
+      );
       return { id: null, success: false };
     }
   }
@@ -112,5 +131,36 @@ export class ActivityLogsService {
       })),
       total,
     };
+  }
+
+  private getErrorType(error: unknown): string {
+    return error instanceof Error ? error.name : typeof error;
+  }
+
+  private formatActivityLogEvent(input: {
+    event: string;
+    action: string;
+    actorId: string;
+    resourceId?: string;
+    errorType: string;
+    metadata: Record<string, unknown>;
+  }): string {
+    return formatLogEvent({
+      level: 'error',
+      project: 'company_site',
+      component: ActivityLogsService.name,
+      feature: this.logFeature,
+      event: input.event,
+      action: input.action,
+      status: 'failure',
+      channel: 'error',
+      correlation_id: generateCorrelationId('activity-log'),
+      actor_type: 'activity_actor',
+      actor_id_hash: hashIdentifier(input.actorId),
+      target_type: input.resourceId ? 'activity_resource' : undefined,
+      target_id_hash: input.resourceId ? hashIdentifier(input.resourceId) : undefined,
+      error_type: input.errorType,
+      metadata: input.metadata,
+    });
   }
 }

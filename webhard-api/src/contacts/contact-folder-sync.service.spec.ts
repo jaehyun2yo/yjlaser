@@ -455,6 +455,16 @@ function makeReloPrisma(
   };
 }
 
+function spyOnContactFolderLoggerLog(service: ContactFolderSyncService) {
+  const logger = (
+    service as unknown as {
+      logger: { log: (...args: unknown[]) => void };
+    }
+  ).logger;
+
+  return jest.spyOn(logger, 'log').mockImplementation(() => undefined);
+}
+
 describe('ContactFolderSyncService.relocateAfterAliasApproved (task 24)', () => {
   it('C1: 외부 미통합 Contact 일괄 통합 — companyName/companyId 업데이트 + onContactCreated 위임 + tx 전파', async () => {
     const folders = makeFoldersService();
@@ -595,6 +605,50 @@ describe('ContactFolderSyncService.relocateAfterAliasApproved (task 24)', () => 
 
     // skipped 의미 정정: "이미 companyId 가 채워진 contact" — findMany 조건으로 자동 제외되므로 0.
     expect(result).toEqual({ relocated: 2, skipped: 0 });
+  });
+
+  it('로그는 alias 원본 folderName/companyName 없이 집계값만 남긴다', async () => {
+    const sensitiveFolderName = '대성목형(2265-1295)';
+    const normalizedCompanyName = '대성목형';
+    const folders = makeFoldersService();
+    const prisma = makeReloPrisma(
+      [
+        {
+          id: 'contact-log-a',
+          companyName: sensitiveFolderName,
+          companyId: null,
+          inquiryType: null,
+        },
+      ],
+      { id: 7, companyName: normalizedCompanyName }
+    );
+    const service = new ContactFolderSyncService(
+      folders as never,
+      prisma as never,
+      makeEventsGateway() as never
+    );
+    const logSpy = spyOnContactFolderLoggerLog(service);
+
+    await service.relocateAfterAliasApproved(sensitiveFolderName, 7);
+
+    const serializedCalls = JSON.stringify(logSpy.mock.calls);
+    expect(serializedCalls).not.toContain(sensitiveFolderName);
+    expect(serializedCalls).not.toContain(normalizedCompanyName);
+
+    const completedCall = logSpy.mock.calls.find(
+      ([, message]) => message === 'relocateAfterAliasApproved completed'
+    );
+    expect(completedCall).toBeDefined();
+    const [payload] = completedCall ?? [];
+    expect(payload).toMatchObject({
+      action: 'relocate_after_alias_approved',
+      status: 'success',
+      companyId: 7,
+      targetCount: 1,
+      relocatedCount: 1,
+      skippedCount: 0,
+    });
+    expect(payload).not.toHaveProperty('folderName');
   });
 
   it('company 미존재 → NotFoundException throw (트랜잭션 롤백 트리거)', async () => {

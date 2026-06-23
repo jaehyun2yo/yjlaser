@@ -39,7 +39,7 @@ export async function requireAdmin(): Promise<AdminGuardResult> {
   // 1. 세션 검증
   const isAuthenticated = await verifySession();
   if (!isAuthenticated) {
-    guardLogger.warn('Unauthorized access attempt - no valid session');
+    guardLogger.warn('Unauthorized access attempt - no valid browser credential');
     return {
       authorized: false,
       user: null,
@@ -50,7 +50,7 @@ export async function requireAdmin(): Promise<AdminGuardResult> {
   // 2. 사용자 정보 조회
   const user = await getSessionUser();
   if (!user?.userId) {
-    guardLogger.warn('Unauthorized access attempt - no user in session');
+    guardLogger.warn('Unauthorized access attempt - no browser principal');
     return {
       authorized: false,
       user: null,

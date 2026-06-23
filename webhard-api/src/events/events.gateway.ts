@@ -14,6 +14,11 @@ import {
   verifyBrowserGatewaySession,
   verifySignedSocketToken,
 } from '../auth/gateway-auth.util';
+import {
+  generateGatewayCorrelationId,
+  logWebSocketGatewayEvent,
+  type ScopedWebSocketGatewayLogEventInput,
+} from '../common/logging/gateway-log-event';
 
 export interface WebhardEvent {
   type:
@@ -43,7 +48,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  private readonly logger = new Logger('EventsGateway');
+  private readonly logger = new Logger(EventsGateway.name);
+  private readonly logFeature = 'events_gateway';
 
   // 배치 이벤트 큐 + 500ms 디바운스
   private pendingEvents = new Map<string, WebhardEvent[]>();
@@ -56,15 +62,31 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {}
 
   async handleConnection(client: Socket) {
+    const correlationId = generateGatewayCorrelationId(this.logFeature);
     try {
       const cookie = client.handshake.headers.cookie;
+      const hasSocketToken = !!client.handshake.auth?.token;
       let authenticated = false;
+      this.logGatewayEvent({
+        level: 'debug',
+        event: 'events_gateway_connection_started',
+        action: 'connect',
+        status: 'start',
+        channel: 'audit',
+        correlationId,
+        client,
+        metadata: {
+          browser_present: !!cookie,
+          socket_auth_present: hasSocketToken,
+        },
+      });
 
       if (cookie) {
         const user = verifyBrowserGatewaySession(this.authService, cookie, ['admin', 'company']);
         if (user) {
           authenticated = true;
           (client as GatewaySocket).userData = user;
+          this.logConnectionAuthenticated(client, user, 'browser_session', correlationId);
         }
       }
 
@@ -74,29 +96,69 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (user) {
           authenticated = true;
           (client as GatewaySocket).userData = user;
+          this.logConnectionAuthenticated(client, user, 'socket_token', correlationId);
         }
       }
 
       if (!authenticated) {
-        this.logger.warn(`Unauthenticated WebSocket connection rejected: ${client.id}`);
+        this.logGatewayEvent({
+          level: 'warn',
+          event: 'events_gateway_connection_rejected',
+          action: 'connect',
+          status: 'failure',
+          channel: 'security',
+          correlationId,
+          client,
+          metadata: {
+            reason: 'unauthenticated',
+            browser_present: !!cookie,
+            socket_auth_present: hasSocketToken,
+          },
+        });
         client.disconnect();
         return;
       }
 
-      this.logger.debug(`Client connected: ${client.id}`);
+      this.logGatewayEvent({
+        level: 'debug',
+        event: 'events_gateway_connected',
+        action: 'connect',
+        status: 'success',
+        channel: 'audit',
+        correlationId,
+        client,
+      });
     } catch (err) {
-      this.logger.error(`Connection error: ${err}`);
+      this.logGatewayEvent({
+        level: 'error',
+        event: 'events_gateway_connection_error',
+        action: 'connect',
+        status: 'failure',
+        channel: 'error',
+        correlationId,
+        client,
+        errorType: err instanceof Error ? err.name : typeof err,
+      });
       client.disconnect();
     }
   }
 
   handleDisconnect(client: Socket) {
-    this.logger.debug(`Client disconnected: ${client.id}`);
+    this.logGatewayEvent({
+      level: 'debug',
+      event: 'events_gateway_disconnected',
+      action: 'disconnect',
+      status: 'success',
+      channel: 'audit',
+      correlationId: generateGatewayCorrelationId(this.logFeature),
+      client,
+    });
   }
 
   @SubscribeMessage('subscribe:folder')
   async handleSubscribeFolder(client: Socket, folderId: string) {
     const userData = (client as Socket & { userData?: SessionUser }).userData;
+    const room = `folder:${folderId || 'root'}`;
 
     // UUID 형식 검증 (클라이언트가 'root' 등 비UUID 값을 보낼 수 있음)
     const isValidUuid =
@@ -110,22 +172,55 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
 
       if (folder && folder.companyId !== null && folder.companyId !== userData.companyId) {
-        this.logger.warn(`Client ${client.id} denied subscription to folder ${folderId}`);
+        this.logGatewayEvent({
+          level: 'warn',
+          event: 'events_gateway_folder_subscribe_denied',
+          action: 'subscribe_folder',
+          status: 'failure',
+          channel: 'security',
+          correlationId: generateGatewayCorrelationId(this.logFeature),
+          client,
+          targetRoom: room,
+          metadata: {
+            reason: 'company_mismatch',
+            user_type: userData.userType,
+          },
+        });
         client.emit('error', { message: 'Access denied to this folder' });
         return;
       }
     }
 
-    const room = `folder:${folderId || 'root'}`;
     client.join(room);
-    this.logger.debug(`Client ${client.id} joined ${room}`);
+    this.logGatewayEvent({
+      level: 'debug',
+      event: 'events_gateway_folder_subscribed',
+      action: 'subscribe_folder',
+      status: 'success',
+      channel: 'audit',
+      correlationId: generateGatewayCorrelationId(this.logFeature),
+      client,
+      targetRoom: room,
+      metadata: {
+        user_type: userData?.userType,
+      },
+    });
   }
 
   @SubscribeMessage('unsubscribe:folder')
   handleUnsubscribeFolder(client: Socket, folderId: string) {
     const room = `folder:${folderId || 'root'}`;
     client.leave(room);
-    this.logger.debug(`Client ${client.id} left ${room}`);
+    this.logGatewayEvent({
+      level: 'debug',
+      event: 'events_gateway_folder_unsubscribed',
+      action: 'unsubscribe_folder',
+      status: 'success',
+      channel: 'audit',
+      correlationId: generateGatewayCorrelationId(this.logFeature),
+      client,
+      targetRoom: room,
+    });
   }
 
   /**
@@ -167,5 +262,34 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.flushTimer = null;
       }, this.BATCH_INTERVAL);
     }
+  }
+
+  private logConnectionAuthenticated(
+    client: Socket,
+    user: SessionUser,
+    authMethod: 'browser_session' | 'socket_token',
+    correlationId: string
+  ): void {
+    this.logGatewayEvent({
+      level: 'debug',
+      event: 'events_gateway_connection_authenticated',
+      action: 'authenticate',
+      status: 'success',
+      channel: 'audit',
+      correlationId,
+      client,
+      metadata: {
+        auth_method: authMethod,
+        user_type: user.userType,
+      },
+    });
+  }
+
+  private logGatewayEvent(input: ScopedWebSocketGatewayLogEventInput): void {
+    logWebSocketGatewayEvent(this.logger, {
+      ...input,
+      component: EventsGateway.name,
+      feature: this.logFeature,
+    });
   }
 }

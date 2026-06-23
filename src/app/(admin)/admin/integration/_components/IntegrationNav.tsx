@@ -12,6 +12,7 @@ import {
   Users,
   HardDrive,
   Activity,
+  Gauge,
 } from 'lucide-react';
 
 interface NavTab {
@@ -25,6 +26,11 @@ const navTabs: NavTab[] = [
     href: '/admin/integration/programs',
     label: '프로그램',
     icon: <Monitor className="w-4 h-4" />,
+  },
+  {
+    href: '/admin/integration/operations',
+    label: '운영현황',
+    icon: <Gauge className="w-4 h-4" />,
   },
   {
     href: '/admin/integration/companies',

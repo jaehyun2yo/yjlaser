@@ -10,7 +10,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Request, RequestHandler } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import * as cookieParser from 'cookie-parser';
 import * as compression from 'compression';
 import { AppModule } from './app.module';
@@ -27,9 +27,17 @@ async function bootstrap() {
   // Body size 제한 확장 (500개 파일 배치 confirm 등)
   const rawExpressApp = app.getHttpAdapter().getInstance();
   const { json, urlencoded } = await import('express');
+  const logIngestionPath = '/api/v1/integration/log-events';
+  const shouldUseLogIngestionBodyParser = (req: Request): boolean => {
+    const pathOnly = (req.originalUrl || req.url).split('?')[0];
+    return req.method === 'POST' && pathOnly === logIngestionPath;
+  };
   const shouldSkipBodyParser = (req: Request): boolean => {
     const pathOnly = (req.originalUrl || req.url).split('?')[0];
-    return req.method === 'PUT' && pathOnly === '/api/v1/files/google-drive/upload';
+    return (
+      (req.method === 'PUT' && pathOnly === '/api/v1/files/google-drive/upload') ||
+      shouldUseLogIngestionBodyParser(req)
+    );
   };
   const skipBodyParserForDriveUpload =
     (parser: RequestHandler): RequestHandler =>
@@ -40,6 +48,21 @@ async function bootstrap() {
       }
       parser(req, res, next);
     };
+  const logIngestionJsonParser = json({
+    limit: '256kb',
+    verify: (req, _res, buf) => {
+      if (shouldUseLogIngestionBodyParser(req as Request)) {
+        (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+      }
+    },
+  });
+  rawExpressApp.use((req: Request, res: Response, next: NextFunction) => {
+    if (shouldUseLogIngestionBodyParser(req)) {
+      logIngestionJsonParser(req, res, next);
+      return;
+    }
+    next();
+  });
   rawExpressApp.use(skipBodyParserForDriveUpload(json({ limit: '10mb' })));
   rawExpressApp.use(skipBodyParserForDriveUpload(urlencoded({ extended: true, limit: '10mb' })));
 
@@ -78,6 +101,11 @@ async function bootstrap() {
       'Authorization',
       'X-API-Key',
       'X-CSRF-Token',
+      'X-Log-Client-Id',
+      'X-Log-Key-Id',
+      'X-Log-Timestamp',
+      'X-Log-Nonce',
+      'X-Log-Signature',
       'X-Google-Drive-Upload-Url',
       'Content-Range',
     ],

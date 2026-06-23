@@ -30,8 +30,7 @@ export function chunkArray<T>(array: T[], size: number): T[][] {
  * await processChunksParallel(
  *   [[1,2], [3,4], [5,6], [7,8]],
  *   async (chunk, index) => {
- *     console.log(`Processing chunk ${index}`);
- *     return chunk.map(x => x * 2);
+ *     return chunk.map(x => x * index);
  *   },
  *   2 // 동시에 2개씩 처리
  * );

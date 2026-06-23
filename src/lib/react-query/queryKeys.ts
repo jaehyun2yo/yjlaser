@@ -355,6 +355,8 @@ export const queryKeys = {
         [...queryKeys.integration.orders.all(), 'list', filters] as const,
       detail: (id: string) => [...queryKeys.integration.orders.all(), 'detail', id] as const,
       events: (id: string) => [...queryKeys.integration.orders.all(), id, 'events'] as const,
+      timeline: (id?: string | null) =>
+        [...queryKeys.integration.orders.all(), id ?? null, 'timeline'] as const,
     },
     stats: () => [...queryKeys.integration.all, 'stats'] as const,
     programs: {
@@ -395,6 +397,12 @@ export const queryKeys = {
       stats: (date?: string) => [...queryKeys.integration.all, 'sync-logs', 'stats', date] as const,
       pipelineBacklog: (limit?: number) =>
         [...queryKeys.integration.all, 'sync-logs', 'pipeline-backlog', limit] as const,
+    },
+    operations: {
+      all: () => [...queryKeys.integration.all, 'operations'] as const,
+      failures: (filters?: { cursor?: string; limit?: number }) =>
+        [...queryKeys.integration.all, 'operations', 'failures', filters] as const,
+      heartbeats: () => [...queryKeys.integration.all, 'operations', 'heartbeats'] as const,
     },
     health: () => [...queryKeys.integration.all, 'health'] as const,
   },

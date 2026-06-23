@@ -15,6 +15,7 @@ import {
   integrationHealthApi,
   integrationWorkshopApi,
   integrationSyncLogApi,
+  integrationOperationsApi,
 } from './api';
 import type {
   OrderFilters,
@@ -60,6 +61,16 @@ export function useOrderEvents(id: string) {
     queryFn: () => integrationOrderApi.getOrderEvents(id),
     enabled: Boolean(id),
     staleTime: 30 * 1000,
+  });
+}
+
+export function useOrderTimeline(id?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.integration.orders.timeline(id),
+    queryFn: () => integrationOrderApi.getOrderTimeline(id as string),
+    enabled: Boolean(id),
+    staleTime: 30 * 1000,
+    refetchInterval: 30000,
   });
 }
 
@@ -261,6 +272,26 @@ export function usePipelineBacklog(limit = 10) {
   return useQuery({
     queryKey: queryKeys.integration.syncLogs.pipelineBacklog(limit),
     queryFn: () => integrationSyncLogApi.getPipelineBacklog(limit),
+    refetchInterval: 30000,
+  });
+}
+
+// ============================================================
+// Operations 훅
+// ============================================================
+
+export function useOperationFailures(limit = 20) {
+  return useQuery({
+    queryKey: queryKeys.integration.operations.failures({ limit }),
+    queryFn: () => integrationOperationsApi.getFailures({ limit }),
+    refetchInterval: 30000,
+  });
+}
+
+export function useOperationHeartbeats() {
+  return useQuery({
+    queryKey: queryKeys.integration.operations.heartbeats(),
+    queryFn: () => integrationOperationsApi.getHeartbeats(),
     refetchInterval: 30000,
   });
 }

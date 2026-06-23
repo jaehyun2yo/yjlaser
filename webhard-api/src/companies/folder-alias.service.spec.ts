@@ -63,6 +63,16 @@ const EMPTY_MIGRATION = {
   externalRootFound: false,
 };
 
+function spyOnFolderAliasLoggerLog(service: FolderAliasService) {
+  const logger = (
+    service as unknown as {
+      logger: { log: (...args: unknown[]) => void };
+    }
+  ).logger;
+
+  return jest.spyOn(logger, 'log').mockImplementation(() => undefined);
+}
+
 describe('FolderAliasService', () => {
   let service: FolderAliasService;
   let prisma: ReturnType<typeof makePrisma>;
@@ -106,6 +116,77 @@ describe('FolderAliasService', () => {
         })
       );
       expect(result.alias).toBeDefined();
+    });
+
+    it('로그는 folderName/conflict 원문 없이 승인 식별자와 backfill 집계만 남긴다', async () => {
+      const sensitiveFolderName = '대성목형(2265-1295)';
+      const sensitiveConflictName = '고객도면 원본';
+      prisma.companyFolderAlias.findUnique.mockResolvedValueOnce({
+        id: 1,
+        folderName: sensitiveFolderName,
+        companyId: 10,
+        status: 'pending',
+      });
+      prisma.companyFolderAlias.updateMany.mockResolvedValueOnce({ count: 0 });
+      prisma.companyFolderAlias.update.mockResolvedValueOnce({
+        id: 1,
+        folderName: sensitiveFolderName,
+        companyId: 10,
+        status: 'approved',
+        approvedBy: 'admin',
+        approvedAt: new Date('2026-04-27'),
+      });
+      contactFolderSync.relocateAfterAliasApproved.mockResolvedValueOnce({
+        relocated: 1,
+        skipped: 0,
+      });
+      prisma.webhardFolder.findFirst.mockResolvedValueOnce({
+        id: 'external-root-id',
+        name: sensitiveFolderName,
+        path: `/외부웹하드/${sensitiveFolderName}`,
+        parentId: 'external-parent-id',
+      });
+      contactFolderSync.migrateExternalFolderTreeToCompany.mockResolvedValueOnce({
+        movedFolders: 2,
+        movedFiles: 3,
+        deletedExternalFolders: 0,
+        conflicts: [
+          { originalName: sensitiveConflictName, renamedTo: `${sensitiveConflictName}(1)` },
+        ],
+      });
+      const logSpy = spyOnFolderAliasLoggerLog(service);
+
+      await service.approve(1, { cascadeBackfill: true }, 'admin');
+
+      const serializedCalls = JSON.stringify(logSpy.mock.calls);
+      expect(serializedCalls).not.toContain(sensitiveFolderName);
+      expect(serializedCalls).not.toContain(sensitiveConflictName);
+
+      const approvedCall = logSpy.mock.calls.find(
+        ([, message]) => message === 'folder alias approved'
+      );
+      expect(approvedCall).toBeDefined();
+      const [payload] = approvedCall ?? [];
+      expect(payload).toMatchObject({
+        action: 'folder_alias_approved',
+        status: 'success',
+        aliasId: 1,
+        companyId: 10,
+        approvedBy: 'admin',
+        cascadeBackfill: true,
+        backfill: {
+          relocated: 1,
+          skipped: 0,
+          movedFolders: 2,
+          movedFiles: 3,
+          deletedExternalFolders: 0,
+          conflictCount: 1,
+          externalRootFound: true,
+        },
+      });
+      expect(payload).not.toHaveProperty('folderName');
+      const backfill = (payload as { backfill?: unknown }).backfill;
+      expect(backfill).not.toHaveProperty('conflicts');
     });
 
     it('B2: 동일 folderName 의 다른 pending → 자동 rejected', async () => {
@@ -340,6 +421,49 @@ describe('FolderAliasService', () => {
         approvedBy: 'admin',
         approvedAt: fixedNow,
       });
+
+      jest.useRealTimers();
+    });
+
+    it('createApprovedAlias 로그는 folderName 없이 수동 승인 식별자만 남긴다', async () => {
+      const sensitiveFolderName = '대성목형(2265-1295)';
+      const fixedNow = new Date('2026-04-27T10:00:00Z');
+      jest.useFakeTimers().setSystemTime(fixedNow);
+
+      prisma.company.findUnique.mockResolvedValueOnce({ id: 10, companyName: '대성목형' });
+      prisma.companyFolderAlias.upsert.mockResolvedValueOnce({
+        id: 1,
+        folderName: sensitiveFolderName,
+        companyId: 10,
+        status: 'approved',
+        approvedBy: 'admin',
+        approvedAt: fixedNow,
+      });
+      prisma.companyFolderAlias.updateMany.mockResolvedValueOnce({ count: 0 });
+      const logSpy = spyOnFolderAliasLoggerLog(service);
+
+      await service.createApprovedAlias(
+        { folderName: sensitiveFolderName, companyId: 10, cascadeBackfill: false },
+        'admin'
+      );
+
+      const serializedCalls = JSON.stringify(logSpy.mock.calls);
+      expect(serializedCalls).not.toContain(sensitiveFolderName);
+
+      const createdCall = logSpy.mock.calls.find(
+        ([, message]) => message === 'folder alias created (manual)'
+      );
+      expect(createdCall).toBeDefined();
+      const [payload] = createdCall ?? [];
+      expect(payload).toMatchObject({
+        action: 'folder_alias_created_manual',
+        status: 'success',
+        aliasId: 1,
+        companyId: 10,
+        approvedBy: 'admin',
+        cascadeBackfill: false,
+      });
+      expect(payload).not.toHaveProperty('folderName');
 
       jest.useRealTimers();
     });

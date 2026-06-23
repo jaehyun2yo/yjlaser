@@ -43,6 +43,45 @@ export interface OrderEvent {
   metadata?: Record<string, unknown>;
 }
 
+export type OrderTimelineSourceModel = 'order_event' | 'job_event';
+
+export interface OrderTimelineEvent {
+  timeline_id: string;
+  source_model: OrderTimelineSourceModel;
+  event_id: string;
+  order_id: string;
+  event_type: string;
+  source: string;
+  source_worker: string | null;
+  occurred_at: string;
+  received_at: string | null;
+  created_at: string;
+  result: string | null;
+  state_apply_status: string | null;
+  failure_id: string | null;
+  order_event_id: string | null;
+  job_id: string | null;
+  from_status: string | null;
+  to_status: string | null;
+  actor_name: string | null;
+  message: string | null;
+  processed_count: number | null;
+  duration_ms: number | null;
+}
+
+export interface OrderTimelineResponse {
+  order_id: string;
+  contact_id: number | null;
+  company_name: string;
+  production_status: string | null;
+  confirmation_status: string | null;
+  classification_status: string | null;
+  nesting_status: string | null;
+  billing_status: string | null;
+  events: OrderTimelineEvent[];
+  failures: unknown[];
+}
+
 // 주문 필터
 export interface OrderFilters {
   status?: string;
@@ -255,4 +294,69 @@ export interface PipelineBacklogItem {
   folderId?: string;
   context: Record<string, unknown>;
   createdAt: string;
+}
+
+export interface OperationFailureLastEvent {
+  event_id: string;
+  event_type: string;
+  source_worker: string;
+  occurred_at: string;
+  result: string;
+  state_apply_status: string;
+}
+
+export interface OperationFailure {
+  failure_id: string;
+  job_id: string | null;
+  order_id: string | null;
+  source_worker: string;
+  event_type: string | null;
+  error_code: string;
+  message: string | null;
+  retryable: boolean;
+  retry_count: number;
+  resolved_at: string | null;
+  last_event_id: string | null;
+  created_at: string;
+  updated_at: string;
+  last_event: OperationFailureLastEvent | null;
+}
+
+export interface OperationFailuresResponse {
+  items: OperationFailure[];
+  next_cursor: string | null;
+  has_more: boolean;
+  limit: number;
+}
+
+export type OperationHeartbeatStatus = 'online' | 'late' | 'offline';
+
+export interface OperationHeartbeat {
+  heartbeat_id: string;
+  program_type: string;
+  instance_name: string;
+  status: OperationHeartbeatStatus;
+  stored_status: string;
+  version: string | null;
+  hostname: string | null;
+  last_seen_at: string;
+  lag_seconds: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OperationHeartbeatSummary {
+  total: number;
+  online: number;
+  late: number;
+  offline: number;
+}
+
+export interface OperationHeartbeatsResponse {
+  items: OperationHeartbeat[];
+  summary: OperationHeartbeatSummary;
+  threshold_seconds: {
+    late: number;
+    offline: number;
+  };
 }

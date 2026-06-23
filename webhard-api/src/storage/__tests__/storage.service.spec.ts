@@ -13,8 +13,14 @@
  */
 
 import 'reflect-metadata';
+import { Logger } from '@nestjs/common';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SessionUser } from '../../auth/auth.service';
 import { DEFAULT_STORAGE_LIMIT, ADMIN_STORAGE_LIMIT } from '../dto/storage.dto';
+
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: jest.fn(),
+}));
 
 // ─── Mock 타입 정의 ──────────────────────────────────────────
 interface MockPrisma {
@@ -78,9 +84,81 @@ function makeConfigService() {
   };
 }
 
+const mockedGetSignedUrl = getSignedUrl as jest.MockedFunction<typeof getSignedUrl>;
+
 // StorageService를 동적으로 import하기 위한 helper
 // S3Client 생성 등 외부 의존성이 있어서 직접 new 대신 private 메서드 테스트 불가
 // 대신 서비스의 공개 메서드를 테스트합니다.
+
+function serializeLoggerCalls(spy: jest.SpyInstance): string {
+  return spy.mock.calls
+    .map((args: unknown[]) =>
+      args
+        .map((arg: unknown) => {
+          if (arg instanceof Error) {
+            return `${arg.name} ${arg.message} ${arg.stack ?? ''}`;
+          }
+          return typeof arg === 'string' ? arg : JSON.stringify(arg);
+        })
+        .join(' ')
+    )
+    .join('\n');
+}
+
+// ──────────────────────────────────────────────────────────────
+// Presigned URL failure logs — raw URL/token/path 차단
+// ──────────────────────────────────────────────────────────────
+describe('StorageService presigned URL failure logging', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let service: any;
+  let prisma: MockPrisma;
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    const configService = makeConfigService();
+    const { StorageService } = await import('../storage.service');
+    const mockCacheManager = { get: async () => null, set: async () => {}, del: async () => {} };
+    service = new StorageService(
+      configService as never,
+      prisma as never,
+      mockCacheManager as never
+    );
+    errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    mockedGetSignedUrl.mockReset();
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  it('upload/download/multipart presigned URL 생성 실패 로그에 raw URL/token/local path를 남기지 않는다', async () => {
+    const rawError = new Error(
+      'url=https://storage.example.com/file.dxf?X-Amz-Signature=raw-signature token=raw-token path=C:\\Users\\jaehy\\secret-file.dxf'
+    );
+    mockedGetSignedUrl.mockRejectedValue(rawError);
+
+    await expect(
+      service.getUploadPresignedUrl('webhard/company-1/raw-file.dxf', 'application/dxf')
+    ).rejects.toThrow('Failed to generate upload URL');
+    await expect(
+      service.getDownloadPresignedUrl('webhard/company-1/raw-file.dxf', 300, 'raw-file.dxf')
+    ).rejects.toThrow('Failed to generate download URL');
+    await expect(
+      service.getMultipartPresignedUrl('webhard/company-1/raw-file.dxf', 'upload-id-1', 1)
+    ).rejects.toThrow('Failed to generate part upload URL');
+
+    const serialized = serializeLoggerCalls(errorSpy);
+    expect(serialized).toContain('presigned_url_generation_failed');
+    expect(serialized).toContain('operation=upload');
+    expect(serialized).toContain('operation=download');
+    expect(serialized).toContain('operation=multipart');
+    expect(serialized).not.toContain('raw-signature');
+    expect(serialized).not.toContain('raw-token');
+    expect(serialized).not.toContain('C:\\Users\\jaehy');
+    expect(serialized).not.toContain('webhard/company-1/raw-file.dxf');
+  });
+});
 
 // ──────────────────────────────────────────────────────────────
 // Drive upload proof — confirm-time Drive GET 제거용 서명 검증

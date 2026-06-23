@@ -12,7 +12,6 @@ const ASSETS_TO_CACHE = ['/erp', '/erp/login', '/erp/tasks', '/erp-manifest.json
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[ERP SW] Caching app shell');
       return cache.addAll(ASSETS_TO_CACHE);
     })
   );
@@ -27,7 +26,6 @@ self.addEventListener('activate', (event) => {
         cacheNames
           .filter((cacheName) => cacheName !== CACHE_NAME)
           .map((cacheName) => {
-            console.log('[ERP SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           })
       );
@@ -67,10 +65,8 @@ async function queueOfflineRequest(requestData) {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
-
-    console.log('[ERP SW] Request queued for offline sync');
-  } catch (error) {
-    console.error('[ERP SW] Failed to queue offline request:', error);
+  } catch {
+    // Offline queue storage is best-effort; the foreground request still receives the offline response.
   }
 }
 
@@ -85,8 +81,6 @@ async function processOfflineQueue() {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
-
-    console.log(`[ERP SW] Processing ${allRequests.length} offline requests`);
 
     for (const item of allRequests) {
       try {
@@ -105,10 +99,9 @@ async function processOfflineQueue() {
             request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
           });
-          console.log('[ERP SW] Offline request synced:', item.id);
         }
-      } catch (error) {
-        console.error('[ERP SW] Failed to sync offline request:', item.id, error);
+      } catch {
+        // Keep failed requests in the queue for the next sync attempt.
       }
     }
 
@@ -120,8 +113,8 @@ async function processOfflineQueue() {
         count: allRequests.length,
       });
     });
-  } catch (error) {
-    console.error('[ERP SW] Failed to process offline queue:', error);
+  } catch {
+    // Offline queue processing is best-effort in the service worker.
   }
 }
 
@@ -191,7 +184,6 @@ self.addEventListener('fetch', (event) => {
           // Fallback to cached API response
           return caches.match(event.request).then((cachedResponse) => {
             if (cachedResponse) {
-              console.log('[ERP SW] Serving cached API response');
               return cachedResponse;
             }
             // Return offline error

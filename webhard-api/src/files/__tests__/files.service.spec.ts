@@ -258,6 +258,51 @@ const integrationUser: SessionUser = {
   permissions: [],
 };
 
+describe('FilesService.findExistingUploadMetadata', () => {
+  it('driveFileId가 있으면 driveFileId 기준으로 기존 파일 metadata를 조회해 DTO로 반환한다', async () => {
+    const { service, prisma } = makeService();
+    prisma.webhardFile.findFirst.mockResolvedValueOnce(
+      makeFile({
+        id: 'file-existing',
+        storageProvider: StorageProvider.GOOGLE_DRIVE,
+        driveFileId: 'drive-file-1',
+        path: 'folder-uuid-1/sanitized-name.dxf',
+        company: { companyName: '대성목형', managerName: '홍길동' },
+      })
+    );
+
+    const result = await service.findExistingUploadMetadata({
+      driveFileId: 'drive-file-1',
+      path: 'external/path/sanitized-name.dxf',
+    });
+
+    expect(prisma.webhardFile.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { driveFileId: 'drive-file-1' },
+        orderBy: { createdAt: 'asc' },
+      })
+    );
+    expect(result).toMatchObject({
+      id: 'file-existing',
+      path: 'folder-uuid-1/sanitized-name.dxf',
+      storage_provider: 'google_drive',
+      companies: { company_name: '대성목형', manager_name: '홍길동' },
+    });
+  });
+
+  it('driveFileId가 없으면 path만으로 조회한다', async () => {
+    const { service, prisma } = makeService();
+
+    await service.findExistingUploadMetadata({ path: 'legacy/path.dxf' });
+
+    expect(prisma.webhardFile.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { path: 'legacy/path.dxf' },
+      })
+    );
+  });
+});
+
 describe('FilesService DB-only fast path', () => {
   it('getFiles 목록 조회는 Google Drive mutation/download API를 호출하지 않는다', async () => {
     const { service, prisma, storage } = makeService();
@@ -1329,6 +1374,158 @@ describe('FilesService.getUploadPresignedUrl — companyId 상속 (task 25 F6)',
     );
 
     expect(storage.generateStoragePath).toHaveBeenCalledWith(42, 'folder-uuid-1', 'a.dxf');
+  });
+});
+
+describe('FilesService.getUploadPresignedUrl logging', () => {
+  function collectLogText(spy: jest.SpyInstance): string {
+    return spy.mock.calls.map(([message]) => String(message)).join('\n');
+  }
+
+  it('R2 upload presigned 로그에 raw filename과 upload URL을 남기지 않는다', async () => {
+    const { service } = makeService();
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
+
+    await service.getUploadPresignedUrl(
+      {
+        filename: '거래처-도면-raw-name.dxf',
+        contentType: 'application/dxf',
+        size: 2048,
+      },
+      adminUser
+    );
+
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('upload presigned issued');
+    expect(logText).toContain('provider=r2');
+    expect(logText).toContain('extension=dxf');
+    expect(logText).toContain('sizeBytes=2048');
+    expect(logText).not.toContain('거래처-도면-raw-name.dxf');
+    expect(logText).not.toContain('https://r2/upload');
+  });
+
+  it('Google Drive upload session 로그에 raw filename과 upload URL을 남기지 않는다', async () => {
+    const { service, prisma } = makeService();
+    (prisma.webhardFolder.findUnique as jest.Mock).mockResolvedValue(
+      makeFolder({
+        id: 'drive-folder-1',
+        companyId: null,
+        storageProvider: StorageProvider.GOOGLE_DRIVE,
+        driveFolderId: 'drive-parent-folder-1',
+      })
+    );
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
+
+    await service.getUploadPresignedUrl(
+      {
+        folderId: 'drive-folder-1',
+        filename: '거래처-도면-raw-name.ai',
+        contentType: 'application/postscript',
+        size: 4096,
+      },
+      adminUser
+    );
+
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('upload presigned issued');
+    expect(logText).toContain('provider=google_drive');
+    expect(logText).toContain('extension=ai');
+    expect(logText).toContain('sizeBytes=4096');
+    expect(logText).not.toContain('거래처-도면-raw-name.ai');
+    expect(logText).not.toContain('https://drive-upload/');
+  });
+});
+
+describe('FilesService.confirmUpload logging', () => {
+  function collectLogText(spy: jest.SpyInstance): string {
+    return spy.mock.calls.map(([message]) => String(message)).join('\n');
+  }
+
+  it('R2 confirmUpload 로그에 raw filename과 storage key를 남기지 않는다', async () => {
+    const { service, prisma } = makeService();
+    const rawFilename = '거래처-확정-raw-name.dxf';
+    const rawKey = `webhard/company-42/folder-uuid-1/${rawFilename}`;
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
+    (prisma.webhardFile.create as jest.Mock).mockResolvedValueOnce(
+      makeFile({
+        id: 'file-r2-confirm',
+        name: rawFilename,
+        originalName: rawFilename,
+        path: rawKey,
+        folderId: 'folder-uuid-1',
+        companyId: 42,
+      })
+    );
+
+    await service.confirmUpload(
+      {
+        key: rawKey,
+        name: rawFilename,
+        originalName: rawFilename,
+        size: 2048,
+        mimeType: 'application/dxf',
+        folderId: 'folder-uuid-1',
+      } as never,
+      adminUser as never
+    );
+
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('webhard file uploaded');
+    expect(logText).toContain('provider=r2');
+    expect(logText).toContain('extension=dxf');
+    expect(logText).toContain('sizeBytes=2048');
+    expect(logText).not.toContain(rawFilename);
+    expect(logText).not.toContain(rawKey);
+  });
+
+  it('Google Drive confirmUpload 로그에 raw filename과 drive file id를 남기지 않는다', async () => {
+    const { service, prisma } = makeService();
+    const rawFilename = '거래처-드라이브-raw-name.ai';
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
+    (prisma.webhardFolder.findUnique as jest.Mock)
+      .mockResolvedValueOnce(makeFolder({ id: 'drive-folder-1', companyId: null }))
+      .mockResolvedValueOnce(makeFolder({ id: 'drive-folder-1', companyId: null }))
+      .mockResolvedValueOnce(
+        makeFolder({
+          id: 'drive-folder-1',
+          companyId: null,
+          storageProvider: StorageProvider.GOOGLE_DRIVE,
+          driveFolderId: 'drive-parent-folder-1',
+        })
+      );
+    (prisma.webhardFile.create as jest.Mock).mockResolvedValueOnce(
+      makeFile({
+        id: 'file-drive-confirm',
+        name: rawFilename,
+        originalName: rawFilename,
+        folderId: 'drive-folder-1',
+        companyId: null,
+        storageProvider: StorageProvider.GOOGLE_DRIVE,
+        driveFileId: 'drive-file-secret-1',
+      })
+    );
+
+    await service.confirmUpload(
+      {
+        key: 'unused-drive-key',
+        name: rawFilename,
+        originalName: rawFilename,
+        size: 4096,
+        mimeType: 'application/postscript',
+        folderId: 'drive-folder-1',
+        storageProvider: 'google_drive',
+        driveFileId: 'drive-file-secret-1',
+      } as never,
+      adminUser as never
+    );
+
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('webhard file uploaded');
+    expect(logText).toContain('provider=google_drive');
+    expect(logText).toContain('extension=ai');
+    expect(logText).toContain('sizeBytes=4096');
+    expect(logText).not.toContain(rawFilename);
+    expect(logText).not.toContain('drive-file-secret-1');
   });
 });
 
@@ -2504,6 +2701,10 @@ describe('FilesService.batchConfirmUpload routing consistency (task 28)', () => 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringMatching(/batchConfirmUpload routing failed/)
     );
+    const warningText = warnSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(warningText).toContain('extension=dxf');
+    expect(warningText).not.toContain('webhard/file1.dxf');
+    expect(warningText).not.toContain('file1.dxf');
   });
 
   it('BC3: redirected batch file 의 routed folder metadata 를 AutoContact 훅에 전달', async () => {
@@ -2581,9 +2782,62 @@ describe('FilesService.batchConfirmUpload routing consistency (task 28)', () => 
   });
 });
 
+describe('FilesService.triggerAutoContact logging', () => {
+  function collectLogText(spy: jest.SpyInstance): string {
+    return spy.mock.calls.map(([message]) => String(message)).join('\n');
+  }
+
+  it('auto contact dispatch 로그에 raw filename, folderPath, companyName, fileUrl을 남기지 않는다', async () => {
+    const { service, prisma, autoContact } = makeService();
+    const rawFilename = '거래처-자동문의-raw-name.dxf';
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
+    prisma.webhardFolder.findUnique.mockResolvedValueOnce({
+      id: 'folder-single',
+      name: '민감거래처',
+      path: '/민감거래처/칼선의뢰',
+      companyId: 7,
+      parentId: null,
+    });
+    prisma.company.findUnique.mockResolvedValueOnce({ companyName: '민감거래처' });
+
+    await (
+      service as unknown as {
+        triggerAutoContact: (params: {
+          folderId: string;
+          fileName: string;
+          fileUrl: string;
+          companyId: string | null;
+        }) => Promise<void>;
+      }
+    ).triggerAutoContact({
+      folderId: 'folder-single',
+      fileName: rawFilename,
+      fileUrl: 'storage://r2/raw-sensitive-key',
+      companyId: '7',
+    });
+
+    expect(autoContact.detectAndCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileName: rawFilename,
+        fileUrl: 'storage://r2/raw-sensitive-key',
+      })
+    );
+    const logText = collectLogText(logSpy);
+    expect(logText).toContain('auto contact dispatched');
+    expect(logText).toContain('extension=dxf');
+    expect(logText).toContain('folderId=folder-single');
+    expect(logText).toContain('companyId=7');
+    expect(logText).not.toContain(rawFilename);
+    expect(logText).not.toContain('/민감거래처/칼선의뢰');
+    expect(logText).not.toContain('민감거래처');
+    expect(logText).not.toContain('storage://r2/raw-sensitive-key');
+  });
+});
+
 describe('FilesService.batchTriggerAutoContact — 외부웹하드 자동문의 생성 최적화', () => {
   it('서로 다른 파일의 자동문의 생성을 제한 병렬로 시작한다', async () => {
     const { service, prisma, autoContact } = makeService();
+    const logSpy = jest.spyOn(service['logger'], 'log').mockImplementation();
     prisma.company.findMany.mockResolvedValueOnce([{ id: 7, companyName: '동기화업체' }]);
 
     let releaseFirst: () => void = () => undefined;
@@ -2662,5 +2916,16 @@ describe('FilesService.batchTriggerAutoContact — 외부웹하드 자동문의 
 
     releaseFirst();
     await promise;
+
+    const logText = logSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(logText).toContain('auto contact batch dispatched');
+    expect(logText).toContain('extension=dxf');
+    expect(logText).toContain('folderId=folder-sync');
+    expect(logText).toContain('companyId=7');
+    expect(logText).not.toContain('a.dxf');
+    expect(logText).not.toContain('b.dxf');
+    expect(logText).not.toContain('c.dxf');
+    expect(logText).not.toContain('/동기화업체/칼선의뢰');
+    expect(logText).not.toContain('동기화업체');
   });
 });
