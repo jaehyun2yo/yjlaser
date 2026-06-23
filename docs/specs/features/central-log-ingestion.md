@@ -1,17 +1,27 @@
 # Central Log Ingestion API Shell
 
-Status: implemented API/auth shell, no production persistence
-Date: 2026-06-22
+Status: implemented API/auth shell and Prisma persistence migration
+Date: 2026-06-23
 
 ## Scope
 
 `webhard-api` exposes `POST /api/v1/integration/log-events` as the first shell for
 YJLaser-wide structured log ingestion.
 
-This phase intentionally does not add a production database table, migration,
-production secret, or deployment setting. It uses an in-memory repository and
-an empty default key store, so production acceptance still requires a later
-explicit key/config and persistence task.
+This phase adds a `log_events` Prisma model, migration, and database-backed
+repository. Runtime behavior is:
+
+- `NODE_ENV=test`: in-memory repository by default
+- `LOG_EVENT_PERSISTENCE=memory`: force in-memory repository
+- `LOG_EVENT_PERSISTENCE=database` or unset production runtime: Prisma
+  repository
+
+The Docker start command already runs `npx prisma migrate deploy` before
+starting the NestJS app, so production deployment applies the table before the
+database repository is used. Production acceptance still requires
+`LOG_INGESTION_CLIENT_KEYS_JSON` and a stable `LOG_IDENTIFIER_HASH_SECRET` or
+`LOG_HASH_SECRET` value in the secret manager. Do not write those values to git,
+docs, chat, or logs.
 
 ## Authentication
 
@@ -115,12 +125,16 @@ CSRF guard skips only this exact route and delegates missing or invalid
 returns `401` for unauthenticated ingestion attempts. The same headers do not
 bypass CSRF on any other route.
 
-## Persistence Phase Boundary
+## Persistence
 
-Current storage is in-memory:
+Current production storage is Prisma-backed when the deployed process is not in
+test mode and `LOG_EVENT_PERSISTENCE` is not set to `memory`:
 
 - identical `(client_id, event_id, server-calculated event payload hash)` returns duplicate
 - same `(client_id, event_id)` with a different server-calculated event payload hash returns conflict
+- raw `client_id` and `key_id` are never stored; only HMAC short hashes are
+  stored
+- retention expiry is calculated by channel and stored in `retention_expires_at`
 
-Production persistence, secret rotation, Redis-backed nonce/rate limit, and
+Redis-backed nonce/rate limit, credential rotation, retention delete jobs, and
 operational dashboards remain separate follow-up tasks.

@@ -615,6 +615,51 @@ model SyncLog {
   @@map("sync_logs")
 }
 
+model LogEvent {
+  id                 String   @id @default(cuid())
+  schemaVersion      Int      @map("schema_version")
+  eventId            String   @map("event_id") @db.VarChar(100)
+  correlationId      String   @map("correlation_id") @db.VarChar(100)
+  occurredAt         DateTime @map("occurred_at")
+  receivedAt         DateTime @default(now()) @map("received_at")
+  level              String   @db.VarChar(20)
+  project            String   @db.VarChar(40)
+  component          String   @db.VarChar(80)
+  feature            String   @db.VarChar(80)
+  event              String   @db.VarChar(120)
+  action             String   @db.VarChar(80)
+  status             String   @db.VarChar(20)
+  channel            String   @db.VarChar(20)
+  durationMs         Int?     @map("duration_ms")
+  count              Int?
+  actorType          String?  @map("actor_type") @db.VarChar(40)
+  actorIdHash        String?  @map("actor_id_hash") @db.VarChar(128)
+  targetType         String?  @map("target_type") @db.VarChar(40)
+  targetIdHash       String?  @map("target_id_hash") @db.VarChar(128)
+  errorType          String?  @map("error_type") @db.VarChar(80)
+  errorCode          String?  @map("error_code") @db.VarChar(80)
+  errorMessage       String?  @map("error_message") @db.VarChar(240)
+  hashKeyVersion     String?  @map("hash_key_version") @db.VarChar(40)
+  spanId             String?  @map("span_id") @db.VarChar(40)
+  metadata           Json?
+  clientIdHash       String   @map("client_id_hash") @db.VarChar(64)
+  keyIdHash          String?  @map("key_id_hash") @db.VarChar(64)
+  payloadHash        String   @map("payload_hash") @db.VarChar(64)
+  retentionExpiresAt DateTime @map("retention_expires_at")
+  legalHold          Boolean  @default(false) @map("legal_hold")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([clientIdHash, eventId], map: "uq_log_events_client_event")
+  @@index([occurredAt], map: "idx_log_events_occurred_at")
+  @@index([receivedAt], map: "idx_log_events_received_at")
+  @@index([project, channel, level, occurredAt], map: "idx_log_events_project_channel_level_time")
+  @@index([correlationId], map: "idx_log_events_correlation_id")
+  @@index([eventId], map: "idx_log_events_event_id")
+  @@index([retentionExpiresAt, legalHold], map: "idx_log_events_retention")
+  @@map("log_events")
+}
+
 // ============================================================================
 // Supabase 전용 테이블 → Prisma 모델 등록 (15개)
 // ============================================================================

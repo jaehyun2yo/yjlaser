@@ -2,6 +2,25 @@
 
 ## 최신 상태 (가장 위가 최신)
 
+### 세션 #137 — 2026-06-23
+
+- **작업 내용**: 중앙 로그 수집 API DB 영속 저장소 추가
+- **반영 기준**:
+  - 운영 런타임은 `log_events` Prisma table에 저장한다.
+  - 테스트 환경과 `LOG_EVENT_PERSISTENCE=memory`는 기존 in-memory repository를 유지한다.
+  - 원본 client/key 값은 저장하지 않고 HMAC short hash만 저장한다.
+- **완료한 것**:
+  - `LogEvent` Prisma model과 `20260623093000_add_log_events_persistence` migration을 추가했다.
+  - `PrismaLogEventRepository`를 추가해 `client_id_hash + event_id` unique key와 `payload_hash`로 duplicate/conflict를 판정한다.
+  - channel별 retention expiry를 `retention_expires_at`에 저장한다.
+  - 중앙 로그 API/spec/features/changelog 문서를 DB persistence 기준으로 갱신했다.
+- **검증**:
+  - `cd webhard-api && pnpm test -- src/integration/log-events/repositories/prisma-log-event.repository.spec.ts --runInBand` 통과 — 3 passed
+  - `cd webhard-api && pnpm test -- src/integration/log-events --runInBand` 통과 — 31 passed
+  - `cd webhard-api && $env:DATABASE_URL='postgresql://user:pass@localhost:5432/yjlaser_validate'; $env:DIRECT_URL='postgresql://user:pass@localhost:5432/yjlaser_validate'; npx prisma validate` 통과
+  - `cd webhard-api && npx tsc --noEmit --pretty false` 통과
+- **관련 커밋**: 미커밋
+
 ### 세션 #136 — 2026-06-18
 
 - **작업 내용**: 포트폴리오 제외 신규 파일 업로드 Google Drive 전환
