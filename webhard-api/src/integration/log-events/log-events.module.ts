@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
+import { PrismaService } from '../../prisma/prisma.service';
 import {
   InMemoryLogIngestionKeyStore,
   InMemoryLogIngestionRateLimiter,
@@ -17,6 +19,7 @@ import {
   InMemoryLogEventRepository,
   LOG_EVENT_REPOSITORY,
 } from './repositories/log-event.repository';
+import { PrismaLogEventRepository } from './repositories/prisma-log-event.repository';
 import { LogEventRequestPipe } from './log-event-request.pipe';
 
 @Module({
@@ -28,7 +31,15 @@ import { LogEventRequestPipe } from './log-event-request.pipe';
     LogIngestionAuthVerifier,
     {
       provide: LOG_EVENT_REPOSITORY,
-      useClass: InMemoryLogEventRepository,
+      useFactory: (configService: ConfigService, moduleRef: ModuleRef) => {
+        if (shouldUseInMemoryLogEventRepository(configService)) {
+          return new InMemoryLogEventRepository();
+        }
+
+        const prisma = moduleRef.get(PrismaService, { strict: false });
+        return new PrismaLogEventRepository(prisma);
+      },
+      inject: [ConfigService, ModuleRef],
     },
     {
       provide: LOG_INGESTION_KEY_STORE,
@@ -58,3 +69,17 @@ import { LogEventRequestPipe } from './log-event-request.pipe';
   exports: [LogEventsService],
 })
 export class LogEventsModule {}
+
+function shouldUseInMemoryLogEventRepository(configService: ConfigService): boolean {
+  const configured = configService.get<string>('LOG_EVENT_PERSISTENCE')?.trim().toLowerCase();
+
+  if (configured === 'memory') {
+    return true;
+  }
+
+  if (configured === 'database' || configured === 'db') {
+    return false;
+  }
+
+  return process.env.NODE_ENV === 'test';
+}

@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### 2026-06-23 — central-log-db-persistence
+
+**Scope**: YJLaser 공통 중앙 로그 수집 API의 운영 DB 영속 저장소 추가.
+
+**수정**:
+
+- `log_events` Prisma model과 migration을 추가해 HMAC 인증된 로그 이벤트를 PostgreSQL에 저장할 수 있게 했다.
+- `LogEventRepository` 구현을 Prisma-backed repository로 확장하고, 테스트 환경과 `LOG_EVENT_PERSISTENCE=memory`에서는 기존 in-memory repository를 유지한다.
+- 중복 판정은 원본 client/key를 저장하지 않고 `client_id_hash + event_id` unique key와 server-calculated `payload_hash`로 처리한다.
+- channel별 retention 만료일을 `retention_expires_at`에 저장한다.
+
+**검증**:
+
+- `cd webhard-api && pnpm test -- src/integration/log-events/repositories/prisma-log-event.repository.spec.ts --runInBand` 통과: 3 passed.
+- `cd webhard-api && pnpm test -- src/integration/log-events --runInBand` 통과: 31 passed.
+- `cd webhard-api && $env:DATABASE_URL='postgresql://user:pass@localhost:5432/yjlaser_validate'; $env:DIRECT_URL='postgresql://user:pass@localhost:5432/yjlaser_validate'; npx prisma validate` 통과.
+- `cd webhard-api && npx tsc --noEmit --pretty false` 통과.
+
 ### 2026-06-18 — contact-drive-file-migration
 
 **Scope**: 포트폴리오를 제외한 문의/납품/업체 등록 파일의 신규 업로드를 Google Drive 저장소로 전환.
