@@ -282,6 +282,47 @@ describe('FoldersService.createFolder authorization', () => {
     );
   });
 
+  it('allows integration principals to create folders for external sync', async () => {
+    const { service, prisma, storageService } = buildService();
+    const integrationUser: SessionUser = {
+      userId: 'api:sync',
+      userType: 'integration',
+      companyId: null,
+    };
+    prisma.webhardFolder.findFirst.mockResolvedValueOnce(null);
+    prisma.webhardFolder.create.mockResolvedValueOnce({
+      id: 'external-sync-folder',
+      name: '외부웹하드',
+      parentId: null,
+      companyId: null,
+      path: '/외부웹하드',
+      createdAt: new Date('2026-06-22T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-22T00:00:00.000Z'),
+      deletedAt: null,
+      storageProvider: StorageProvider.GOOGLE_DRIVE,
+      driveFolderId: 'drive-folder-1',
+      company: null,
+    });
+
+    await service.createFolder({ name: '외부웹하드' }, integrationUser);
+
+    expect(storageService.createDriveFolder).toHaveBeenCalledWith({
+      name: '외부웹하드',
+      parentStorageFolderId: null,
+      storageFolderId: 'drive-folder-1',
+    });
+    expect(prisma.webhardFolder.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          name: '외부웹하드',
+          companyId: null,
+          storageProvider: StorageProvider.GOOGLE_DRIVE,
+          driveFolderId: 'drive-folder-1',
+        }),
+      })
+    );
+  });
+
   it('Drive folder creation failure prevents DB folder creation', async () => {
     const { service, prisma, storageService } = buildService();
     const adminUser: SessionUser = {

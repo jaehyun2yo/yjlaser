@@ -31,18 +31,19 @@ interface WebhardNavProps {
   isUploading: boolean;
   selectedFolderId: string | null;
   onFolderUploadComplete: () => void;
+  onCreateFolder?: () => void;
   /** 검색 결과에서 폴더 선택 시 직접 폴더 상태를 업데이트하는 콜백 */
   onFolderNavigate: (folderId: string | null) => void;
 }
 
 export function WebhardNav({
   userType,
-  userId,
   onMobileSidebarOpen,
   onFileUpload,
   isUploading,
   selectedFolderId,
   onFolderUploadComplete,
+  onCreateFolder,
   onFolderNavigate,
 }: WebhardNavProps) {
   const router = useRouter();
@@ -156,7 +157,7 @@ export function WebhardNav({
         }
       }
     },
-    [showError]
+    [showError, userType]
   );
 
   // 폴더 선택 완료 핸들러
@@ -189,7 +190,7 @@ export function WebhardNav({
               {/* 폴더 트리 열기 버튼 (모바일/태블릿) */}
               <button
                 onClick={onMobileSidebarOpen}
-                className={`lg:hidden p-1.5 text-[#ED6C00] hover:text-[#d15f00] ${BG_COLOR.hoverOrange} rounded-lg transition-colors`}
+                className={`lg:hidden p-1.5 ${TEXT_COLOR.brand} ${TEXT_COLOR.brandHover} ${BG_COLOR.hoverOrange} rounded-lg transition-colors`}
                 aria-label="폴더 열기"
               >
                 <FaFolder className="text-base" />
@@ -285,7 +286,7 @@ export function WebhardNav({
                       setIsSearchDropdownOpen(false);
                     }, 100);
                   }}
-                  className={`w-full px-4 py-1.5 text-sm ${BG_COLOR.muted} border ${BORDER_COLOR.default} rounded-lg ${TEXT_COLOR.primary} placeholder:text-gray-500 focus:outline-none focus:border-[#ED6C00] focus:ring-1 focus:ring-[#ED6C00] transition-colors`}
+                  className={`w-full px-4 py-1.5 text-sm ${BG_COLOR.muted} border ${BORDER_COLOR.default} rounded-lg ${TEXT_COLOR.primary} placeholder:text-gray-500 focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors`}
                 />
                 <SearchDropdown
                   query={searchQuery}
@@ -321,29 +322,45 @@ export function WebhardNav({
               {/* 관리 페이지 링크 - 업로드 버튼과 높이 통일 (h-8) */}
               <Link
                 href={managementLink}
-                className={`hidden sm:flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-semibold bg-transparent ${TEXT_COLOR.muted} border ${BORDER_COLOR.default} hover:border-[#ED6C00] hover:text-[#ED6C00] transition-colors`}
+                className={`hidden sm:flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-semibold bg-transparent ${TEXT_COLOR.muted} border ${BORDER_COLOR.default} hover:border-brand hover:text-brand transition-colors`}
               >
                 {managementLabel}
               </Link>
 
               {/* 폴더 업로드 버튼 (관리자만 표시) */}
               {userType === 'admin' && (
-                <button
-                  onClick={() => setIsFolderUploadOpen(true)}
-                  disabled={isUploading}
-                  className={`hidden sm:flex items-center gap-1 h-8 px-2.5 sm:px-3 bg-white border border-[#ED6C00] text-[#ED6C00] hover:bg-[#FFF2E6] disabled:bg-gray-100 disabled:border-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed rounded-md transition-colors text-xs font-medium`}
-                  title="폴더 통째로 업로드"
-                >
-                  <FaFolderPlus className="text-sm" />
-                  <span className="hidden lg:inline">폴더 업로드</span>
-                </button>
+                <>
+                  {onCreateFolder && (
+                    <button
+                      onClick={onCreateFolder}
+                      type="button"
+                      aria-label="새 폴더 생성"
+                      title="새 폴더 생성"
+                      className="hidden sm:flex items-center gap-1 h-8 px-2.5 sm:px-3 bg-brand text-white hover:bg-brand-hover rounded-md transition-colors text-xs font-medium"
+                    >
+                      <FaFolderPlus className="text-sm" />
+                      <span className="hidden lg:inline">새 폴더 생성</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsFolderUploadOpen(true)}
+                    type="button"
+                    disabled={isUploading}
+                    className="hidden sm:flex items-center gap-1 h-8 px-2.5 sm:px-3 bg-card border border-brand text-brand hover:bg-brand-light disabled:bg-muted disabled:border-border disabled:text-muted-foreground disabled:cursor-not-allowed rounded-md transition-colors text-xs font-medium"
+                    title="폴더 통째로 업로드"
+                  >
+                    <FaFolderPlus className="text-sm" />
+                    <span className="hidden lg:inline">폴더 업로드</span>
+                  </button>
+                </>
               )}
 
               {/* 파일 업로드 버튼 - 관리 페이지 버튼과 높이 통일 (h-8) */}
               <button
                 onClick={handleFileSelect}
+                type="button"
                 disabled={isUploading}
-                className="flex items-center gap-1 h-8 px-2.5 sm:px-3 bg-[#ED6C00] hover:bg-[#d15f00] disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-md transition-colors text-xs font-medium"
+                className="flex items-center gap-1 h-8 px-2.5 sm:px-3 bg-brand hover:bg-brand-hover disabled:bg-muted disabled:cursor-not-allowed text-white disabled:text-muted-foreground rounded-md transition-colors text-xs font-medium"
               >
                 {isUploading ? (
                   <>

@@ -193,34 +193,25 @@ describe('nestjsFetch', () => {
     });
   });
 
-  it('development에서 recovery key가 없으면 dev-only 기본 recovery header를 첨부한다', async () => {
+  it('development에서 recovery key가 없으면 NestJS로 무키 요청을 보내지 않는다', async () => {
     process.env.NODE_ENV = 'development';
     delete process.env.ACCOUNT_RECOVERY_API_KEY;
     mockedCookies.mockRejectedValue(new Error('cookies unavailable'));
 
-    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      const headers = new Headers(init?.headers);
-
-      return {
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'Content-Type': 'application/json' }),
-        json: async () => ({
-          recoveryKey: headers.get('X-Account-Recovery-Key'),
-        }),
-      } as Response;
-    });
+    const fetchMock = jest.fn();
     global.fetch = fetchMock;
 
-    const response = await nestjsFetch<{ recoveryKey: string | null }>('/auth/find-id/request', {
-      method: 'POST',
-      body: { companyName: '대성목형' },
-      useRecoveryApiKey: true,
-    });
+    const response = await nestjsFetch<{ success: boolean; message: string }>(
+      '/auth/find-id/request',
+      {
+        method: 'POST',
+        body: { companyName: '대성목형' },
+        useRecoveryApiKey: true,
+      }
+    );
 
-    expect(response.data).toEqual({
-      recoveryKey: 'yjlaser-dev-account-recovery-key',
-    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.status).toBe(503);
   });
 
   it('production에서 recovery key가 없으면 NestJS로 무키 요청을 보내지 않는다', async () => {

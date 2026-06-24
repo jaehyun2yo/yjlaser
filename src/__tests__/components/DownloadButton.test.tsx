@@ -50,7 +50,7 @@ describe('DownloadButton', () => {
         ok: true,
         json: async () => ({
           url: 'https://r2.example.test/file.ai',
-          fileName: '260519-F-004 - (주)신영피앤피 - 250530.ai',
+          fileName: '260519-F-004 - 테스트거래처 - 250530.ai',
         }),
       })
       .mockResolvedValueOnce({
@@ -70,7 +70,7 @@ describe('DownloadButton', () => {
     expect(global.fetch).toHaveBeenNthCalledWith(2, 'https://r2.example.test/file.ai');
     expect(clickedAnchors).toHaveLength(1);
     expect(clickedAnchors[0].href).toBe('blob:download-url');
-    expect(clickedAnchors[0].download).toBe('260519-F-004 - (주)신영피앤피 - 250530.ai');
+    expect(clickedAnchors[0].download).toBe('260519-F-004 - 테스트거래처 - 250530.ai');
 
     jest.runOnlyPendingTimers();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:download-url');

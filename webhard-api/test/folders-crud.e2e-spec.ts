@@ -5,8 +5,10 @@ import {
   getAdminSessionCookie,
   getCompanySessionCookie,
   getTestPrismaClient,
+  createTestCompany,
   createNestedFolders,
   cleanupTestData,
+  cleanupTestCompanies,
   randomUUID,
 } from './helpers/test-utils';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -32,6 +34,7 @@ describe('Folders CRUD API (e2e)', () => {
   describe('POST /folders - 폴더 생성', () => {
     afterEach(async () => {
       await cleanupTestData(prisma, 'crud-test-');
+      await cleanupTestCompanies(prisma);
     });
 
     it('관리자: 루트 레벨 폴더 생성', async () => {
@@ -66,16 +69,21 @@ describe('Folders CRUD API (e2e)', () => {
       expect(response.body.parent_id).toBe(parentId);
     });
 
-    // Skip: 테스트 DB에 company 레코드가 없어서 foreign key constraint 오류 발생
-    it.skip('업체: 폴더 생성 시 자동으로 companyId 설정', async () => {
-      const companyId = 1;
-      const response = await request(app.getHttpServer())
+    it('업체: 폴더 생성 API 직접 호출은 거부된다', async () => {
+      const company = await createTestCompany(prisma);
+      await request(app.getHttpServer())
         .post('/folders')
-        .set('Cookie', `admin-session=${getCompanySessionCookie(companyId)}`)
+        .set('Cookie', `admin-session=${getCompanySessionCookie(company.id)}`)
         .send({ name: 'crud-test-company-folder' })
-        .expect(201);
+        .expect(403);
 
-      expect(response.body.company_id).toBe(companyId);
+      const createdFolder = await prisma.webhardFolder.findFirst({
+        where: {
+          companyId: company.id,
+          name: 'crud-test-company-folder',
+        },
+      });
+      expect(createdFolder).toBeNull();
     });
 
     it('중복 이름 폴더 생성 시 409 반환', async () => {
@@ -206,9 +214,7 @@ describe('Folders CRUD API (e2e)', () => {
         .set('Cookie', `admin-session=${adminCookie}`)
         .expect(200);
 
-      const folderFound = response.body.folders.find(
-        (f: { id: string }) => f.id === folderId,
-      );
+      const folderFound = response.body.folders.find((f: { id: string }) => f.id === folderId);
       expect(folderFound).toBeUndefined();
     });
 

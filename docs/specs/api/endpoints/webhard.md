@@ -207,7 +207,7 @@ POST /files/multipart/initiate
 
 파일 다운로드 완료 표시.
 
-**Guard:** ApiKeyGuard + CompanyAccessGuard
+**Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용.
 
 **사용 프로그램:** 외부웹하드동기화프로그램
 
@@ -238,7 +238,7 @@ POST /files/multipart/initiate
 
 단건 업로드용 Presigned URL 생성.
 
-**Guard:** ApiKeyGuard + CompanyAccessGuard
+**Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용.
 
 **사용 프로그램:** 외부웹하드동기화프로그램
 
@@ -914,7 +914,7 @@ ZIP 압축 다운로드 (최대 100개).
 
 자식 폴더 목록 (지연 로딩용). 응답은 wrapper 없이 `FolderResponseDto[]` 배열이며 각 항목은 `has_children`을 포함할 수 있다.
 
-**Guard:** ApiKeyGuard + CompanyAccessGuard
+**Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용.
 
 **Query Parameters:**
 
@@ -1126,9 +1126,9 @@ ZIP 압축 다운로드 (최대 100개).
 
 폴더 생성.
 
-**Guard:** ApiKeyGuard + CompanyAccessGuard
+**Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용.
 
-**Policy:** admin session only. Company users receive 403 and should not see creation entry points in the web UI.
+**Policy:** admin session or external sync integration principal only. Company users receive 403 and should not see creation entry points in the web UI.
 
 If an admin creates a child folder under a company-owned parent and omits `companyId`, the backend inherits the parent folder `companyId`. This keeps admin-created company child folders visible to the company user after refresh.
 
@@ -1860,6 +1860,6 @@ interface DrawingRevisionResponse extends DrawingRevision {
 
 ## 외부 프로그램 연동 요약
 
-| 프로그램                 | 사용 엔드포인트                                                                                                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 외부웹하드동기화프로그램 | `POST /files/presigned-url`, `POST /files/confirm`, `POST /files/batch/upload`, `POST /files/batch/confirm`, `POST /files/mark-downloaded`, `POST /folders/initialize`, `POST /sync/state`, `GET /sync/state` |
+| 프로그램                 | 사용 엔드포인트                                                                                                                                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 외부웹하드동기화프로그램 | `GET /folders/children`, `POST /folders`, `POST /files/presigned-url`, `POST /files/confirm`, `POST /files/batch/upload`, `POST /files/batch/confirm`, `POST /files/mark-downloaded`, `POST /folders/initialize`, `POST /sync/state`, `GET /sync/state` |

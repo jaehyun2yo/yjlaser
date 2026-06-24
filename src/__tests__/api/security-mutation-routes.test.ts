@@ -49,6 +49,9 @@ import { getErpWorkerSession } from '@/lib/auth/erp-session';
 import { POST as sendPush } from '@/app/api/push/send/route';
 import { POST as subscribePush, DELETE as unsubscribePush } from '@/app/api/push/subscribe/route';
 import { POST as controlSync } from '@/app/api/sync/control/route';
+import { GET as getSyncEvents } from '@/app/api/sync/events/route';
+import { GET as getSyncStats } from '@/app/api/sync/stats/route';
+import { GET as getSyncStatus } from '@/app/api/sync/status/route';
 
 const mockedWebpush = webpush as jest.Mocked<typeof webpush>;
 const mockedServerGetPushSubscriptions = serverGetPushSubscriptions as jest.MockedFunction<
@@ -199,6 +202,24 @@ describe('security-sensitive Next.js mutation routes', () => {
     );
 
     expectAuthRejected(response);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects sync read proxies without an admin session before contacting the sync service', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue(
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const responses = await Promise.all([
+      getSyncStatus(),
+      getSyncStats(),
+      getSyncEvents(makeRequest('/api/sync/events?page=1')),
+    ]);
+
+    responses.forEach(expectAuthRejected);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { IntegrationNav } from '@/app/(admin)/admin/integration/_components';
 import {
   WorkerList,
@@ -18,6 +18,11 @@ export default function WorkersPage() {
   const [activeTab, setActiveTab] = useState<Tab>('workers');
   const [showModal, setShowModal] = useState(false);
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
+  const [isClientReady, setIsClientReady] = useState(false);
+
+  useEffect(() => {
+    setIsClientReady(true);
+  }, []);
 
   const handleAdd = () => {
     setEditingWorker(null);
@@ -54,8 +59,12 @@ export default function WorkersPage() {
         </div>
         {activeTab === 'workers' && (
           <button
+            type="button"
             onClick={handleAdd}
-            className="px-4 py-2 text-sm bg-[#ED6C00] text-white rounded-lg hover:bg-[#d15f00] transition flex items-center gap-2 self-start sm:self-auto"
+            disabled={!isClientReady}
+            data-testid="worker-add-button"
+            data-ready={isClientReady ? 'true' : 'false'}
+            className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:bg-brand-hover transition flex items-center gap-2 self-start sm:self-auto disabled:cursor-not-allowed disabled:opacity-50"
           >
             <UserPlus className="w-4 h-4" />
             작업자 추가
@@ -73,7 +82,7 @@ export default function WorkersPage() {
               onClick={() => setActiveTab(tab.key)}
               className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${
                 activeTab === tab.key
-                  ? 'border-[#ED6C00] text-[#ED6C00]'
+                  ? 'border-brand text-brand'
                   : `border-transparent ${TEXT_COLOR.muted} ${TEXT_COLOR.hoverPrimary}`
               }`}
             >

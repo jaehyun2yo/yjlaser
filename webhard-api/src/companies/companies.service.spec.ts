@@ -55,10 +55,13 @@ function makePrismaMock(company: Record<string, unknown> = makeCompany()) {
       ),
     },
     webhardFolder: {
+      findFirst: jest.fn(),
       findMany: jest.fn(),
+      create: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 2 }),
     },
     webhardFile: {
+      create: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 3 }),
     },
     notification: {
@@ -66,6 +69,60 @@ function makePrismaMock(company: Record<string, unknown> = makeCompany()) {
     },
   };
 }
+
+describe('CompaniesService business registration Drive upload', () => {
+  it('업체 관리자 전용 폴더 생성 시 folderKind 길이 제한을 넘지 않는다', async () => {
+    const company = makeCompany();
+    const prisma = makePrismaMock(company);
+    prisma.company.findUnique.mockResolvedValueOnce(company);
+    prisma.webhardFolder.findFirst
+      .mockResolvedValueOnce({
+        id: 'admin-root-folder',
+        driveFolderId: 'admin-root-drive-folder',
+      })
+      .mockResolvedValueOnce(null);
+    prisma.webhardFolder.create.mockResolvedValueOnce({
+      id: 'admin-company-folder',
+      driveFolderId: 'admin-company-drive-folder',
+    });
+    prisma.webhardFile.create.mockResolvedValueOnce({ id: 'business-file' });
+
+    const storageService = {
+      createDriveFolder: jest.fn().mockResolvedValue({
+        storageFolderId: 'admin-company-drive-folder',
+      }),
+      uploadDriveBuffer: jest.fn().mockResolvedValue({
+        storageFileId: 'business-drive-file',
+        mimeType: 'application/pdf',
+        size: 218,
+      }),
+    };
+
+    const service = new CompaniesService(prisma as never, undefined, storageService as never);
+
+    await service.uploadBusinessRegistrationToDrive(company.id, {
+      originalname: 'business-registration.pdf',
+      mimetype: 'application/pdf',
+      size: 218,
+      buffer: Buffer.from('pdf'),
+    });
+
+    expect(prisma.webhardFolder.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        folderKind: expect.stringMatching(/^.{1,20}$/),
+      }),
+      select: { id: true, driveFolderId: true },
+    });
+    expect(prisma.webhardFolder.create.mock.calls[0]?.[0].data.folderKind).toBe('admin_private_co');
+    expect(prisma.webhardFile.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        folderId: 'admin-company-folder',
+        storageProvider: StorageProvider.GOOGLE_DRIVE,
+        driveFileId: 'business-drive-file',
+      }),
+    });
+  });
+});
 
 describe('CompaniesService notifications', () => {
   it('업체 등록 후 승인 대기 상태이면 관리자 알림에 승인 필요로 표시한다', async () => {

@@ -1,39 +1,42 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import {
+  cleanupTestCompanies,
+  cleanupTestData,
+  createNestedFolders,
+  createTestCompany,
+  createTestFiles,
   createTestApp,
   getAdminSessionCookie,
   getCompanySessionCookie,
+  getTestPrismaClient,
   randomUUID,
 } from './helpers/test-utils';
+import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Mark Downloaded API (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
 
   beforeAll(async () => {
     app = await createTestApp();
+    prisma = await getTestPrismaClient();
   });
 
   afterAll(async () => {
+    await cleanupTestData(prisma);
+    await cleanupTestCompanies(prisma);
     await app.close();
+  });
+
+  afterEach(async () => {
+    await cleanupTestData(prisma);
+    await cleanupTestCompanies(prisma);
   });
 
   describe('POST /files/mark-downloaded', () => {
     it('관리자: 특정 파일들을 다운로드 완료로 표시', async () => {
-      // 먼저 새 파일 목록 조회
-      const newFilesResponse = await request(app.getHttpServer())
-        .get('/files/new')
-        .set('Cookie', `admin-session=${getAdminSessionCookie()}`)
-        .expect(200);
-
-      if (newFilesResponse.body.files.length === 0) {
-        console.log('No new files to test');
-        return;
-      }
-
-      const fileIds = newFilesResponse.body.files
-        .slice(0, 2)
-        .map((f: { id: string }) => f.id);
+      const fileIds = await createTestFiles(prisma, 2);
 
       const response = await request(app.getHttpServer())
         .post('/files/mark-downloaded')
@@ -44,22 +47,12 @@ describe('Mark Downloaded API (e2e)', () => {
       expect(response.body).toHaveProperty('success');
       expect(response.body).toHaveProperty('updatedCount');
       expect(response.body.success).toBe(true);
-      expect(response.body.updatedCount).toBeLessThanOrEqual(fileIds.length);
+      expect(response.body.updatedCount).toBe(fileIds.length);
     });
 
     it('관리자: 폴더 내 모든 파일을 다운로드 완료로 표시', async () => {
-      // 먼저 폴더 목록 조회
-      const foldersResponse = await request(app.getHttpServer())
-        .get('/folders')
-        .set('Cookie', `admin-session=${getAdminSessionCookie()}`)
-        .expect(200);
-
-      if (foldersResponse.body.folders.length === 0) {
-        console.log('No folders to test');
-        return;
-      }
-
-      const folderId = foldersResponse.body.folders[0].id;
+      const [folderId] = await createNestedFolders(prisma, 1);
+      await createTestFiles(prisma, 2, folderId);
 
       const response = await request(app.getHttpServer())
         .post('/files/mark-downloaded')
@@ -70,9 +63,12 @@ describe('Mark Downloaded API (e2e)', () => {
       expect(response.body).toHaveProperty('success');
       expect(response.body).toHaveProperty('updatedCount');
       expect(response.body.success).toBe(true);
+      expect(response.body.updatedCount).toBe(2);
     });
 
     it('관리자: 전체 파일을 다운로드 완료로 표시', async () => {
+      await createTestFiles(prisma, 2);
+
       const response = await request(app.getHttpServer())
         .post('/files/mark-downloaded')
         .set('Cookie', `admin-session=${getAdminSessionCookie()}`)
@@ -82,33 +78,21 @@ describe('Mark Downloaded API (e2e)', () => {
       expect(response.body).toHaveProperty('success');
       expect(response.body).toHaveProperty('updatedCount');
       expect(response.body.success).toBe(true);
+      expect(response.body.updatedCount).toBeGreaterThanOrEqual(2);
     });
 
     it('업체: 자신의 파일만 다운로드 완료로 표시 가능', async () => {
-      const companyId = 1;
-
-      // 먼저 새 파일 목록 조회
-      const newFilesResponse = await request(app.getHttpServer())
-        .get('/files/new')
-        .set('Cookie', `admin-session=${getCompanySessionCookie(companyId)}`)
-        .expect(200);
-
-      if (newFilesResponse.body.files.length === 0) {
-        console.log('No new files to test');
-        return;
-      }
-
-      const fileIds = newFilesResponse.body.files
-        .slice(0, 2)
-        .map((f: { id: string }) => f.id);
+      const company = await createTestCompany(prisma);
+      const fileIds = await createTestFiles(prisma, 2, null, company.id);
 
       const response = await request(app.getHttpServer())
         .post('/files/mark-downloaded')
-        .set('Cookie', `admin-session=${getCompanySessionCookie(companyId)}`)
+        .set('Cookie', `admin-session=${getCompanySessionCookie(company.id)}`)
         .send({ fileIds })
         .expect(201);
 
       expect(response.body.success).toBe(true);
+      expect(response.body.updatedCount).toBe(2);
     });
 
     it('fileIds와 folderId 모두 없으면 400 반환 (markAll=false일 때)', async () => {

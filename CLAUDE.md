@@ -42,7 +42,7 @@ Monorepo: two apps sharing `.env.local` and one PostgreSQL database (Prisma ORM)
 - Tailwind CSS 4 via centralized constants (`@/lib/styles.ts`)
 - React Query (`queryKeys` factory) + Zustand
 - All DB access via NestJS API (`nestjs-server-client.ts`)
-- Cloudflare R2 storage, Sentry (prod), Inngest background jobs
+- Google Drive webhard storage, Cloudflare R2 portfolio/legacy storage, Sentry (prod), Inngest background jobs
 
 **NestJS backend** (`webhard-api/`) — Railway (Docker)
 
@@ -119,12 +119,13 @@ All env vars are in root `.env.local` (shared by Next.js and NestJS). NestJS loa
 
 Dev/Prod separation:
 
-- Dev: `.env.local` points to dev Supabase + `yjlaser-dev` R2 bucket
+- Dev: `.env.local` points to dev Supabase + development Google Drive storage + `yjlaser-dev` R2 bucket
 - Prod: Vercel/Railway dashboards have production values
 
 - `DATABASE_URL` — PostgreSQL via Supabase Pooler (Transaction mode, port 6543, pgbouncer)
 - `DIRECT_URL` — PostgreSQL direct connection (port 5432, for migrations only)
-- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_BASE_URL`, `R2_ENDPOINT` — R2 storage
+- `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_DRIVE_SHARED_DRIVE_ID` — Google Drive webhard storage
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_BASE_URL`, `R2_ENDPOINT` — R2 portfolio/legacy storage
 - `SESSION_SECRET` — cookie encryption
 - `USE_SECURE_COOKIES` — cookie security flag
 - `COOKIE_DOMAIN` — cookie domain

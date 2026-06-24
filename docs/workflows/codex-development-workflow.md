@@ -32,15 +32,45 @@ YJ Laser 프로젝트에서 Codex가 작업할 때 따르는 표준 흐름이다
 
 구현 전 아래 항목을 짧게 정리한다.
 
-| 항목      | 확인 내용                                    |
-| --------- | -------------------------------------------- |
-| 무엇      | 변경할 기능, 버그, 문서                      |
-| 왜        | 사용자 문제 또는 운영 리스크                 |
-| 어디      | `src/`, `webhard-api/`, `docs/`, DB, R2      |
-| 누구      | public, admin, company, worker, external API |
-| 완료 기준 | 테스트, 문서, 수동 확인 기준                 |
+| 항목      | 확인 내용                                                            |
+| --------- | -------------------------------------------------------------------- |
+| 무엇      | 변경할 기능, 버그, 문서                                              |
+| 왜        | 사용자 문제 또는 운영 리스크                                         |
+| 어디      | `src/`, `webhard-api/`, `docs/`, DB, Drive/R2                        |
+| 누구      | public, admin, company, worker, external API                         |
+| 테스트    | unit, integration/API, component, E2E UI, AI browser QA 중 적용 범위 |
+| 완료 기준 | 테스트, 문서, 브라우저 확인 기준                                     |
 
 여러 구현 선택지가 있으면 권장안을 먼저 제시하고, 보안·운영·테스트 비용의 차이를 설명한다.
+
+### 3.1 테스트 전략 게이트
+
+구현 전에 테스트 층을 먼저 고른다. 기본 원칙은 테스트 피라미드다.
+
+| 테스트 층       | YJ Laser에서 주로 검증할 것                                                               |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| Unit            | validation, pure helper, 권한 계산, query key/cache helper                                |
+| Integration/API | NestJS guard/service/controller, Prisma DB, `companyId` 소유권, Google Drive/R2 metadata  |
+| Component       | 폼 validation, 권한별 버튼 노출, React Query 상태 갱신, 오류 UI                           |
+| E2E UI          | 역할별 로그인, 웹하드 탐색, 업로드/다운로드, 대시보드 갱신, Worker 납품, responsive smoke |
+| AI browser QA   | 탐색 QA, 재현 절차 수집, 스크린샷, 실제 클릭/입력 흐름 확인                               |
+
+위험도가 높은 변경은 test-first로 진행한다. 새 테스트나 변경된 테스트가
+예상 이유로 실패하는 것을 먼저 확인하고, 그 다음 구현한다.
+
+test-first 우선 대상:
+
+- admin/company/worker/API-key 인증 경계
+- `companyId` ownership, external-webhard visibility filter
+- webhard folder/file 권한, Drive/R2 storage provider metadata
+- 파일 업로드 extension, MIME, size, path traversal, download permission
+- 버그 수정과 회귀 가능성이 높은 workflow 변경
+
+AI 브라우저 QA는 사람이 하던 탐색 QA를 줄이는 도구다. Codex Browser,
+GStack QA, 유사 브라우저 플러그인으로 실제 화면을 눌러볼 수 있지만,
+그 결과만으로 회귀 방지가 끝난 것은 아니다. 버그를 찾으면 재현 절차를
+남기고, 가장 낮은 의미 있는 테스트 층에 회귀 테스트를 추가한다. 브라우저
+상호작용 자체가 원인인 경우에만 Playwright E2E UI로 고정한다.
 
 ## 4. 구현
 
@@ -70,16 +100,24 @@ YJ Laser 프로젝트에서 Codex가 작업할 때 따르는 표준 흐름이다
 
 변경 범위별로 필요한 검증을 선택한다.
 
-| 변경 범위               | 기본 검증                                                   |
-| ----------------------- | ----------------------------------------------------------- |
-| 문서만 변경             | 링크/경로/명령 정확성 자체 검토                             |
-| Frontend 타입 또는 UI   | `npx tsc --noEmit`, 관련 Jest, 필요 시 브라우저 확인        |
-| Frontend API route      | `npx tsc --noEmit`, 관련 route test                         |
-| Backend service/API     | `cd webhard-api && npx tsc --noEmit`, 관련 Jest             |
-| Prisma schema/migration | `prisma generate`, migration status, rollback/recovery plan |
-| Webhard/upload/auth     | 관련 unit test + E2E 또는 수동 브라우저 확인                |
+| 변경 범위               | 기본 검증                                                                   |
+| ----------------------- | --------------------------------------------------------------------------- |
+| 문서만 변경             | 링크/경로/명령 정확성 자체 검토                                             |
+| Frontend 타입 또는 UI   | `npx tsc --noEmit`, 관련 Jest, 필요 시 브라우저 확인                        |
+| Frontend API route      | `npx tsc --noEmit`, 관련 route test                                         |
+| Backend service/API     | `cd webhard-api && npx tsc --noEmit`, 관련 Jest                             |
+| Prisma schema/migration | `prisma generate`, migration status, rollback/recovery plan                 |
+| Webhard/upload/auth     | 관련 unit/integration test + E2E UI 또는 AI browser QA                      |
+| UI E2E 흐름             | `pnpm test:e2e:ui -- --list`, 필요 시 `pnpm test:e2e:ui -- --reporter=line` |
 
 검증을 생략하면 완료로 표현하지 않는다. 생략 사유와 남은 위험을 함께 남긴다.
+
+브라우저 확인 기준:
+
+- AI browser QA는 탐색 결과, 재현 절차, 스크린샷, 발견 이슈를 남긴다.
+- Playwright E2E UI는 CI 또는 로컬에서 재실행 가능한 회귀 테스트로 남긴다.
+- E2E가 실패하면 실패를 숨기지 않고, 기능 결함인지 테스트 fixture/환경
+  문제인지 분리해 기록한다.
 
 ## 6. 문서 동기화
 

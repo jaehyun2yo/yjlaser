@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { requireAdmin } from '@/lib/auth/adminGuard';
 import https from 'https';
 
 function getS3() {
@@ -30,12 +31,18 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({ error: 'Not available' }, { status: 403 });
   }
 
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return auth.response ?? NextResponse.json({ error: 'Admin only' }, { status: 403 });
+  }
+
   try {
     const s3 = getS3();
     const bucket = process.env.R2_BUCKET_NAME as string;
-    // The exact key from R2
-    const key =
-      'webhard/1764220960385-rtx952c9-1107-7 신영 농업법인 주)도담 리본표지발이 속겉지(대) 목형   갱지 600-500  80.DXF';
+    const key = new URL(_request.url).searchParams.get('key')?.trim();
+    if (!key) {
+      return NextResponse.json({ error: 'key is required' }, { status: 400 });
+    }
 
     const command = new GetObjectCommand({
       Bucket: bucket,

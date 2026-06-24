@@ -17,7 +17,6 @@ export const nestjsLogger = logger.createLogger('NESTJS_CLIENT');
 const NESTJS_API_URL = process.env.NEXT_PUBLIC_WEBHARD_API_URL || 'http://localhost:4000';
 const API_PREFIX = '/api/v1';
 const API_KEY = process.env.MIGRATION_API_KEY || '';
-const DEVELOPMENT_ACCOUNT_RECOVERY_API_KEY = 'yjlaser-dev-account-recovery-key';
 const RECOVERY_API_KEY_MISSING_MESSAGE =
   '계정 복구 설정이 누락되었습니다. 관리자에게 문의해주세요.';
 const CSRF_COOKIE_NAME = 'csrf-token';
@@ -297,18 +296,5 @@ function getAccountRecoveryApiKey(): string {
     return configuredKey;
   }
 
-  if (process.env.NODE_ENV === 'development' && isLocalNestjsUrl(NESTJS_API_URL)) {
-    return DEVELOPMENT_ACCOUNT_RECOVERY_API_KEY;
-  }
-
   return '';
-}
-
-function isLocalNestjsUrl(value: string): boolean {
-  try {
-    const hostname = new URL(value).hostname.toLowerCase();
-    return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
-  } catch {
-    return false;
-  }
 }

@@ -111,6 +111,7 @@ playwright-*.log
 
 # SQL 스크립트
 *.sql
+!docs/security/*.sql
 !supabase-archived/**/*.sql
 !webhard-api/prisma/migrations/**/*.sql
 !webhard-api/scripts/*.sql

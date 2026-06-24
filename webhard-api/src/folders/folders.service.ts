@@ -852,7 +852,7 @@ export class FoldersService {
    * Create a new folder
    */
   async createFolder(dto: CreateFolderDto, user: SessionUser): Promise<FolderResponseDto> {
-    if (user.userType !== 'admin') {
+    if (user.userType !== 'admin' && user.userType !== 'integration') {
       throw new ForbiddenException('Only admin users can create folders');
     }
 

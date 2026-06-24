@@ -116,9 +116,9 @@ export function AdminNav() {
             </nav>
 
             {/* 우측: 액션 버튼들 */}
-            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
               {/* 웹하드 버튼 */}
-              <Link href="/webhard" className={`relative ${GLASS_BUTTON.outline}`}>
+              <Link href="/webhard" className={`relative hidden sm:flex ${GLASS_BUTTON.outline}`}>
                 <Cloud className="w-3 h-3" />
                 <span className="hidden sm:inline">웹하드</span>
                 <WebhardBadge asIcon />
@@ -148,9 +148,12 @@ export function AdminNav() {
 
               {/* 햄버거 메뉴 (모바일/태블릿) */}
               <button
+                type="button"
                 onClick={() => setIsMobileMenuOpen(true)}
                 className={`lg:hidden p-1.5 text-muted-foreground ${TEXT_COLOR.hoverPrimary} ${BG_COLOR.hoverMuted} rounded-lg transition-colors`}
                 aria-label="메뉴 열기"
+                aria-expanded={isMobileMenuOpen}
+                aria-controls="admin-mobile-menu"
               >
                 <Menu className="w-4 h-4" />
               </button>
@@ -168,7 +171,9 @@ export function AdminNav() {
 
       {/* 메뉴 패널 */}
       <div
-        className={`fixed top-0 right-0 h-full w-72 max-w-[85vw] z-[70] ${BG_COLOR.page} shadow-2xl border-l ${BORDER_COLOR.default} lg:hidden transition-transform duration-300 ease-out ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}
+        id="admin-mobile-menu"
+        aria-hidden={!isMobileMenuOpen}
+        className={`fixed top-0 right-0 h-full w-72 max-w-[85vw] z-[70] ${BG_COLOR.page} shadow-2xl border-l ${BORDER_COLOR.default} lg:hidden transition-transform duration-300 ease-out ${isMobileMenuOpen ? 'translate-x-0' : 'hidden translate-x-full'}`}
       >
         <div className="flex flex-col h-full">
           {/* 헤더 */}
@@ -190,6 +195,7 @@ export function AdminNav() {
               <span className={`text-sm font-semibold ${TEXT_COLOR.primary}`}>관리자</span>
             </div>
             <button
+              type="button"
               onClick={() => setIsMobileMenuOpen(false)}
               className={`p-1.5 text-muted-foreground ${TEXT_COLOR.hoverPrimary} ${BG_COLOR.hoverMuted} rounded-lg transition-colors`}
               aria-label="메뉴 닫기"

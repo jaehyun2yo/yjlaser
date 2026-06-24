@@ -846,7 +846,7 @@ export function WebhardMain({ userType, userId }: WebhardMainProps) {
       // ESC 키 && 선택된 파일이 있을 때 && 모달이 열려있지 않을 때
       if (
         e.key === 'Escape' &&
-        selectedFiles.size > 0 &&
+        (selectedFiles.size > 0 || selectedFolders.size > 0) &&
         activeModal === null && // Modal Store 사용
         !editingFileId
       ) {
@@ -857,7 +857,7 @@ export function WebhardMain({ userType, userId }: WebhardMainProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedFiles.size, activeModal, editingFileId, clearSelection]);
+  }, [selectedFiles.size, selectedFolders.size, activeModal, editingFileId, clearSelection]);
 
   // 컴포넌트 마운트 시 IndexedDB에서 폴더 핸들 복원
   useEffect(() => {
@@ -2020,6 +2020,10 @@ export function WebhardMain({ userType, userId }: WebhardMainProps) {
         isUploading={isUploading}
         selectedFolderId={selectedFolderId}
         onFolderNavigate={handleFolderSelect}
+        onCreateFolder={() => {
+          setIsCreatingNewFolder(true);
+          setNewFolderName('');
+        }}
         onFolderUploadComplete={() => {
           // 폴더 업로드 완료 후 후속 캐시 갱신은 화면 완료 상태를 막지 않는다.
           void Promise.all([

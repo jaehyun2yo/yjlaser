@@ -1,5 +1,4 @@
 const CLOCK_SKEW_SECONDS = 300;
-const DEV_SESSION_SECRET = 'change-this-in-production-dev-only';
 
 export type BrowserSessionKind = 'admin' | 'company';
 
@@ -34,7 +33,6 @@ interface SignedPayload {
 function getPrimarySecret(): string | null {
   const secret = process.env.SESSION_SECRET;
   if (secret) return secret;
-  if (process.env.NODE_ENV === 'development') return DEV_SESSION_SECRET;
   return null;
 }
 

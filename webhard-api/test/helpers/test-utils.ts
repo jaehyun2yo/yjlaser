@@ -2,15 +2,200 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as cookieParser from 'cookie-parser';
 import * as crypto from 'crypto';
-import { StorageProvider } from '@prisma/client';
+import { Prisma, StorageProvider } from '@prisma/client';
+import { Readable } from 'stream';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { GoogleDriveStorageProvider } from '../../src/storage/google-drive-storage.provider';
+import type {
+  BatchMoveFileInput,
+  BatchStorageFileOperationResult,
+  BatchTrashFileInput,
+  ConfirmUploadedFileInput,
+  CreateFolderInput,
+  CreateUploadSessionInput,
+  DeleteFileInput,
+  DeleteFolderInput,
+  DownloadFileInput,
+  DownloadFileResult,
+  MoveFileInput,
+  MoveFolderInput,
+  RenameFileInput,
+  RenameFolderInput,
+  RestoreFileInput,
+  StorageFileMetadata,
+  StorageProviderClient,
+  TrashFileInput,
+  UploadBufferInput,
+  UploadBufferResult,
+  UploadSessionResult,
+} from '../../src/storage/storage-provider.interface';
 
 // 세션 쿠키 이름 (서버와 동일해야 함)
 export const SESSION_COOKIE_NAME = 'admin-session';
 
 // 테스트 모듈 인스턴스 캐싱
 let cachedModuleFixture: TestingModule | null = null;
+
+interface TestDriveItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  parentStorageFolderIds: string[];
+  buffer: Buffer;
+  trashed: boolean;
+}
+
+type TestGoogleDriveStorageProvider = StorageProviderClient &
+  Pick<GoogleDriveStorageProvider, 'getItemMetadata'>;
+
+function createTestDriveItemMetadata(item: TestDriveItem): StorageFileMetadata {
+  return {
+    provider: StorageProvider.GOOGLE_DRIVE,
+    storageFileId: item.id,
+    name: item.name,
+    mimeType: item.mimeType,
+    size: item.size,
+    parentStorageFolderIds: item.parentStorageFolderIds,
+  };
+}
+
+function createTestGoogleDriveStorageProvider(): TestGoogleDriveStorageProvider {
+  const items = new Map<string, TestDriveItem>();
+  const nextId = () => `test-drive-${crypto.randomUUID()}`;
+  const ensureItem = (storageFileId: string): TestDriveItem => {
+    let item = items.get(storageFileId);
+    if (!item) {
+      item = {
+        id: storageFileId,
+        name: storageFileId,
+        mimeType: 'application/octet-stream',
+        size: 0,
+        parentStorageFolderIds: [],
+        buffer: Buffer.alloc(0),
+        trashed: false,
+      };
+      items.set(storageFileId, item);
+    }
+    return item;
+  };
+  const moveItem = (input: MoveFileInput): void => {
+    const item = ensureItem(input.storageFileId);
+    item.parentStorageFolderIds = [input.toParentStorageFolderId];
+  };
+  const trashItem = (input: TrashFileInput): void => {
+    ensureItem(input.storageFileId).trashed = true;
+  };
+
+  return {
+    provider: StorageProvider.GOOGLE_DRIVE,
+    async generateIds(count: number): Promise<string[]> {
+      return Array.from({ length: count }, nextId);
+    },
+    async createFolder(input: CreateFolderInput): Promise<{ storageFolderId: string }> {
+      const storageFolderId = input.storageFolderId ?? nextId();
+      items.set(storageFolderId, {
+        id: storageFolderId,
+        name: input.name,
+        mimeType: 'application/vnd.google-apps.folder',
+        size: 0,
+        parentStorageFolderIds: input.parentStorageFolderId ? [input.parentStorageFolderId] : [],
+        buffer: Buffer.alloc(0),
+        trashed: false,
+      });
+      return { storageFolderId };
+    },
+    async renameFolder(input: RenameFolderInput): Promise<void> {
+      ensureItem(input.storageFolderId).name = input.name;
+    },
+    async moveFolder(input: MoveFolderInput): Promise<void> {
+      const item = ensureItem(input.storageFolderId);
+      item.parentStorageFolderIds = input.parentStorageFolderId
+        ? [input.parentStorageFolderId]
+        : [];
+    },
+    async deleteFolder(input: DeleteFolderInput): Promise<void> {
+      items.delete(input.storageFolderId);
+    },
+    async getItemMetadata(storageFileId: string): Promise<StorageFileMetadata> {
+      return createTestDriveItemMetadata(ensureItem(storageFileId));
+    },
+    async createUploadSession(input: CreateUploadSessionInput): Promise<UploadSessionResult> {
+      const storageFileId = input.storageFileId ?? nextId();
+      items.set(storageFileId, {
+        id: storageFileId,
+        name: input.fileName,
+        mimeType: input.mimeType,
+        size: input.size,
+        parentStorageFolderIds: [input.parentStorageFolderId],
+        buffer: Buffer.alloc(0),
+        trashed: false,
+      });
+      return {
+        provider: StorageProvider.GOOGLE_DRIVE,
+        storageFileId,
+        uploadUrl: `https://example.test/upload/${storageFileId}`,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        headers: {},
+      };
+    },
+    async confirmUploadedFile(input: ConfirmUploadedFileInput): Promise<StorageFileMetadata> {
+      const item = ensureItem(input.storageFileId);
+      item.parentStorageFolderIds = [input.expectedParentStorageFolderId];
+      return createTestDriveItemMetadata(item);
+    },
+    async uploadBuffer(input: UploadBufferInput): Promise<UploadBufferResult> {
+      const storageFileId = input.storageFileId ?? nextId();
+      const item = {
+        id: storageFileId,
+        name: input.fileName,
+        mimeType: input.mimeType,
+        size: input.buffer.length,
+        parentStorageFolderIds: [input.parentStorageFolderId],
+        buffer: input.buffer,
+        trashed: false,
+      };
+      items.set(storageFileId, item);
+      return createTestDriveItemMetadata(item);
+    },
+    async downloadFile(input: DownloadFileInput): Promise<DownloadFileResult> {
+      const item = ensureItem(input.storageFileId);
+      return {
+        stream: Readable.from(item.buffer),
+        mimeType: item.mimeType,
+        size: item.size,
+      };
+    },
+    async renameFile(input: RenameFileInput): Promise<void> {
+      ensureItem(input.storageFileId).name = input.name;
+    },
+    async moveFile(input: MoveFileInput): Promise<void> {
+      moveItem(input);
+    },
+    async moveFiles(inputs: BatchMoveFileInput[]): Promise<BatchStorageFileOperationResult[]> {
+      return inputs.map((input) => {
+        moveItem(input);
+        return { storageFileId: input.storageFileId, success: true, status: 200 };
+      });
+    },
+    async trashFile(input: TrashFileInput): Promise<void> {
+      trashItem(input);
+    },
+    async trashFiles(inputs: BatchTrashFileInput[]): Promise<BatchStorageFileOperationResult[]> {
+      return inputs.map((input) => {
+        trashItem(input);
+        return { storageFileId: input.storageFileId, success: true, status: 200 };
+      });
+    },
+    async restoreFile(input: RestoreFileInput): Promise<void> {
+      ensureItem(input.storageFileId).trashed = false;
+    },
+    async deleteFile(input: DeleteFileInput): Promise<void> {
+      items.delete(input.storageFileId);
+    },
+  };
+}
 
 /**
  * 테스트용 세션 쿠키 생성
@@ -53,7 +238,10 @@ export function getCompanySessionCookie(companyId: number): string {
 export async function createTestApp(): Promise<INestApplication> {
   const moduleFixture: TestingModule = await Test.createTestingModule({
     imports: [AppModule],
-  }).compile();
+  })
+    .overrideProvider(GoogleDriveStorageProvider)
+    .useValue(createTestGoogleDriveStorageProvider())
+    .compile();
 
   const app = moduleFixture.createNestApplication();
 
@@ -288,6 +476,83 @@ export async function getTestPrismaClient(): Promise<PrismaService> {
     }).compile();
   }
   return cachedModuleFixture.get<PrismaService>(PrismaService);
+}
+
+/**
+ * 테스트용 업체 생성
+ */
+export async function createTestCompany(
+  prisma: PrismaService,
+  overrides: Partial<Prisma.CompanyUncheckedCreateInput> = {}
+): Promise<{ id: number; companyName: string }> {
+  const unique = crypto.randomUUID().slice(0, 12);
+  return prisma.company.create({
+    data: {
+      companyName: `perf-test-company-${unique}`,
+      managerName: '테스트담당자',
+      username: `perf-test-company-${unique}`,
+      passwordHash: 'test-password-hash',
+      businessRegistrationNumber: `perf-test-${unique}`,
+      representativeName: '테스트대표',
+      businessAddress: '테스트주소',
+      managerPosition: '담당자',
+      managerPhone: '010-0000-0000',
+      managerEmail: `perf-test-${unique}@example.com`,
+      quoteMethodEmail: true,
+      quoteMethodFax: false,
+      quoteMethodSms: false,
+      status: 'active',
+      webhardAccess: true,
+      laserOnly: false,
+      isApproved: true,
+      ...overrides,
+    },
+    select: {
+      id: true,
+      companyName: true,
+    },
+  });
+}
+
+/**
+ * 테스트용 업체 및 회사 소유 웹하드 데이터 정리
+ */
+export async function cleanupTestCompanies(
+  prisma: PrismaService,
+  prefix: string = 'perf-test-company-'
+): Promise<void> {
+  const companies = await prisma.company.findMany({
+    where: {
+      companyName: { startsWith: prefix },
+    },
+    select: { id: true },
+  });
+
+  const companyIds = companies.map((company) => company.id);
+  if (companyIds.length === 0) return;
+
+  await prisma.webhardFile.deleteMany({
+    where: {
+      companyId: { in: companyIds },
+    },
+  });
+
+  let deleted = 1;
+  while (deleted > 0) {
+    const result = await prisma.webhardFolder.deleteMany({
+      where: {
+        companyId: { in: companyIds },
+        children: { none: {} },
+      },
+    });
+    deleted = result.count;
+  }
+
+  await prisma.company.deleteMany({
+    where: {
+      id: { in: companyIds },
+    },
+  });
 }
 
 /**

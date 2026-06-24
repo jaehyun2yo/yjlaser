@@ -5,9 +5,11 @@ import {
   getAdminSessionCookie,
   getCompanySessionCookie,
   getTestPrismaClient,
+  createTestCompany,
   createNestedFolders,
   createTestFiles,
   cleanupTestData,
+  cleanupTestCompanies,
   randomUUID,
 } from './helpers/test-utils';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -217,13 +219,18 @@ describe('Files CRUD API (e2e)', () => {
     });
   });
 
-  // Skip: 테스트 DB에 company 레코드가 없어서 foreign key constraint 오류 발생
-  describe.skip('업체 권한 검증', () => {
-    const companyId = 1;
+  describe('업체 권한 검증', () => {
+    let companyId: number;
+    let otherCompanyId: number;
     let companyFileIds: string[];
     let adminFileIds: string[];
 
     beforeAll(async () => {
+      const company = await createTestCompany(prisma);
+      const otherCompany = await createTestCompany(prisma);
+      companyId = company.id;
+      otherCompanyId = otherCompany.id;
+
       // 업체 파일 생성
       companyFileIds = await createTestFiles(prisma, 3, null, companyId);
       // 관리자 파일 생성
@@ -232,17 +239,23 @@ describe('Files CRUD API (e2e)', () => {
 
     afterAll(async () => {
       await cleanupTestData(prisma);
+      await cleanupTestCompanies(prisma);
     });
 
-    it('업체는 자신의 파일만 삭제 가능', async () => {
-      const response = await request(app.getHttpServer())
+    it('업체는 batch delete API를 직접 호출할 수 없다', async () => {
+      await request(app.getHttpServer())
         .post('/files/batch/delete')
         .set('Cookie', `admin-session=${getCompanySessionCookie(companyId)}`)
         .send({ fileIds: companyFileIds })
-        .expect(201);
+        .expect(403);
 
-      expect(response.body.success).toBe(true);
-      expect(response.body.processed).toBe(3);
+      const remainingFiles = await prisma.webhardFile.findMany({
+        where: {
+          id: { in: companyFileIds },
+          deletedAt: null,
+        },
+      });
+      expect(remainingFiles).toHaveLength(companyFileIds.length);
     });
 
     it('업체는 공유 파일(companyId=null) 접근 가능', async () => {
@@ -253,24 +266,28 @@ describe('Files CRUD API (e2e)', () => {
 
       // 공유 파일이 목록에 포함됨
       const sharedFiles = response.body.files.filter(
-        (f: { company_id: number | null }) => f.company_id === null,
+        (f: { company_id: number | null }) => f.company_id === null
       );
       expect(sharedFiles.length).toBeGreaterThanOrEqual(0);
     });
 
-    it('업체는 다른 업체 파일 삭제 불가', async () => {
+    it('업체는 다른 업체 파일 삭제 API도 거부된다', async () => {
       // 다른 업체 파일 생성
-      const otherCompanyFileIds = await createTestFiles(prisma, 2, null, 999);
+      const otherCompanyFileIds = await createTestFiles(prisma, 2, null, otherCompanyId);
 
-      const response = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post('/files/batch/delete')
         .set('Cookie', `admin-session=${getCompanySessionCookie(companyId)}`)
         .send({ fileIds: otherCompanyFileIds })
-        .expect(201);
+        .expect(403);
 
-      // 권한 없음으로 모두 실패
-      expect(response.body.processed).toBe(0);
-      expect(response.body.failed).toBe(2);
+      const remainingFiles = await prisma.webhardFile.findMany({
+        where: {
+          id: { in: otherCompanyFileIds },
+          deletedAt: null,
+        },
+      });
+      expect(remainingFiles).toHaveLength(otherCompanyFileIds.length);
     });
   });
 

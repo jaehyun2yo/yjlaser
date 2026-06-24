@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { requireAdmin } from '@/lib/auth/adminGuard';
 import https from 'https';
 import { logger } from '@/lib/utils/logger';
 
@@ -41,12 +42,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Not available' }, { status: 403 });
   }
 
-  try {
-    const key =
-      new URL(request.url).searchParams.get('key') ||
-      'webhard/1764220960385-rtx952c9-1107-7 신영 농업법인 주)도담 리본표지발이 속겉지(대) 목형   갱지 600-500  80.DXF';
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return auth.response ?? NextResponse.json({ error: 'Admin only' }, { status: 403 });
+  }
 
-    testLogger.info('Attempting S3 download', { key });
+  try {
+    const key = new URL(request.url).searchParams.get('key')?.trim();
+    if (!key) {
+      return NextResponse.json({ error: 'key is required' }, { status: 400 });
+    }
+
+    testLogger.info('Attempting S3 download', { keyLength: key.length });
 
     const s3 = getS3();
     const bucket = process.env.R2_BUCKET_NAME as string;
@@ -56,7 +63,7 @@ export async function GET(request: NextRequest) {
       Key: key,
     });
 
-    testLogger.info('Sending GetObjectCommand', { bucket, key });
+    testLogger.info('Sending GetObjectCommand', { bucket });
     const response = await s3.send(command);
 
     testLogger.info('S3 response received', {
@@ -76,10 +83,7 @@ export async function GET(request: NextRequest) {
     }
     const buffer = Buffer.concat(chunks);
 
-    testLogger.info('Successfully downloaded file', {
-      key,
-      size: buffer.length,
-    });
+    testLogger.info('Successfully downloaded file', { size: buffer.length });
 
     return new NextResponse(buffer, {
       status: 200,

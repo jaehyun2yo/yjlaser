@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 class SentryExampleAPIError extends Error {
@@ -10,6 +11,10 @@ class SentryExampleAPIError extends Error {
 
 // A faulty API route to test Sentry's error monitoring
 export function GET() {
+  if (process.env.NODE_ENV !== 'development') {
+    return NextResponse.json({ error: 'Not available' }, { status: 403 });
+  }
+
   Sentry.logger.info('Sentry example API called');
   throw new SentryExampleAPIError(
     'This error is raised on the backend called by the example page.'

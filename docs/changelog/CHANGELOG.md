@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### 2026-06-19 — ui-driven-e2e-suite-stabilization
+
+**Scope**: 실제 브라우저 UI 조작 기반 E2E 묶음의 실패 원인을 수정하고 전체 통과를 확인.
+
+**수정**:
+
+- 업체등록 사업자등록증 Drive 업로드 시 관리자 전용 폴더 `folderKind`가 DB 길이 제한을 넘지 않도록 `admin_private_co`를 사용하고 legacy kind 조회를 유지했다.
+- 로그인/업체등록/문의 폼/작업자 PIN 입력이 hydration 및 빠른 연속 입력에도 안정적으로 동작하도록 보강했다.
+- 관리자 작업자 추가 버튼은 client-ready 전 클릭을 막고, 웹하드 새 폴더/업로드/휴지통 UI는 실제 화면 조작 가능한 컨트롤을 사용하도록 정리했다.
+- 작업자 납품관리 탭, 업체등록 반복 실행 데이터, 모바일 관리자 nav overflow, 전체 UI E2E timeout 조건을 정리했다.
+
+**검증**:
+
+- `npx tsc --noEmit --pretty false` 통과.
+- `pnpm --dir webhard-api test -- companies.service.spec.ts --runInBand` 통과 — 8 passed.
+- `pnpm test:e2e:ui -- --reporter=line` 통과 — 27 passed.
+
+### 2026-06-19 — codex-testing-workflow-policy
+
+**Scope**: Codex 개발 워크플로우에 테스트 전략과 AI 브라우저 QA 적용 기준 추가.
+
+**수정**:
+
+- `AGENTS.md`에 테스트 층 선택, test-first 우선 대상, AI 브라우저 QA와 회귀 테스트의 역할 분리를 추가했다.
+- `docs/workflows/codex-development-workflow.md`에 YJ Laser 전용 테스트 맵을 추가했다.
+- 권한, `companyId` 소유권, 웹하드 visibility, 업로드/다운로드, Google Drive/R2 metadata 변경은 unit/integration/API 테스트를 우선하고, 실제 사용자 흐름은 E2E UI 또는 AI browser QA로 검증하도록 정리했다.
+
+**검증**:
+
+- `git diff --check -- AGENTS.md docs/workflows/codex-development-workflow.md docs/changelog/CHANGELOG.md` 통과.
+- 링크/명령/역할 분리 자체 검토.
+
 ### 2026-06-18 — contact-drive-file-migration
 
 **Scope**: 포트폴리오를 제외한 문의/납품/업체 등록 파일의 신규 업로드를 Google Drive 저장소로 전환.

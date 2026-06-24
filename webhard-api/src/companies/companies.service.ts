@@ -17,6 +17,9 @@ import type { StorageRepairOperation } from '../storage/storage-repair.service';
 const COMPANY_DELETE_RETENTION_DAYS = 30;
 const ADMIN_PRIVATE_ROOT_NAME = '관리자전용';
 const ADMIN_PRIVATE_ROOT_PATH = '/외부웹하드/관리자전용';
+const ADMIN_PRIVATE_ROOT_KIND = 'admin_private_root';
+const ADMIN_PRIVATE_COMPANY_KIND = 'admin_private_co';
+const LEGACY_ADMIN_PRIVATE_COMPANY_KIND = 'admin_private_company';
 
 export interface UploadedCompanyBusinessRegistrationFile {
   originalname: string;
@@ -96,7 +99,7 @@ export class CompaniesService {
         parentId: null,
         companyId: null,
         name: ADMIN_PRIVATE_ROOT_NAME,
-        folderKind: 'admin_private_root',
+        folderKind: ADMIN_PRIVATE_ROOT_KIND,
         deletedAt: null,
       },
       select: { id: true, driveFolderId: true },
@@ -113,7 +116,7 @@ export class CompaniesService {
           parentId: null,
           companyId: null,
           path: ADMIN_PRIVATE_ROOT_PATH,
-          folderKind: 'admin_private_root',
+          folderKind: ADMIN_PRIVATE_ROOT_KIND,
           storageProvider: StorageProvider.GOOGLE_DRIVE,
           driveFolderId: driveFolder.storageFolderId,
         },
@@ -125,13 +128,14 @@ export class CompaniesService {
       throw new BadRequestException('관리자 전용 Drive 루트가 준비되지 않았습니다.');
     }
 
-    const companyFolderName = this.sanitizeDriveName(company.companyName) || `company-${company.id}`;
+    const companyFolderName =
+      this.sanitizeDriveName(company.companyName) || `company-${company.id}`;
     let companyFolder = await this.prisma.webhardFolder.findFirst({
       where: {
         parentId: rootFolder.id,
         companyId: null,
         name: companyFolderName,
-        folderKind: 'admin_private_company',
+        folderKind: { in: [ADMIN_PRIVATE_COMPANY_KIND, LEGACY_ADMIN_PRIVATE_COMPANY_KIND] },
         deletedAt: null,
       },
       select: { id: true, driveFolderId: true },
@@ -148,7 +152,7 @@ export class CompaniesService {
           parentId: rootFolder.id,
           companyId: null,
           path: `${ADMIN_PRIVATE_ROOT_PATH}/${companyFolderName}`,
-          folderKind: 'admin_private_company',
+          folderKind: ADMIN_PRIVATE_COMPANY_KIND,
           storageProvider: StorageProvider.GOOGLE_DRIVE,
           driveFolderId: driveFolder.storageFolderId,
         },

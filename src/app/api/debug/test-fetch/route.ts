@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth/adminGuard';
 
 export async function GET(_request: NextRequest) {
   if (process.env.NODE_ENV !== 'development') {
     return NextResponse.json({ error: 'Not available' }, { status: 403 });
   }
 
-  const originalPath =
-    'https://yjlaser.net/webhard/1764220960385-rtx952c9-1107-7 신영 농업법인 주)도담 리본표지발이 속겉지(대) 목형   갱지 600-500  80.DXF';
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return auth.response ?? NextResponse.json({ error: 'Admin only' }, { status: 403 });
+  }
+
+  const filename =
+    new URL(_request.url).searchParams.get('filename')?.trim() || 'debug-test-file.dxf';
 
   const baseUrl = 'https://yjlaser.net/webhard/';
-  const filename =
-    '1764220960385-rtx952c9-1107-7 신영 농업법인 주)도담 리본표지발이 속겉지(대) 목형   갱지 600-500  80.DXF';
+  const originalPath = `${baseUrl}${filename}`;
 
   // Variations to try
   const variations = [
