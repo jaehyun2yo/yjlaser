@@ -6,23 +6,17 @@ jest.mock('@/app/actions/auth', () => ({
 }));
 
 describe('HomeHeader section contrast theme', () => {
-  it('uses Spring/Summer navigation text on the light homepage hero', () => {
+  it('uses V1 public navigation links on the homepage', () => {
     render(<HomeHeader />);
 
-    expect(screen.getByRole('banner')).toHaveClass('text-[#44394c]');
+    expect(screen.getByRole('banner')).toHaveClass('fixed');
 
-    const nav = screen.getByRole('navigation', { name: '홈 섹션' });
-    expect(within(nav).getByRole('link', { name: 'What we do' })).toHaveAttribute(
+    const nav = screen.getByRole('navigation', { name: '주요 메뉴' });
+    expect(within(nav).getByRole('link', { name: '소개' })).toHaveAttribute('href', '/about');
+    expect(within(nav).getByRole('link', { name: '포트폴리오' })).toHaveAttribute(
       'href',
-      '#what-we-do'
+      '/portfolio'
     );
-    expect(within(nav).getByRole('link', { name: 'Our work' })).toHaveAttribute(
-      'href',
-      '#our-work'
-    );
-    expect(within(nav).getByRole('link', { name: 'About us' })).toHaveAttribute(
-      'href',
-      '#about-us'
-    );
+    expect(within(nav).getByRole('link', { name: '문의하기' })).toHaveAttribute('href', '/contact');
   });
 });

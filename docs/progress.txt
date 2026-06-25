@@ -2,6 +2,31 @@
 
 ## 최신 상태 (가장 위가 최신)
 
+### 세션 #140 — 2026-06-25
+
+- **작업 내용**: main 통합 준비 및 공개 홈 화면 기존 V1 디자인 복원
+- **반영 기준**:
+  - `origin/main` 기준 임시 통합 브랜치에서 `codex/ui-driven-e2e-suite` 변경을 병합했다.
+  - 문서 충돌은 운영 데이터 연동 v2, 중앙 로그 DB persistence, UI E2E QA suite 기록을 모두 보존하는 방식으로 해결했다.
+  - 공개 홈 화면 `/`는 Spring/Summer 에디토리얼 홈 대신 `HomePageV1Backup`을 렌더하도록 되돌렸다.
+  - 홈 헤더는 기존 V1 공개 내비게이션(`/about`, `/portfolio`, `/notice`, `/contact`)과 section theme 기반 contrast 동작으로 복원했다.
+- **완료한 것**:
+  - `src/app/page.tsx`, `src/components/HomeHeader.tsx`, `HeroBoxSection`, `ProcessSection`, `HomePageV1Backup`을 `feef5741`의 V1 배포본 기준으로 복원했다.
+  - `/test` 라우트의 Spring/Summer `HeroSection` 직접 참조를 제거하고 현재 홈으로 redirect하도록 변경했다.
+  - 홈 라우트/헤더 단위 테스트를 V1 구성 기준으로 갱신했다.
+  - `docs/features-list.md`, `docs/changelog/CHANGELOG.md`, `docs/progress.txt`에 main 통합과 홈 V1 복원 상태를 반영했다.
+- **검증**:
+  - `pnpm test -- --testPathPatterns="src/__tests__/home/HomePageRoute.test.tsx|src/__tests__/components/HomeHeaderTheme.test.tsx" --runInBand` 통과 — 2 suites / 2 tests
+  - `git diff --check` 통과
+  - `npx tsc --noEmit --pretty false` 통과
+  - `cd webhard-api && npx tsc --noEmit --pretty false` 통과
+  - `webhard-api: pnpm test -- src/integration/events/events.dto.spec.ts src/integration/events/events.transaction.spec.ts src/integration/events/events.failure.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 3 suites / 25 tests
+  - `webhard-api: pnpm test -- src/integration/orders/order-timeline-read.spec.ts src/integration/orders/order-timeline.spec.ts src/integration/orders/__tests__/orders.service.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 3 suites / 36 tests
+  - `webhard-api: pnpm test -- src/integration/operations/operations-read.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 1 suite / 9 tests
+  - `pnpm test:e2e:ui -- --list` 통과 — Chromium 27 tests 인식
+  - `pnpm exec playwright test e2e/ui-operational-workflow-v2.spec.ts --project=chromium --list` 통과 — Chromium 3 tests 인식
+- **관련 커밋**: main 통합 및 홈 V1 복원 커밋
+
 ### 세션 #139 — 2026-06-24
 
 - **작업 내용**: 운영 데이터 연동 v2 ODATA2-010 — legacy Order/JobEvent read model Contact identity 정렬

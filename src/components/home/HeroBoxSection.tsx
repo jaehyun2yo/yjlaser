@@ -247,6 +247,16 @@ export default function HeroBoxSection() {
       <div className="absolute inset-0 z-10 flex items-center">
         <div className="w-full max-w-[1600px] mx-auto mt-[80px] md:mt-[100px] px-4 sm:px-6 md:px-8 lg:px-12">
           <div className="max-w-3xl text-center md:text-left">
+            {/* 서브 타이틀 */}
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.3 }}
+              className="text-[#ED6C00] text-sm md:text-base lg:text-lg font-medium tracking-[0.2em] uppercase mb-4 md:mb-6"
+            >
+              Packaging Structure Design
+            </motion.p>
+
             {/* 메인 타이틀 - 웨이브 하이라이트 애니메이션 */}
             <motion.h1
               initial={{ opacity: 0, y: 40 }}

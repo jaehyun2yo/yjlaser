@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import SpringSummerHome from '@/components/home/SpringSummerHome';
+import HomePageV1Backup from '@/components/home/HomePageV1Backup';
 
 // Build-time SSG 시 NestJS API 호출 회피 (Vercel preview 환경에 NestJS 서버 없음)
 // `dynamic` import alias 와 `dynamic` route segment config 충돌 회피 위해 const 이름 동일 X — Next.js 가 export 자체로 인식
@@ -13,5 +13,5 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  return <SpringSummerHome />;
+  return <HomePageV1Backup portfolioItems={[]} />;
 }

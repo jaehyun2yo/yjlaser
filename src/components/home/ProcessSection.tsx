@@ -196,6 +196,13 @@ function StepCard({ step, isActive }: { step: Step; isActive: boolean }) {
                   {/* Placeholder gradient background */}
                   <div className="absolute inset-0 bg-gradient-to-br from-gray-700/30 via-gray-800/50 to-gray-900/70" />
 
+                  {/* Step number badge */}
+                  <div className="absolute top-4 left-4 lg:top-8 lg:left-8 z-10">
+                    <span className="inline-flex items-center justify-center w-14 h-14 lg:w-20 lg:h-20 xl:w-24 xl:h-24 bg-[#ED6C00] text-white font-bold rounded-full text-2xl lg:text-4xl xl:text-5xl shadow-lg shadow-orange-500/30">
+                      {step.id}
+                    </span>
+                  </div>
+
                   {/* Icon as placeholder */}
                   <div className="absolute inset-0 flex items-center justify-center">
                     <Icon className="w-28 h-28 lg:w-44 lg:h-44 xl:w-52 xl:h-52 text-gray-600/50" />
@@ -217,6 +224,17 @@ function StepCard({ step, isActive }: { step: Step; isActive: boolean }) {
             <div className="space-y-5 lg:space-y-6">
               {/* Title */}
               <div>
+                <motion.div
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: isActive ? 1 : 0, y: isActive ? 0 : 30 }}
+                  transition={{ duration: 0.5, ease: 'easeOut', delay: 0.15 }}
+                  className="flex items-center gap-3 lg:gap-4 mb-3 lg:mb-5"
+                >
+                  <span className="text-[#ED6C00] text-lg lg:text-xl font-semibold">
+                    STEP {step.id}
+                  </span>
+                  <div className="h-px flex-1 bg-gradient-to-r from-[#ED6C00]/50 to-transparent" />
+                </motion.div>
                 <motion.h3
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: isActive ? 1 : 0, y: isActive ? 0 : 30 }}
