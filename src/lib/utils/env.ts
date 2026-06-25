@@ -8,7 +8,6 @@ import { logger } from './logger';
 
 const envLogger = logger.createLogger('ENV');
 const DEFAULT_SESSION_SECRET_SENTINEL = 'change-this-in-production';
-const DEV_ONLY_SESSION_SECRET = 'change-this-in-production-dev-only';
 
 /**
  * 환경 변수 스키마 정의
@@ -160,13 +159,11 @@ export function getSessionSecret(): string {
         throw new Error(errorMessage);
       }
 
-      // 개발 환경에서는 경고만 출력하고 기본값 사용
-      envLogger.warn(
-        'SESSION_SECRET is not set or using default value. ' +
-          'This is insecure and must be set before deploying to production. ' +
-          'Generate one using: openssl rand -hex 32'
-      );
-      return DEV_ONLY_SESSION_SECRET;
+      const errorMessage =
+        '[SECURITY ERROR] SESSION_SECRET must be set before session features can run. ' +
+        'Generate one using: openssl rand -hex 32';
+      envLogger.error(errorMessage);
+      throw new Error(errorMessage);
     }
 
     return secret;
@@ -179,12 +176,10 @@ export function getSessionSecret(): string {
       throw new Error(errorMessage);
     }
 
-    // 개발 환경에서는 경고만 출력하고 기본값 사용
-    envLogger.warn(
-      'Environment validation failed, using default SESSION_SECRET. ' +
-        'This is insecure and must be fixed before deploying to production.',
-      error
-    );
-    return DEV_ONLY_SESSION_SECRET;
+    const errorMessage =
+      '[SECURITY ERROR] Failed to validate SESSION_SECRET. ' +
+      'Session features cannot run without proper session configuration.';
+    envLogger.error(errorMessage, error);
+    throw new Error(errorMessage);
   }
 }

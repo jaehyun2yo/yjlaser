@@ -54,8 +54,12 @@ function makeService() {
   };
 }
 
-function collectLogText(spy: jest.SpyInstance): string {
-  return spy.mock.calls.map(([message]) => String(message)).join('\n');
+function collectLogEvents(spy: jest.SpyInstance): Record<string, unknown>[] {
+  return spy.mock.calls.map(([message]) => JSON.parse(String(message)));
+}
+
+function collectLogText(...spies: jest.SpyInstance[]): string {
+  return spies.flatMap((spy) => spy.mock.calls.map(([message]) => String(message))).join('\n');
 }
 
 describe('IntegrationFilesService file register logging', () => {
@@ -69,18 +73,46 @@ describe('IntegrationFilesService file register logging', () => {
 
     await service.registerFile(baseRegisterDto);
 
+    const events = collectLogEvents(logSpy);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      schema_version: 1,
+      project: 'company_site',
+      component: 'IntegrationFilesService',
+      feature: 'file_register',
+      event: 'integration_file_register',
+      action: 'register',
+      status: 'start',
+      channel: 'external',
+      count: 1,
+      actor_type: 'integration_worker',
+      target_type: 'webhard_file',
+      metadata: {
+        sourceWorker: 'external_webhard_sync',
+        storageProvider: 'google_drive',
+        fileKind: 'drawing_source',
+        companyId: 123,
+        hasFolderId: true,
+        hasDriveFileId: true,
+      },
+    });
+    expect(events[1]).toMatchObject({
+      status: 'success',
+      duration_ms: expect.any(Number),
+      count: 1,
+      metadata: {
+        duplicate: false,
+        sourceWorker: 'external_webhard_sync',
+        storageProvider: 'google_drive',
+      },
+    });
+    expect(events[1].target_id_hash).toEqual(expect.stringMatching(/^[a-f0-9]{16}$/));
+
     const logText = collectLogText(logSpy);
-    expect(logText).toContain('status=start');
-    expect(logText).toContain('status=success');
-    expect(logText).toContain('sourceWorker=external_webhard_sync');
-    expect(logText).toContain('provider=google_drive');
-    expect(logText).toContain('count=1');
-    expect(logText).toContain('duplicate=false');
-    expect(logText).toContain('fileId=file-001');
-    expect(logText).toMatch(/elapsedMs=\d+/);
     expect(logText).not.toContain(baseRegisterDto.idempotency_key);
     expect(logText).not.toContain(baseRegisterDto.path);
     expect(logText).not.toContain(baseRegisterDto.original_name_safe);
+    expect(logText).not.toContain(baseRegisterDto.drive_file_id);
   });
 
   it('logs duplicate success without creating another metadata row', async () => {
@@ -92,11 +124,17 @@ describe('IntegrationFilesService file register logging', () => {
 
     await service.registerFile(baseRegisterDto);
 
+    const events = collectLogEvents(logSpy);
+    expect(events[1]).toMatchObject({
+      status: 'success',
+      duration_ms: expect.any(Number),
+      target_id_hash: expect.stringMatching(/^[a-f0-9]{16}$/),
+      metadata: {
+        duplicate: true,
+      },
+    });
     const logText = collectLogText(logSpy);
-    expect(logText).toContain('status=success');
-    expect(logText).toContain('duplicate=true');
-    expect(logText).toContain('fileId=file-existing');
-    expect(logText).toContain('elapsedMs=');
+    expect(logText).not.toContain('file-existing');
     expect(filesService.confirmUpload).not.toHaveBeenCalled();
   });
 
@@ -108,17 +146,24 @@ describe('IntegrationFilesService file register logging', () => {
 
     await expect(service.registerFile(baseRegisterDto)).rejects.toThrow('downstream unavailable');
 
-    const startText = collectLogText(logSpy);
+    const startEvents = collectLogEvents(logSpy);
+    const errorEvents = collectLogEvents(errorSpy);
+    expect(startEvents[0]).toMatchObject({ status: 'start' });
+    expect(errorEvents[0]).toMatchObject({
+      status: 'failure',
+      duration_ms: expect.any(Number),
+      count: 1,
+      error_type: 'Error',
+      metadata: {
+        sourceWorker: 'external_webhard_sync',
+        storageProvider: 'google_drive',
+      },
+    });
+
     const errorText = collectLogText(errorSpy);
-    expect(startText).toContain('status=start');
-    expect(errorText).toContain('status=failure');
-    expect(errorText).toContain('sourceWorker=external_webhard_sync');
-    expect(errorText).toContain('provider=google_drive');
-    expect(errorText).toContain('count=1');
-    expect(errorText).toContain('errorType=Error');
-    expect(errorText).toMatch(/elapsedMs=\d+/);
     expect(errorText).not.toContain(baseRegisterDto.idempotency_key);
     expect(errorText).not.toContain(baseRegisterDto.path);
     expect(errorText).not.toContain(baseRegisterDto.original_name_safe);
+    expect(errorText).not.toContain(baseRegisterDto.drive_file_id);
   });
 });

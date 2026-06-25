@@ -54,12 +54,11 @@ describe('Environment Validation', () => {
       expect(() => getSessionSecret()).toThrow();
     });
 
-    it('should return default value in development when secret is not set', () => {
+    it('should throw error in development when secret is not set', () => {
       delete process.env.SESSION_SECRET;
       process.env.NODE_ENV = 'development';
 
-      const secret = getSessionSecret();
-      expect(secret).toBe('change-this-in-production-dev-only');
+      expect(() => getSessionSecret()).toThrow();
     });
   });
 });

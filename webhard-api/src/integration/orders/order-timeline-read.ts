@@ -21,6 +21,9 @@ export type OrderTimelineJobEventSource = {
   sourceWorker: string;
   sourceVersion: string | null;
   orderId: string | null;
+  contactId: string | null;
+  inquiryNumber: string | null;
+  workNumber: string | null;
   jobId: string | null;
   integrationRunId: string | null;
   workerLocalId: string | null;
@@ -41,6 +44,9 @@ export type OrderTimelineEventReadModel = {
   source_model: OrderTimelineSourceModel;
   event_id: string;
   order_id: string;
+  contact_id: string | null;
+  inquiry_number: string | null;
+  work_number: string | null;
   event_type: string;
   source: string;
   source_worker: string | null;
@@ -62,11 +68,17 @@ export type OrderTimelineEventReadModel = {
 
 export type OrderTimelineReadModel = {
   order_id: string;
+  contact_id: string | null;
+  inquiry_number: string | null;
+  work_number: string | null;
   events: OrderTimelineEventReadModel[];
 };
 
 export type OrderTimelineReadInput = {
   orderId: string;
+  contactId?: string | null;
+  inquiryNumber?: string | null;
+  workNumber?: string | null;
   orderEvents: OrderTimelineOrderEventSource[];
   jobEvents: OrderTimelineJobEventSource[];
 };
@@ -78,25 +90,34 @@ type SortableTimelineEvent = OrderTimelineEventReadModel & {
 
 export function buildOrderTimelineReadModel(input: OrderTimelineReadInput): OrderTimelineReadModel {
   const events = [
-    ...input.orderEvents.map(mapOrderEventToTimelineEntry),
-    ...input.jobEvents.map((event) => mapJobEventToTimelineEntry(input.orderId, event)),
+    ...input.orderEvents.map((event) => mapOrderEventToTimelineEntry(input, event)),
+    ...input.jobEvents.map((event) => mapJobEventToTimelineEntry(input, event)),
   ]
     .sort(compareTimelineEntries)
     .map(stripSortFields);
 
   return {
     order_id: input.orderId,
+    contact_id: input.contactId ?? null,
+    inquiry_number: input.inquiryNumber ?? null,
+    work_number: input.workNumber ?? null,
     events,
   };
 }
 
-function mapOrderEventToTimelineEntry(event: OrderTimelineOrderEventSource): SortableTimelineEvent {
+function mapOrderEventToTimelineEntry(
+  input: OrderTimelineReadInput,
+  event: OrderTimelineOrderEventSource
+): SortableTimelineEvent {
   const occurredAt = event.createdAt;
   return {
     timeline_id: `order_event:${event.id}`,
     source_model: 'order_event',
     event_id: event.id,
     order_id: event.orderId,
+    contact_id: input.contactId ?? null,
+    inquiry_number: input.inquiryNumber ?? null,
+    work_number: input.workNumber ?? null,
     event_type: event.eventType,
     source: event.source,
     source_worker: null,
@@ -120,14 +141,17 @@ function mapOrderEventToTimelineEntry(event: OrderTimelineOrderEventSource): Sor
 }
 
 function mapJobEventToTimelineEntry(
-  fallbackOrderId: string,
+  input: OrderTimelineReadInput,
   event: OrderTimelineJobEventSource
 ): SortableTimelineEvent {
   return {
     timeline_id: `job_event:${event.id}`,
     source_model: 'job_event',
     event_id: event.id,
-    order_id: event.orderId ?? fallbackOrderId,
+    order_id: event.orderId ?? input.orderId,
+    contact_id: event.contactId ?? input.contactId ?? null,
+    inquiry_number: event.inquiryNumber ?? input.inquiryNumber ?? null,
+    work_number: event.workNumber ?? input.workNumber ?? null,
     event_type: event.eventType,
     source: event.sourceWorker,
     source_worker: event.sourceWorker,

@@ -15,6 +15,13 @@ import { ContactsService } from '../../contacts/contacts.service';
 import { UpdateProcessStageDto, VALID_PROCESS_STAGES } from './dto/order.dto';
 import { mapOrderStateReadModel } from './order-state-read';
 import { buildOrderTimelineReadModel } from './order-timeline-read';
+import { Prisma } from '@prisma/client';
+
+type LinkedContactIdentity = {
+  id: string;
+  inquiryNumber: string | null;
+  workNumber: string | null;
+};
 
 @Injectable()
 export class OrdersService {
@@ -246,6 +253,8 @@ export class OrdersService {
       );
     }
 
+    const linkedContact = await this.findLinkedContactIdentity(existing);
+
     // 상태별 타임스탬프 업데이트 (통합 8단계)
     const data: Record<string, unknown> = { status: dto.status };
     if (dto.status === 'confirmed') data.confirmedAt = new Date();
@@ -273,8 +282,7 @@ export class OrdersService {
     this.logger.log(`Order ${id} status: ${existing.status} -> ${dto.status}`);
 
     // Sync Contact table: collect all field updates in one object, then single update call
-    if (order.contactId) {
-      const contactId = String(order.contactId);
+    if (linkedContact) {
       const now = new Date();
 
       // Timestamp fields per status transition
@@ -305,31 +313,29 @@ export class OrdersService {
       }
 
       try {
-        await this.prisma.contact.update({ where: { id: contactId }, data: contactUpdate });
+        await this.prisma.contact.update({ where: { id: linkedContact.id }, data: contactUpdate });
       } catch (syncError) {
-        this.logger.warn(`Contact sync failed for order ${id}: ${syncError}`);
+        this.logger.warn(
+          `Contact sync failed for order ${id}: error=${this.getErrorType(syncError)}`
+        );
       }
     }
 
     // Auto-assign work_number on confirmed → production (idempotent)
-    if (dto.status === 'production' && order.contactId) {
+    if (dto.status === 'production' && linkedContact) {
       try {
-        const contact = await this.prisma.contact.findUnique({
-          where: { id: String(order.contactId) },
-          select: { workNumber: true },
-        });
-        if (contact && !contact.workNumber) {
+        if (!linkedContact.workNumber) {
           const workNumber = await this.numberService.generateNumber('work');
           await this.prisma.contact.update({
-            where: { id: String(order.contactId) },
+            where: { id: linkedContact.id },
             data: { workNumber, productionStartedAt: new Date(), updatedAt: new Date() },
           });
         }
       } catch (error) {
         this.logger.error('현장번호 자동 부여 실패', {
           orderId: id,
-          contactId: order.contactId,
-          error: error instanceof Error ? error.message : String(error),
+          contactId: linkedContact.id,
+          error: this.getErrorType(error),
         });
         throw error;
       }
@@ -373,6 +379,7 @@ export class OrdersService {
           select: {
             id: true,
             contactId: true,
+            inquiryNumber: true,
             companyName: true,
             productionStatus: true,
             confirmationStatus: true,
@@ -384,6 +391,13 @@ export class OrdersService {
       { operationName: 'getOrderTimelineOrder' }
     );
     if (!order) throw new NotFoundException('Order not found');
+
+    const linkedContact = await this.findLinkedContactIdentity(order);
+    const jobEventWhere = this.buildOrderTimelineJobEventWhere(
+      id,
+      linkedContact,
+      order.inquiryNumber
+    );
 
     const [orderEvents, jobEvents] = await this.prisma.executeWithRetry(
       () =>
@@ -405,7 +419,7 @@ export class OrdersService {
             },
           }),
           this.prisma.jobEvent.findMany({
-            where: { orderId: id },
+            where: jobEventWhere,
             orderBy: [{ occurredAt: 'desc' }, { receivedAt: 'desc' }],
             take: 100,
             select: {
@@ -415,6 +429,9 @@ export class OrdersService {
               sourceWorker: true,
               sourceVersion: true,
               orderId: true,
+              contactId: true,
+              inquiryNumber: true,
+              workNumber: true,
               jobId: true,
               integrationRunId: true,
               workerLocalId: true,
@@ -432,11 +449,21 @@ export class OrdersService {
         ]),
       { operationName: 'getOrderTimelineEvents' }
     );
-    const timeline = buildOrderTimelineReadModel({ orderId: id, orderEvents, jobEvents });
+    const timeline = buildOrderTimelineReadModel({
+      orderId: id,
+      contactId: linkedContact?.id ?? null,
+      inquiryNumber: linkedContact?.inquiryNumber ?? order.inquiryNumber,
+      workNumber: linkedContact?.workNumber ?? null,
+      orderEvents,
+      jobEvents,
+    });
 
     return {
       order_id: order.id,
-      contact_id: order.contactId === null ? null : Number(order.contactId),
+      contact_id: linkedContact?.id ?? null,
+      legacy_order_contact_id: order.contactId === null ? null : Number(order.contactId),
+      inquiry_number: linkedContact?.inquiryNumber ?? order.inquiryNumber,
+      work_number: linkedContact?.workNumber ?? null,
       company_name: order.companyName,
       production_status: order.productionStatus ?? null,
       confirmation_status: order.confirmationStatus ?? null,
@@ -446,6 +473,88 @@ export class OrdersService {
       events: timeline.events,
       failures: [],
     };
+  }
+
+  private buildOrderTimelineJobEventWhere(
+    orderId: string,
+    linkedContact: LinkedContactIdentity | null,
+    orderInquiryNumber: string | null
+  ): Prisma.JobEventWhereInput {
+    const identityFilters: Prisma.JobEventWhereInput[] = [];
+    const inquiryNumber = linkedContact?.inquiryNumber ?? orderInquiryNumber;
+
+    if (linkedContact?.id) {
+      identityFilters.push({ contactId: linkedContact.id });
+    }
+    if (inquiryNumber) {
+      identityFilters.push({ inquiryNumber });
+    }
+    if (linkedContact?.workNumber) {
+      identityFilters.push({ workNumber: linkedContact.workNumber });
+    }
+
+    if (identityFilters.length === 0) {
+      return { orderId };
+    }
+
+    return {
+      OR: [
+        { orderId },
+        {
+          AND: [
+            { orderId: null },
+            {
+              OR: identityFilters,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  private async findLinkedContactIdentity(order: {
+    inquiryNumber: string | null;
+  }): Promise<LinkedContactIdentity | null> {
+    if (!order.inquiryNumber) {
+      return null;
+    }
+
+    const byInquiryNumber = await this.findContactIdentityByOperationalNumber(
+      'inquiryNumber',
+      order.inquiryNumber
+    );
+    if (byInquiryNumber) {
+      return byInquiryNumber;
+    }
+
+    return this.findContactIdentityByOperationalNumber('workNumber', order.inquiryNumber);
+  }
+
+  private async findContactIdentityByOperationalNumber(
+    field: 'inquiryNumber' | 'workNumber',
+    value: string
+  ): Promise<LinkedContactIdentity | null> {
+    const where =
+      field === 'inquiryNumber'
+        ? { inquiryNumber: value, status: { not: 'deleting' } }
+        : { workNumber: value, status: { not: 'deleting' } };
+
+    const contacts = await this.prisma.contact.findMany({
+      where,
+      select: {
+        id: true,
+        inquiryNumber: true,
+        workNumber: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 2,
+    });
+
+    if (contacts.length > 1) {
+      throw new BadRequestException(`${field} 중복 Contact가 있어 Order 연동을 중단했습니다.`);
+    }
+
+    return contacts[0] ?? null;
   }
 
   /**
@@ -722,6 +831,10 @@ export class OrdersService {
     return [{ [field]: sortOrder }];
   }
 
+  private getErrorType(error: unknown): string {
+    return error instanceof Error && error.name ? error.name : typeof error;
+  }
+
   private mapOrderToDto = (order: {
     id: string;
     contactId: bigint | null;
@@ -885,20 +998,9 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException('Order not found');
 
-    // inquiryNumber로 Contact 조회
-    if (order.inquiryNumber) {
-      const contact = await this.prisma.contact.findFirst({
-        where: { inquiryNumber: order.inquiryNumber },
-        select: { id: true },
-      });
-      if (contact) return contact.id;
-
-      // inquiryNumber가 workNumber인 경우 (현장직행)
-      const byWork = await this.prisma.contact.findFirst({
-        where: { workNumber: order.inquiryNumber },
-        select: { id: true },
-      });
-      if (byWork) return byWork.id;
+    const linkedContact = await this.findLinkedContactIdentity(order);
+    if (linkedContact) {
+      return linkedContact.id;
     }
 
     throw new NotFoundException('Linked contact not found for this order');

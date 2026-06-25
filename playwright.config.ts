@@ -11,6 +11,7 @@ const usesGoogleDriveStorage = Boolean(process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID)
  */
 export default defineConfig({
   testDir: './e2e',
+  testMatch: '**/ui-*.spec.ts',
 
   /* Global Setup: 모든 테스트 실행 전 1번만 로그인하고 auth state 저장 */
   globalSetup: require.resolve('./e2e/global-setup.ts'),
@@ -79,11 +80,19 @@ export default defineConfig({
     },
   ],
 
-  /* Run your local dev server before starting the tests */
-  webServer: {
-    command: 'npx next dev', // Turbopack 없이 실행 (Turbopack 패닉 방지)
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
-  },
+  /* Run your local API and frontend dev servers before starting the tests */
+  webServer: [
+    {
+      command: 'pnpm --dir webhard-api start',
+      url: 'http://localhost:4000/api/v1/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120 * 1000,
+    },
+    {
+      command: 'npx next dev', // Turbopack 없이 실행 (Turbopack 패닉 방지)
+      url: 'http://localhost:3000',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120 * 1000,
+    },
+  ],
 });

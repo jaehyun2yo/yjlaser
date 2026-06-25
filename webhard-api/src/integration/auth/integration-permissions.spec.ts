@@ -3,12 +3,14 @@ import {
   INTEGRATION_PERMISSIONS,
   INTEGRATION_WORKER_TYPES,
   getDefaultIntegrationPermissions,
+  hasIntegrationPermission,
   isIntegrationPermission,
 } from './integration-permissions';
 
 describe('integration permissions', () => {
   it('계약 문서의 worker scope 이름을 상수로 고정한다', () => {
     expect(INTEGRATION_PERMISSIONS).toEqual([
+      'contact/process-stage:write',
       'event/write',
       'file/register',
       'job/read',
@@ -28,10 +30,10 @@ describe('integration permissions', () => {
     expect(DEFAULT_INTEGRATION_WORKER_PERMISSIONS).toEqual({
       external_webhard_sync: ['file/register', 'event/write'],
       website_worker: ['event/write'],
-      management_program: ['event/write', 'job/read'],
-      nesting_program: ['event/write', 'job/read'],
+      management_program: ['event/write', 'job/read', 'contact/process-stage:write'],
+      nesting_program: ['event/write', 'job/read', 'contact/process-stage:write'],
       manual_worker: ['event/write', 'job/read'],
-      admin_dashboard: ['operation/read'],
+      admin_dashboard: ['operation/read', 'job/read'],
     });
   });
 
@@ -49,7 +51,13 @@ describe('integration permissions', () => {
     expect(getDefaultIntegrationPermissions('nesting_program')).toEqual([
       'event/write',
       'job/read',
+      'contact/process-stage:write',
     ]);
     expect(getDefaultIntegrationPermissions('unknown_worker')).toEqual([]);
+  });
+
+  it('legacy all 권한은 서버-서버 키의 wildcard 로 동작한다', () => {
+    expect(hasIntegrationPermission(['all'], 'job/read')).toBe(true);
+    expect(hasIntegrationPermission(['event/write'], 'job/read')).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ import { FoldersController } from '../folders.controller';
 import { FoldersService } from '../folders.service';
 import { WebhardConfigService } from '../webhard-config.service';
 import { SessionUser } from '../../auth/auth.service';
+import { ALLOW_INTEGRATION_PRINCIPAL_KEY } from '../../integration/auth/allow-integration-principal.decorator';
 import {
   FolderResponseDto,
   FolderListResponseDto,
@@ -96,6 +97,19 @@ describe('FoldersController', () => {
 
     const webhardConfigService = {} as unknown as jest.Mocked<WebhardConfigService>;
     controller = new FoldersController(foldersService, webhardConfigService);
+  });
+
+  describe('integration principal metadata', () => {
+    it('외부웹하드동기화프로그램 폴더 조회/생성 endpoint를 허용해야 함', () => {
+      const prototype = FoldersController.prototype;
+
+      expect(Reflect.getMetadata(ALLOW_INTEGRATION_PRINCIPAL_KEY, prototype.getChildFolders)).toBe(
+        true
+      );
+      expect(Reflect.getMetadata(ALLOW_INTEGRATION_PRINCIPAL_KEY, prototype.createFolder)).toBe(
+        true
+      );
+    });
   });
 
   // ─── GET /folders ──────────────────────────────────────────

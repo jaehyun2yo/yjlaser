@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, StorageProvider, WebhardFolder } from '@prisma/client';
@@ -67,6 +68,23 @@ interface WebsiteContactFileForWebhard {
   kind: 'drawing' | 'attachment' | 'reference_photo' | 'revision_request';
 }
 
+const CONTACT_OPERATIONAL_IDENTITY_SELECT = {
+  id: true,
+  workNumber: true,
+  inquiryNumber: true,
+  companyId: true,
+  webhardFolderId: true,
+  processStage: true,
+  status: true,
+  companyName: true,
+  inquiryTitle: true,
+  inquiryType: true,
+} satisfies Prisma.ContactSelect;
+
+type ContactOperationalIdentity = Prisma.ContactGetPayload<{
+  select: typeof CONTACT_OPERATIONAL_IDENTITY_SELECT;
+}>;
+
 export interface UploadedContactDriveFile {
   originalname: string;
   mimetype: string;
@@ -116,6 +134,11 @@ interface WorkerNoteRecord {
   updated_at?: unknown;
 }
 
+interface UpdateProcessStageOptions {
+  expectedCurrentStage?: string | null;
+  note?: string;
+}
+
 @Injectable()
 export class ContactsService {
   private readonly logger = new Logger(ContactsService.name);
@@ -142,11 +165,10 @@ export class ContactsService {
     const attachment = files.attachment?.find((file) => file.size > 0);
     const drawingFile = files.drawing_file?.find((file) => file.size > 0);
     const referencePhotos = (files.reference_photos ?? []).filter((file) => file.size > 0);
-    const requestedCount = Number(Boolean(attachment)) + Number(Boolean(drawingFile)) + referencePhotos.length;
+    const requestedCount =
+      Number(Boolean(attachment)) + Number(Boolean(drawingFile)) + referencePhotos.length;
 
-    this.logger.log(
-      `Contact Drive upload start: contactId=${contactId}, files=${requestedCount}`
-    );
+    this.logger.log(`Contact Drive upload start: contactId=${contactId}, files=${requestedCount}`);
 
     if (requestedCount === 0) {
       return { uploadedCount: 0, drawingUploaded: false, referencePhotoCount: 0 };
@@ -1174,25 +1196,48 @@ export class ContactsService {
    * 작업번호(F-번호)로 문의 조회
    */
   async findByWorkNumber(workNumber: string) {
-    const contact = await this.prisma.executeWithRetry(
+    return this.findByExactOperationalNumber('workNumber', workNumber, 'contacts.findByWorkNumber');
+  }
+
+  /**
+   * 문의번호(O-번호)로 문의 조회
+   */
+  async findByInquiryNumber(inquiryNumber: string) {
+    return this.findByExactOperationalNumber(
+      'inquiryNumber',
+      inquiryNumber,
+      'contacts.findByInquiryNumber'
+    );
+  }
+
+  private async findByExactOperationalNumber(
+    field: 'workNumber' | 'inquiryNumber',
+    value: string,
+    operationName: string
+  ): Promise<ContactOperationalIdentity | null> {
+    const where: Prisma.ContactWhereInput =
+      field === 'workNumber'
+        ? { workNumber: value, status: { not: 'deleting' } }
+        : { inquiryNumber: value, status: { not: 'deleting' } };
+
+    const contacts = await this.prisma.executeWithRetry(
       () =>
-        this.prisma.contact.findFirst({
-          where: { workNumber, status: { not: 'deleting' } },
-          select: {
-            id: true,
-            workNumber: true,
-            inquiryNumber: true,
-            processStage: true,
-            status: true,
-            companyName: true,
-            inquiryTitle: true,
-            inquiryType: true,
-          },
+        this.prisma.contact.findMany({
+          where,
+          select: CONTACT_OPERATIONAL_IDENTITY_SELECT,
+          orderBy: { updatedAt: 'desc' },
+          take: 2,
         }),
-      { operationName: 'contacts.findByWorkNumber' }
+      { operationName }
     );
 
-    return contact ?? null;
+    if (contacts.length > 1) {
+      throw new BadRequestException(
+        `${field} 중복 문의가 있어 운영 연동 자동 매칭을 중단했습니다.`
+      );
+    }
+
+    return contacts[0] ?? null;
   }
 
   /**
@@ -1228,6 +1273,7 @@ export class ContactsService {
    * 문의 생성
    */
   async create(dto: CreateContactDto) {
+    let companyMatchFailureReason: 'ambiguous' | 'not_found' | null = null;
     // inquiryType 자동 분류: serviceMoldRequest=true → mold_request
     const inquiryType = dto.serviceMoldRequest ? 'mold_request' : (dto.inquiryType ?? null);
     const isMoldRequest = inquiryType === 'mold_request';
@@ -1325,7 +1371,37 @@ export class ContactsService {
     // Contact INSERT + timeline(created) + initial drawing revision 을 단일 트랜잭션으로 원자화.
     // 하나라도 실패하면 전체 롤백 — Contact 만 남고 타임라인/초기 도면이 비는 상태를 원천 차단.
     const contact = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.contact.create({ data: cleanData });
+      const companyMatches =
+        typeof cleanData.companyName === 'string' && cleanData.companyName
+          ? await tx.company.findMany({
+              where: {
+                companyName: cleanData.companyName,
+                deletedAt: null,
+                status: 'active',
+                isApproved: true,
+              },
+              select: { id: true },
+              orderBy: { id: 'asc' },
+              take: 2,
+            })
+          : [];
+      const matchedCompany = companyMatches.length === 1 ? companyMatches[0] : null;
+      companyMatchFailureReason =
+        typeof cleanData.companyName === 'string' && cleanData.companyName
+          ? companyMatches.length > 1
+            ? 'ambiguous'
+            : matchedCompany
+              ? null
+              : 'not_found'
+          : null;
+      const createData: Prisma.ContactCreateInput = matchedCompany
+        ? {
+            ...cleanData,
+            company: { connect: { id: matchedCompany.id } },
+          }
+        : cleanData;
+
+      const created = await tx.contact.create({ data: createData });
 
       await this.timelineService.recordChange({
         contactId: created.id,
@@ -1352,11 +1428,7 @@ export class ContactsService {
       // - Company 미매칭 + inquiryType 확정 (task 21 Phase 2): mismatch 알림 + best-effort
       //   onContactCreated. 내부에서 fallback 폴더 탐색이 동작.
       if (created.companyName) {
-        const company = await tx.company.findFirst({
-          where: { companyName: created.companyName },
-          select: { id: true },
-        });
-        if (!company) {
+        if (!matchedCompany) {
           await tx.notification
             .create({
               data: {
@@ -1368,6 +1440,7 @@ export class ContactsService {
                 metadata: {
                   contactId: created.id,
                   companyName: created.companyName,
+                  reason: companyMatchFailureReason,
                 },
               },
             })
@@ -1379,9 +1452,9 @@ export class ContactsService {
               );
             });
           this.logger.warn(
-            `webhard_company_mismatch: contactId=${created.id}, companyName=${created.companyName}`
+            `webhard_company_mismatch: contactId=${created.id}, companyName=${created.companyName}, reason=${companyMatchFailureReason ?? 'unknown'}`
           );
-          if (created.inquiryType) {
+          if (created.inquiryType && companyMatchFailureReason !== 'ambiguous') {
             try {
               await this.contactFolderSync.onContactCreated({ contactId: created.id, client: tx });
             } catch (err) {
@@ -1404,13 +1477,19 @@ export class ContactsService {
     const result = this.toSnakeCase(contact);
     this.contactsGateway.emitContactCreated(result);
 
-    await this.syncWebsiteContactFilesToWebhard(contact.id).catch((err) => {
+    if (companyMatchFailureReason === 'ambiguous') {
       this.logger.warn(
-        `Website contact file webhard sync failed (contactId=${contact.id}): ${
-          err instanceof Error ? err.message : String(err)
-        }`
+        `Website contact file webhard sync skipped due to ambiguous company match (contactId=${contact.id}, companyName=${contact.companyName ?? 'unknown'})`
       );
-    });
+    } else {
+      await this.syncWebsiteContactFilesToWebhard(contact.id).catch((err) => {
+        this.logger.warn(
+          `Website contact file webhard sync failed (contactId=${contact.id}): ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      });
+    }
 
     await this.createAdminContactNotification({
       type: 'new_contact',
@@ -1645,7 +1724,12 @@ export class ContactsService {
   /**
    * 공정 단계 변경
    */
-  async updateProcessStage(id: string, processStage: string | null, actor?: TimelineActor) {
+  async updateProcessStage(
+    id: string,
+    processStage: string | null,
+    actor?: TimelineActor,
+    options: UpdateProcessStageOptions = {}
+  ) {
     // 하위호환: inspection은 삭제된 단계 → delivery로 정규화
     if (processStage === 'inspection') processStage = 'delivery';
 
@@ -1671,6 +1755,20 @@ export class ContactsService {
       throw new NotFoundException('문의를 찾을 수 없습니다.');
     }
 
+    if (processStage !== null && !PROCESS_STAGE_ORDER.includes(processStage)) {
+      throw new BadRequestException(`지원하지 않는 공정 단계입니다: ${processStage}`);
+    }
+
+    const hasExpectedCurrentStage = Object.prototype.hasOwnProperty.call(
+      options,
+      'expectedCurrentStage'
+    );
+    const LASER_SKIP_STAGES = ['cutting', 'creasing', 'delivery'];
+    const isLaserCompletionRequest =
+      existing.inquiryType === 'laser_cutting' &&
+      processStage !== null &&
+      LASER_SKIP_STAGES.includes(processStage);
+
     // 멱등성: 동일 공정 단계로 변경 요청 시 업데이트 없이 반환
     if (existing.processStage === processStage) {
       return {
@@ -1686,23 +1784,97 @@ export class ContactsService {
       };
     }
 
+    if (hasExpectedCurrentStage && existing.processStage !== options.expectedCurrentStage) {
+      if (
+        isLaserCompletionRequest &&
+        existing.processStage === null &&
+        existing.status === 'completed'
+      ) {
+        return {
+          id: existing.id,
+          process_stage: existing.processStage,
+          previous_stage: existing.processStage,
+          previous_status: existing.status,
+          work_number: existing.workNumber,
+          status: existing.status,
+          inquiry_type: existing.inquiryType,
+          updated_at: new Date(),
+          status_changed: false,
+        };
+      }
+
+      throw new ConflictException({
+        code: 'PROCESS_STAGE_CHANGED',
+        message: '공정 단계가 변경되어 integration 단계 전환을 중단했습니다.',
+        expected_stage: options.expectedCurrentStage,
+        current_stage: existing.processStage,
+        requested_stage: processStage,
+      });
+    }
+
     // 레이저 전용 문의: laser 단계에서 cutting/creasing/delivery로 이동 시 바로 완료 처리
-    const LASER_SKIP_STAGES = ['cutting', 'creasing', 'delivery'];
-    if (
-      existing.inquiryType === 'laser_cutting' &&
-      existing.processStage === 'laser' &&
-      processStage !== null &&
-      LASER_SKIP_STAGES.includes(processStage)
-    ) {
+    if (isLaserCompletionRequest && existing.processStage === 'laser') {
+      let laserCompletedMutationApplied = true;
+      const laserCompleteData: Prisma.ContactUpdateInput = {
+        status: 'completed',
+        processStage: null,
+        updatedAt: new Date(),
+      };
       const laserCompleted = await this.prisma.executeWithRetry(
-        () =>
-          this.prisma.contact.update({
+        async () => {
+          if (hasExpectedCurrentStage) {
+            const updateResult = await this.prisma.contact.updateMany({
+              where: { id, processStage: options.expectedCurrentStage },
+              data: laserCompleteData,
+            });
+            if (updateResult.count !== 1) {
+              const latest = await this.prisma.contact.findUnique({
+                where: { id },
+                select: {
+                  id: true,
+                  processStage: true,
+                  status: true,
+                  workNumber: true,
+                  inquiryType: true,
+                  updatedAt: true,
+                },
+              });
+              if (!latest) {
+                throw new NotFoundException('문의를 찾을 수 없습니다.');
+              }
+              if (latest.processStage === null && latest.status === 'completed') {
+                laserCompletedMutationApplied = false;
+                return latest;
+              }
+              throw new ConflictException({
+                code: 'PROCESS_STAGE_CHANGED',
+                message: '공정 단계가 변경되어 integration 단계 전환을 중단했습니다.',
+                expected_stage: options.expectedCurrentStage,
+                current_stage: latest.processStage,
+                requested_stage: processStage,
+              });
+            }
+
+            const updatedContact = await this.prisma.contact.findUnique({
+              where: { id },
+              select: {
+                id: true,
+                processStage: true,
+                status: true,
+                workNumber: true,
+                inquiryType: true,
+                updatedAt: true,
+              },
+            });
+            if (!updatedContact) {
+              throw new NotFoundException('문의를 찾을 수 없습니다.');
+            }
+            return updatedContact;
+          }
+
+          return this.prisma.contact.update({
             where: { id },
-            data: {
-              status: 'completed',
-              processStage: null,
-              updatedAt: new Date(),
-            },
+            data: laserCompleteData,
             select: {
               id: true,
               processStage: true,
@@ -1711,7 +1883,8 @@ export class ContactsService {
               inquiryType: true,
               updatedAt: true,
             },
-          }),
+          });
+        },
         { operationName: 'contacts.updateProcessStage.completeLaserOnly' }
       );
 
@@ -1724,8 +1897,11 @@ export class ContactsService {
         status: laserCompleted.status,
         inquiry_type: laserCompleted.inquiryType,
         updated_at: laserCompleted.updatedAt,
-        status_changed: true,
+        status_changed: laserCompletedMutationApplied,
       };
+      if (!laserCompletedMutationApplied) {
+        return laserResult;
+      }
       this.contactsGateway.emitContactProcessStageChanged(laserResult);
       this.contactsGateway.emitContactStatusChanged(laserResult);
 
@@ -1741,7 +1917,7 @@ export class ContactsService {
           actorName: actor?.actorName,
           companyName: actor?.companyName || existing.companyName || undefined,
           source: 'manual',
-          note: '레이저가공 완료 (레이저 전용 업체)',
+          note: options.note || '레이저가공 완료 (레이저 전용 업체)',
         })
         .catch((err) => {
           this.logger.error(`Timeline record failed: ${err.message}`);
@@ -1783,6 +1959,8 @@ export class ContactsService {
       data.status = autoStatusChange;
     }
 
+    let processStageMutationApplied = true;
+
     // task 23 phase 5 — 사무실→현장 전환 시 폴더 rename/ensure/relocate 는
     // workNumber 신규 발급 여부와 무관하게 실행한다.
     //   * 기존 버그: workNumber 이미 존재 시 rename 을 skip 했음 (drawing_confirmed 되돌림·재전환 케이스 silent fail)
@@ -1791,6 +1969,24 @@ export class ContactsService {
     //              → drawing_confirmed 전환 시 폴더 확보 실패하면 UnprocessableEntityException 으로 롤백
     const updated = isOfficeToField
       ? await this.prisma.$transaction(async (tx) => {
+          if (hasExpectedCurrentStage) {
+            const current = await tx.contact.findUnique({
+              where: { id },
+              select: { processStage: true },
+            });
+            if (!current) {
+              throw new NotFoundException('문의를 찾을 수 없습니다.');
+            }
+            if (current.processStage !== options.expectedCurrentStage) {
+              throw new ConflictException({
+                code: 'PROCESS_STAGE_CHANGED',
+                message: '공정 단계가 변경되어 integration 단계 전환을 중단했습니다.',
+                expected_stage: options.expectedCurrentStage,
+                current_stage: current.processStage,
+                requested_stage: processStage,
+              });
+            }
+          }
           const upd = await tx.contact.update({
             where: { id },
             data,
@@ -1811,22 +2007,75 @@ export class ContactsService {
           });
           return upd;
         })
-      : await this.prisma.executeWithRetry(
-          () =>
-            this.prisma.contact.update({
-              where: { id },
-              data,
-              select: {
-                id: true,
-                processStage: true,
-                status: true,
-                workNumber: true,
-                inquiryType: true,
-                updatedAt: true,
-              },
-            }),
-          { operationName: 'contacts.updateProcessStage.update' }
-        );
+      : hasExpectedCurrentStage
+        ? await this.prisma.executeWithRetry(
+            async () => {
+              const updateResult = await this.prisma.contact.updateMany({
+                where: { id, processStage: options.expectedCurrentStage },
+                data,
+              });
+              if (updateResult.count !== 1) {
+                const latest = await this.prisma.contact.findUnique({
+                  where: { id },
+                  select: {
+                    id: true,
+                    processStage: true,
+                    status: true,
+                    workNumber: true,
+                    inquiryType: true,
+                    updatedAt: true,
+                  },
+                });
+                if (!latest) {
+                  throw new NotFoundException('문의를 찾을 수 없습니다.');
+                }
+                if (latest.processStage === processStage) {
+                  processStageMutationApplied = false;
+                  return latest;
+                }
+                throw new ConflictException({
+                  code: 'PROCESS_STAGE_CHANGED',
+                  message: '공정 단계가 변경되어 integration 단계 전환을 중단했습니다.',
+                  expected_stage: options.expectedCurrentStage,
+                  current_stage: latest.processStage,
+                  requested_stage: processStage,
+                });
+              }
+
+              const updatedContact = await this.prisma.contact.findUnique({
+                where: { id },
+                select: {
+                  id: true,
+                  processStage: true,
+                  status: true,
+                  workNumber: true,
+                  inquiryType: true,
+                  updatedAt: true,
+                },
+              });
+              if (!updatedContact) {
+                throw new NotFoundException('문의를 찾을 수 없습니다.');
+              }
+              return updatedContact;
+            },
+            { operationName: 'contacts.updateProcessStage.updateExpected' }
+          )
+        : await this.prisma.executeWithRetry(
+            () =>
+              this.prisma.contact.update({
+                where: { id },
+                data,
+                select: {
+                  id: true,
+                  processStage: true,
+                  status: true,
+                  workNumber: true,
+                  inquiryType: true,
+                  updatedAt: true,
+                },
+              }),
+            { operationName: 'contacts.updateProcessStage.update' }
+          );
 
     // 납품 단계 진입 시 문의 폴더를 `완료/` 로 이동. Best Effort — 실패해도 stage 전환은 성공으로.
     if (processStage === 'delivery' && existing.processStage !== 'delivery') {
@@ -1850,6 +2099,11 @@ export class ContactsService {
       updated_at: updated.updatedAt,
       status_changed: autoStatusChange !== null,
     };
+
+    if (!processStageMutationApplied) {
+      return processStageResult;
+    }
+
     this.contactsGateway.emitContactProcessStageChanged(processStageResult);
 
     // Emit status change event if status was auto-updated
@@ -3746,9 +4000,9 @@ export class ContactsService {
     );
     const mimeType = this.resolveDeliveryProofMimeType(file.mimetype, displayName);
     const uploadedBy = this.resolveDeliveryProofUploadedBy(actor);
-    const folder = (await this.foldersService.ensureInquiryFolder(contact.id)) as
-      | DeliveryProofFolder
-      | null;
+    const folder = (await this.foldersService.ensureInquiryFolder(
+      contact.id
+    )) as DeliveryProofFolder | null;
 
     if (!folder) {
       throw new BadRequestException('문의 폴더를 찾을 수 없습니다.');

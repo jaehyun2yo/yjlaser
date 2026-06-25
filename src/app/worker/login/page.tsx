@@ -69,20 +69,23 @@ const WorkerLoginPage: FC = () => {
     [router, setWorkerSession]
   );
 
-  const handleDigitInput = useCallback(
-    (digit: string) => {
-      const newPin = pin + digit;
-      if (newPin.length > PIN_LENGTH) return;
+  useEffect(() => {
+    if (pin.length !== PIN_LENGTH || !name.trim() || isLoading) return;
 
-      setError('');
-      setPin(newPin);
+    const timer = window.setTimeout(() => {
+      void doLogin(name.trim(), pin);
+    }, 100);
 
-      if (newPin.length === PIN_LENGTH && name.trim()) {
-        setTimeout(() => doLogin(name.trim(), newPin), 100);
-      }
-    },
-    [pin, name, doLogin]
-  );
+    return () => window.clearTimeout(timer);
+  }, [doLogin, isLoading, name, pin]);
+
+  const handleDigitInput = useCallback((digit: string) => {
+    setError('');
+    setPin((currentPin) => {
+      const newPin = currentPin + digit;
+      return newPin.length > PIN_LENGTH ? currentPin : newPin;
+    });
+  }, []);
 
   const handleBackspace = useCallback(() => {
     setError('');

@@ -18,7 +18,7 @@ import {
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { ALLOW_WORKER_SESSION_KEY } from './allow-worker-session.decorator';
 import { INTEGRATION_PERMISSION_KEY } from './require-integration-permission.decorator';
-import type { IntegrationPermission } from './integration-permissions';
+import { hasIntegrationPermission, type IntegrationPermission } from './integration-permissions';
 
 const API_KEY_HEADER = 'x-api-key';
 const SESSION_COOKIE_NAMES = ['admin-session', 'company-session'] as const;
@@ -102,7 +102,7 @@ export class ApiKeyGuard implements CanActivate {
       if (keyInfo) {
         if (
           requiredIntegrationPermission &&
-          !keyInfo.permissions.includes(requiredIntegrationPermission)
+          !hasIntegrationPermission(keyInfo.permissions, requiredIntegrationPermission)
         ) {
           this.logSecurityFailure({
             event: 'api_key_permission_denied',

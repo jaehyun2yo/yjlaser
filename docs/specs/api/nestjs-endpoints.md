@@ -225,26 +225,26 @@ Contacts worker mutation route 중 `@AllowWorkerSession()`이 붙은 endpoint는
 
 | Method | Path                                                      | Auth                      | Description                                                        |
 | ------ | --------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------ |
-| GET    | /api/v1/contacts                                          | API Key                   | 문의 목록 조회                                                     |
-| GET    | /api/v1/contacts/status-counts                            | API Key                   | 상태별 카운트                                                      |
-| GET    | /api/v1/contacts/analytics/stage-duration                 | API Key                   | 공정별 소요시간 분석                                               |
-| GET    | /api/v1/contacts/count                                    | API Key                   | 조건부 카운트                                                      |
-| GET    | /api/v1/contacts/recent-ids                               | API Key                   | 최근 문의 ID 목록                                                  |
-| GET    | /api/v1/contacts/by-company                               | API Key                   | 업체별 문의 목록                                                   |
-| GET    | /api/v1/contacts/distinct-companies                       | API Key                   | 고유 업체명 목록                                                   |
-| GET    | /api/v1/contacts/:id                                      | API Key                   | 문의 단건 조회                                                     |
+| GET    | /api/v1/contacts                                          | API Key(job/read)         | 문의 목록 조회                                                     |
+| GET    | /api/v1/contacts/status-counts                            | API Key(job/read)         | 상태별 카운트                                                      |
+| GET    | /api/v1/contacts/analytics/stage-duration                 | API Key(job/read)         | 공정별 소요시간 분석                                               |
+| GET    | /api/v1/contacts/count                                    | API Key(job/read)         | 조건부 카운트                                                      |
+| GET    | /api/v1/contacts/recent-ids                               | API Key(job/read)         | 최근 문의 ID 목록                                                  |
+| GET    | /api/v1/contacts/by-company                               | API Key(job/read)         | 업체별 문의 목록                                                   |
+| GET    | /api/v1/contacts/distinct-companies                       | API Key(job/read)         | 고유 업체명 목록                                                   |
+| GET    | /api/v1/contacts/:id                                      | API Key(job/read)         | 문의 단건 조회                                                     |
 | GET    | /api/v1/contacts/:id/drawing-download                     | API Key                   | 첨부파일 presigned URL                                             |
 | GET    | /api/v1/contacts/:id/file-download                        | API Key                   | 파일 타입별 presigned URL                                          |
 | GET    | /api/v1/contacts/:id/webhard-info                         | API Key                   | 웹하드 연동 정보                                                   |
-| GET    | /api/v1/contacts/:id/timeline                             | API Key                   | 타임라인 조회                                                      |
+| GET    | /api/v1/contacts/:id/timeline                             | API Key(job/read)         | 타임라인 조회                                                      |
 | POST   | /api/v1/contacts                                          | None                      | 문의 생성 (공개 폼)                                                |
 | POST   | /api/v1/contacts/cleanup                                  | API Key                   | 10일 지난 삭제 건 영구삭제                                         |
-| POST   | /api/v1/contacts/find-duplicate                           | API Key                   | 중복 체크                                                          |
+| POST   | /api/v1/contacts/find-duplicate                           | API Key(job/read)         | 중복 체크                                                          |
 | POST   | /api/v1/contacts/backfill-timeline                        | API Key                   | 타임라인 백필 (일회성)                                             |
 | POST   | /api/v1/contacts/:id/acknowledge-badge                    | API Key                   | 뱃지 확인                                                          |
 | POST   | /api/v1/contacts/:id/restore                              | API Key                   | 삭제 복원                                                          |
 | POST   | /api/v1/contacts/:id/complete-laser                       | API Key \| Worker Session | 레이저 전용 문의 즉시 완료                                         |
-| PATCH  | /api/v1/contacts/:id                                      | API Key                   | 문의 수정                                                          |
+| PATCH  | /api/v1/contacts/:id                                      | Admin Session             | 문의 수정                                                          |
 | PATCH  | /api/v1/contacts/:id/status                               | API Key \| Worker Session | 상태 변경                                                          |
 | PATCH  | /api/v1/contacts/:id/process-stage                        | API Key \| Worker Session | 공정 단계 변경                                                     |
 | PATCH  | /api/v1/contacts/:id/inquiry-type                         | API Key \| Worker Session | 문의 유형 변경                                                     |
@@ -252,7 +252,7 @@ Contacts worker mutation route 중 `@AllowWorkerSession()`이 붙은 endpoint는
 | DELETE | /api/v1/contacts/batch-by-pattern                         | API Key                   | 배치 삭제 (company_name 패턴)                                      |
 | DELETE | /api/v1/contacts/delete-all                               | API Key                   | 전체 삭제 (개발 서버 전용)                                         |
 | POST   | /api/v1/contacts/:id/split                                | API Key \| Worker Session | 문의 분할 (N개 하위 문의 생성)                                     |
-| GET    | /api/v1/contacts/:id/children                             | API Key                   | 하위 문의 목록 조회                                                |
+| GET    | /api/v1/contacts/:id/children                             | API Key(job/read)         | 하위 문의 목록 조회                                                |
 | PATCH  | /api/v1/contacts/:id/stage-completed                      | API Key \| Worker Session | 단계 완료 체크 토글                                                |
 | POST   | /api/v1/contacts/:id/children/advance-stage               | API Key \| Worker Session | 그룹 일괄 다음 단계 이동                                           |
 | GET    | /api/v1/contacts/:id/drawing-revisions                    | API Key \| Worker Session | 도면 수정 이력 조회                                                |

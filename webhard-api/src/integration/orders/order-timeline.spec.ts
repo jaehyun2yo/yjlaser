@@ -19,13 +19,16 @@ import { OrdersService } from './orders.service';
 const MANAGEMENT_PROGRAM_KEY = 'management-program-key';
 const EXTERNAL_WEBHARD_KEY = 'external-webhard-key';
 const ORDER_ID = 'order-001';
+const CONTACT_ID = '11111111-2222-4333-8444-555555555555';
+const INQUIRY_NUMBER = '260619-O-001';
+const WORK_NUMBER = '260619-F-001';
 
 function makeOrder() {
   const now = new Date('2026-06-19T09:00:00Z');
   return {
     id: ORDER_ID,
     contactId: BigInt(123),
-    inquiryNumber: '260619-O-001',
+    inquiryNumber: INQUIRY_NUMBER,
     companyName: '원컴퍼니',
     customerName: null,
     customerPhone: null,
@@ -66,6 +69,9 @@ function makeOrderEvent() {
   return {
     id: 'order-event-001',
     orderId: ORDER_ID,
+    contactId: CONTACT_ID,
+    inquiryNumber: INQUIRY_NUMBER,
+    workNumber: WORK_NUMBER,
     eventType: 'status_changed',
     fromStatus: 'received',
     toStatus: 'drawing',
@@ -77,7 +83,7 @@ function makeOrderEvent() {
   };
 }
 
-function makeJobEvent() {
+function makeJobEvent(overrides: Record<string, unknown> = {}) {
   return {
     id: 'job-event-001',
     idempotencyKey: 'management_program:outbox-1',
@@ -86,6 +92,9 @@ function makeJobEvent() {
     sourceWorker: 'management_program',
     sourceVersion: '1.2.3',
     orderId: ORDER_ID,
+    contactId: CONTACT_ID,
+    inquiryNumber: INQUIRY_NUMBER,
+    workNumber: WORK_NUMBER,
     jobId: 'job-001',
     integrationRunId: null,
     workerLocalId: 'local-001',
@@ -99,6 +108,7 @@ function makeJobEvent() {
     failureId: null,
     orderEventId: 'order-event-derived',
     createdAt: new Date('2026-06-19T09:05:03Z'),
+    ...overrides,
   };
 }
 
@@ -113,6 +123,15 @@ function makePrisma() {
     },
     jobEvent: {
       findMany: jest.fn().mockResolvedValue([makeJobEvent()]),
+    },
+    contact: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: CONTACT_ID,
+          inquiryNumber: INQUIRY_NUMBER,
+          workNumber: WORK_NUMBER,
+        },
+      ]),
     },
   };
 }
@@ -183,7 +202,10 @@ describe('Integration orders timeline API', () => {
 
     expect(response.body).toMatchObject({
       order_id: ORDER_ID,
-      contact_id: 123,
+      contact_id: CONTACT_ID,
+      legacy_order_contact_id: 123,
+      inquiry_number: INQUIRY_NUMBER,
+      work_number: WORK_NUMBER,
       company_name: '원컴퍼니',
       production_status: 'DXF_READY',
       confirmation_status: 'CONFIRMED',
@@ -196,6 +218,9 @@ describe('Integration orders timeline API', () => {
     );
     expect(response.body.events[0]).toMatchObject({
       source_model: 'job_event',
+      contact_id: CONTACT_ID,
+      inquiry_number: INQUIRY_NUMBER,
+      work_number: WORK_NUMBER,
       event_type: 'drawing.classified',
       source_worker: 'management_program',
       result: 'success',
@@ -205,6 +230,51 @@ describe('Integration orders timeline API', () => {
     });
     expect(response.body.events[0]).not.toHaveProperty('payload');
     expect(response.body.events[0]).not.toHaveProperty('idempotencyKey');
+  });
+
+  it('returns Contact-only JobEvents matched through the linked Contact identity', async () => {
+    prisma.jobEvent.findMany.mockResolvedValue([
+      makeJobEvent({
+        id: 'job-event-contact-only',
+        orderId: null,
+        inquiryNumber: null,
+        workNumber: null,
+      }),
+    ]);
+
+    const response = await request(app.getHttpServer())
+      .get(`/integration/orders/${ORDER_ID}/timeline`)
+      .set('X-API-Key', MANAGEMENT_PROGRAM_KEY)
+      .expect(200);
+
+    const jobEventQuery = prisma.jobEvent.findMany.mock.calls[0][0] as {
+      where: { OR: Record<string, string>[] };
+    };
+    expect(jobEventQuery.where.OR).toEqual([
+      { orderId: ORDER_ID },
+      {
+        AND: [
+          { orderId: null },
+          {
+            OR: [
+              { contactId: CONTACT_ID },
+              { inquiryNumber: INQUIRY_NUMBER },
+              { workNumber: WORK_NUMBER },
+            ],
+          },
+        ],
+      },
+    ]);
+    expect(response.body.events.map((event: { timeline_id: string }) => event.timeline_id)).toEqual(
+      ['job_event:job-event-contact-only', 'order_event:order-event-001']
+    );
+    expect(response.body.events[0]).toMatchObject({
+      source_model: 'job_event',
+      order_id: ORDER_ID,
+      contact_id: CONTACT_ID,
+      inquiry_number: INQUIRY_NUMBER,
+      work_number: WORK_NUMBER,
+    });
   });
 
   it('returns 404 when the order does not exist', async () => {

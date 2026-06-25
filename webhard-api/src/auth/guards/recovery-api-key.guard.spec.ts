@@ -49,21 +49,21 @@ describe('RecoveryApiKeyGuard', () => {
     ).toThrow(ForbiddenException);
   });
 
-  it('development에서 env가 없으면 dev-only 기본 recovery key를 허용한다', () => {
+  it('development에서 env가 없으면 recovery key 요청을 거부한다', () => {
     process.env.NODE_ENV = 'development';
     const config = {
       get: jest.fn(() => undefined),
     } as unknown as ConfigService;
     const guard = new RecoveryApiKeyGuard(config);
 
-    expect(
+    expect(() =>
       guard.canActivate(
         makeContext({
           headers: { 'x-account-recovery-key': 'yjlaser-dev-account-recovery-key' },
           ip: '127.0.0.1',
         })
       )
-    ).toBe(true);
+    ).toThrow(ForbiddenException);
   });
 
   it('production에서 env가 없으면 recovery key 요청을 거부한다', () => {
@@ -100,18 +100,28 @@ describe('RecoveryApiKeyGuard', () => {
     ).toThrow(ForbiddenException);
   });
 
-  it('development이어도 loopback 요청이 아니면 dev-only 기본 recovery key를 거부한다', () => {
+  it('configured key가 있으면 development loopback 요청도 명시 key만 허용한다', () => {
     process.env.NODE_ENV = 'development';
     const config = {
-      get: jest.fn(() => undefined),
+      get: jest.fn((key: string) =>
+        key === 'ACCOUNT_RECOVERY_API_KEY' ? 'recovery-secret' : undefined
+      ),
     } as unknown as ConfigService;
     const guard = new RecoveryApiKeyGuard(config);
 
+    expect(
+      guard.canActivate(
+        makeContext({
+          headers: { 'x-account-recovery-key': 'recovery-secret' },
+          ip: '127.0.0.1',
+        })
+      )
+    ).toBe(true);
     expect(() =>
       guard.canActivate(
         makeContext({
           headers: { 'x-account-recovery-key': 'yjlaser-dev-account-recovery-key' },
-          ip: '203.0.113.10',
+          ip: '127.0.0.1',
         })
       )
     ).toThrow(ForbiddenException);

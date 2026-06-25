@@ -76,58 +76,61 @@ function RegisterForm() {
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
 
   const handleFieldChange = (fieldName: keyof RegistrationFormValues, value: string) => {
-    const newFormValues = { ...formValues, [fieldName]: value };
-    setFormValues(newFormValues);
+    setFormValues((prevValues) => {
+      const newFormValues = { ...prevValues, [fieldName]: value };
 
-    // 이미 touched된 필드이고 에러가 있었으면 즉시 재검증
-    if (touchedFields.has(fieldName) && fieldErrors[fieldName]) {
-      const error = validateField(fieldName, value, newFormValues);
-      setFieldErrors((prev) => {
-        const next = { ...prev };
-        if (error) {
-          next[fieldName] = error;
-        } else {
-          delete next[fieldName];
-        }
-        return next;
-      });
-    }
+      // 이미 touched된 필드이고 에러가 있었으면 즉시 재검증
+      if (touchedFields.has(fieldName) && fieldErrors[fieldName]) {
+        const error = validateField(fieldName, value, newFormValues);
+        setFieldErrors((prev) => {
+          const next = { ...prev };
+          if (error) {
+            next[fieldName] = error;
+          } else {
+            delete next[fieldName];
+          }
+          return next;
+        });
+      }
 
-    // 비밀번호 연동 검증: password 변경 시 passwordConfirm도 재검증
-    if (
-      fieldName === 'password' &&
-      touchedFields.has('passwordConfirm') &&
-      newFormValues.passwordConfirm
-    ) {
-      const confirmError = validateField(
-        'passwordConfirm',
-        newFormValues.passwordConfirm,
-        newFormValues
-      );
-      setFieldErrors((prev) => {
-        const next = { ...prev };
-        if (confirmError) {
-          next.passwordConfirm = confirmError;
-        } else {
-          delete next.passwordConfirm;
-        }
-        return next;
-      });
-    }
+      // 비밀번호 연동 검증: password 변경 시 passwordConfirm도 재검증
+      if (
+        fieldName === 'password' &&
+        touchedFields.has('passwordConfirm') &&
+        newFormValues.passwordConfirm
+      ) {
+        const confirmError = validateField(
+          'passwordConfirm',
+          newFormValues.passwordConfirm,
+          newFormValues
+        );
+        setFieldErrors((prev) => {
+          const next = { ...prev };
+          if (confirmError) {
+            next.passwordConfirm = confirmError;
+          } else {
+            delete next.passwordConfirm;
+          }
+          return next;
+        });
+      }
 
-    // quoteMethod 변경 시 accountantFax 재검증
-    if (fieldName === 'quoteMethod' && touchedFields.has('accountantFax')) {
-      const faxError = validateField('accountantFax', newFormValues.accountantFax, newFormValues);
-      setFieldErrors((prev) => {
-        const next = { ...prev };
-        if (faxError) {
-          next.accountantFax = faxError;
-        } else {
-          delete next.accountantFax;
-        }
-        return next;
-      });
-    }
+      // quoteMethod 변경 시 accountantFax 재검증
+      if (fieldName === 'quoteMethod' && touchedFields.has('accountantFax')) {
+        const faxError = validateField('accountantFax', newFormValues.accountantFax, newFormValues);
+        setFieldErrors((prev) => {
+          const next = { ...prev };
+          if (faxError) {
+            next.accountantFax = faxError;
+          } else {
+            delete next.accountantFax;
+          }
+          return next;
+        });
+      }
+
+      return newFormValues;
+    });
   };
 
   const handleFieldBlur = (fieldName: keyof RegistrationFormValues) => {
@@ -183,8 +186,18 @@ function RegisterForm() {
     setFieldErrors({});
     setFaxHighlight(false);
 
+    const currentFormValues = { ...formValues };
+    (Object.keys(currentFormValues) as (keyof RegistrationFormValues)[]).forEach((key) => {
+      const formKey = formDataKeyMap[key] || key;
+      const formValue = formData.get(formKey);
+      if (typeof formValue === 'string') {
+        currentFormValues[key] = formValue;
+      }
+    });
+    setFormValues(currentFormValues);
+
     // 클라이언트 사전 검증
-    const clientValidation = validateRegistrationForm(formValues);
+    const clientValidation = validateRegistrationForm(currentFormValues);
     if (!clientValidation.valid) {
       setFieldErrors(clientValidation.fieldErrors);
       setTouchedFields((prev) => {
@@ -203,7 +216,7 @@ function RegisterForm() {
 
     // formValues를 FormData에 덮어쓰기 (제어 컴포넌트 값 사용)
     const submitData = new FormData();
-    Object.entries(formValues).forEach(([key, value]) => {
+    Object.entries(currentFormValues).forEach(([key, value]) => {
       submitData.set(formDataKeyMap[key] || key, value);
     });
 

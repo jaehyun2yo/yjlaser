@@ -6,11 +6,15 @@
  */
 
 import { NextResponse } from 'next/server';
+import { requireAdminSession } from '@/app/api/_lib/route-authorization';
 
 const SYNC_SERVICE_URL = process.env.SYNC_SERVICE_URL || 'http://localhost:3001';
 
 export async function GET() {
   try {
+    const auth = await requireAdminSession();
+    if (!auth.ok) return auth.response;
+
     const response = await fetch(`${SYNC_SERVICE_URL}/api/v1/status`, {
       cache: 'no-store',
       headers: {

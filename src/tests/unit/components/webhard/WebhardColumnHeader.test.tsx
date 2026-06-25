@@ -82,8 +82,8 @@ describe('WebhardColumnHeader', () => {
         <WebhardColumnHeader {...defaultProps} sortBy="name" sortOrder="asc" />
       );
 
-      // FaSortUp 아이콘 (오름차순) - 오렌지색
-      const sortIcons = container.querySelectorAll('.text-\\[\\#ED6C00\\]');
+      // FaSortUp 아이콘 (오름차순) - brand 토큰
+      const sortIcons = container.querySelectorAll('.text-brand');
       expect(sortIcons.length).toBeGreaterThanOrEqual(1);
     });
 

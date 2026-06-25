@@ -16,16 +16,39 @@ import { PrismaService } from '../src/prisma/prisma.service';
 /**
  * 성능 테스트
  *
- * 목표:
- * - 깊이 10 폴더 이동: < 500ms
- * - 깊이 10 조상 조회: < 200ms
- * - 100개 하위 폴더 삭제: < 1000ms
- * - 100개 파일 배치 이동: < 500ms
- * - 100개 파일 배치 삭제: < 500ms
+ * 기본 Jest 실행은 작은 smoke profile로 항상 실행한다.
+ * RUN_PERF_TESTS=1이면 기존 heavy profile로 더 큰 fixture를 검증한다.
  */
-const describePerf = shouldRunWebhardPerfTests() ? describe : describe.skip;
+const heavyPerfProfile = shouldRunWebhardPerfTests();
+const perfProfile = heavyPerfProfile
+  ? {
+      depth: 10,
+      childFolderCount: 100,
+      batchFolderCount: 100,
+      fileCount: 100,
+      ancestorLimitMs: 200,
+      folderMoveLimitMs: 500,
+      folderDeleteLimitMs: 1000,
+      batchFolderDeleteLimitMs: 1000,
+      fileMoveLimitMs: 1000,
+      fileMoveApiLimitMs: 500,
+      fileDeleteLimitMs: 500,
+    }
+  : {
+      depth: 4,
+      childFolderCount: 5,
+      batchFolderCount: 5,
+      fileCount: 5,
+      ancestorLimitMs: 1000,
+      folderMoveLimitMs: 1000,
+      folderDeleteLimitMs: 1000,
+      batchFolderDeleteLimitMs: 1000,
+      fileMoveLimitMs: 1000,
+      fileMoveApiLimitMs: 1000,
+      fileDeleteLimitMs: 1000,
+    };
 
-describePerf('Performance Tests (e2e)', () => {
+describe('Performance Tests (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   const adminCookie = getAdminSessionCookie();
@@ -45,15 +68,14 @@ describePerf('Performance Tests (e2e)', () => {
     let folderIds: string[];
 
     beforeAll(async () => {
-      // 깊이 10의 폴더 체인 생성
-      folderIds = await createNestedFolders(prisma, 10);
+      folderIds = await createNestedFolders(prisma, perfProfile.depth);
     });
 
     afterAll(async () => {
       await cleanupTestData(prisma);
     });
 
-    it('깊이 10 폴더의 조상 조회: < 200ms', async () => {
+    it(`깊이 ${perfProfile.depth} 폴더의 조상 조회: < ${perfProfile.ancestorLimitMs}ms`, async () => {
       const deepestFolderId = folderIds[folderIds.length - 1];
 
       const { result, durationMs } = await measurePerformance(async () => {
@@ -65,11 +87,9 @@ describePerf('Performance Tests (e2e)', () => {
 
       console.log(`조상 조회 소요 시간: ${durationMs.toFixed(2)}ms`);
 
-      // 성능 목표: 200ms 이내
-      expect(durationMs).toBeLessThan(200);
+      expect(durationMs).toBeLessThan(perfProfile.ancestorLimitMs);
 
-      // 조상 9개 (자신 제외)
-      expect(result.body.ancestors.length).toBe(9);
+      expect(result.body.ancestors.length).toBe(perfProfile.depth - 1);
     });
   });
 
@@ -78,19 +98,16 @@ describePerf('Performance Tests (e2e)', () => {
     let targetFolderIds: string[];
 
     beforeAll(async () => {
-      // 깊이 10의 폴더 체인 생성
-      folderIds = await createNestedFolders(prisma, 10);
-      // 이동 대상 폴더 생성
-      targetFolderIds = await createNestedFolders(prisma, 10);
+      folderIds = await createNestedFolders(prisma, perfProfile.depth);
+      targetFolderIds = await createNestedFolders(prisma, perfProfile.depth);
     });
 
     afterAll(async () => {
       await cleanupTestData(prisma);
     });
 
-    it('깊이 10 폴더 이동 (순환참조 검사 포함): < 500ms', async () => {
-      // 체인의 5번째 폴더를 다른 체인의 끝으로 이동
-      const sourceFolder = folderIds[4];
+    it(`깊이 ${perfProfile.depth} 폴더 이동 (순환참조 검사 포함): < ${perfProfile.folderMoveLimitMs}ms`, async () => {
+      const sourceFolder = folderIds[Math.min(4, folderIds.length - 1)];
       const targetParent = targetFolderIds[targetFolderIds.length - 1];
 
       const { durationMs } = await measurePerformance(async () => {
@@ -103,29 +120,24 @@ describePerf('Performance Tests (e2e)', () => {
 
       console.log(`폴더 이동 소요 시간: ${durationMs.toFixed(2)}ms`);
 
-      // 성능 목표: 500ms 이내
-      expect(durationMs).toBeLessThan(500);
+      expect(durationMs).toBeLessThan(perfProfile.folderMoveLimitMs);
     });
   });
 
   describe('폴더 삭제 성능', () => {
     let parentFolderId: string;
-    let childFolderIds: string[];
 
     beforeAll(async () => {
-      // 부모 폴더 생성
       const [parentId] = await createNestedFolders(prisma, 1);
       parentFolderId = parentId;
-
-      // 100개 하위 폴더 생성
-      childFolderIds = await createChildFolders(prisma, parentFolderId, 100);
+      await createChildFolders(prisma, parentFolderId, perfProfile.childFolderCount);
     });
 
     afterAll(async () => {
       await cleanupTestData(prisma);
     });
 
-    it('100개 하위 폴더가 있는 폴더 삭제: < 1000ms', async () => {
+    it(`${perfProfile.childFolderCount}개 하위 폴더가 있는 폴더 삭제: < ${perfProfile.folderDeleteLimitMs}ms`, async () => {
       const { durationMs } = await measurePerformance(async () => {
         return request(app.getHttpServer())
           .delete(`/folders/${parentFolderId}`)
@@ -135,8 +147,7 @@ describePerf('Performance Tests (e2e)', () => {
 
       console.log(`폴더 삭제 소요 시간: ${durationMs.toFixed(2)}ms`);
 
-      // 성능 목표: 1000ms 이내
-      expect(durationMs).toBeLessThan(1000);
+      expect(durationMs).toBeLessThan(perfProfile.folderDeleteLimitMs);
     });
   });
 
@@ -144,15 +155,14 @@ describePerf('Performance Tests (e2e)', () => {
     let folderIds: string[];
 
     beforeAll(async () => {
-      // 100개 폴더 생성
-      folderIds = await createChildFolders(prisma, null, 100);
+      folderIds = await createChildFolders(prisma, null, perfProfile.batchFolderCount);
     });
 
     afterAll(async () => {
       await cleanupTestData(prisma);
     });
 
-    it('100개 폴더 배치 삭제: < 1000ms', async () => {
+    it(`${perfProfile.batchFolderCount}개 폴더 배치 삭제: < ${perfProfile.batchFolderDeleteLimitMs}ms`, async () => {
       const { result, durationMs } = await measurePerformance(async () => {
         return request(app.getHttpServer())
           .delete('/folders/batch-delete')
@@ -164,9 +174,8 @@ describePerf('Performance Tests (e2e)', () => {
       console.log(`배치 삭제 소요 시간: ${durationMs.toFixed(2)}ms`);
       console.log(`API 응답 durationMs: ${result.body.durationMs}ms`);
 
-      // 성능 목표: 1000ms 이내
-      expect(durationMs).toBeLessThan(1000);
-      expect(result.body.foldersDeleted).toBe(100);
+      expect(durationMs).toBeLessThan(perfProfile.batchFolderDeleteLimitMs);
+      expect(result.body.foldersDeleted).toBe(perfProfile.batchFolderCount);
     });
   });
 
@@ -175,10 +184,7 @@ describePerf('Performance Tests (e2e)', () => {
     let targetFolderId: string;
 
     beforeAll(async () => {
-      // 100개 파일 생성
-      fileIds = await createTestFiles(prisma, 100);
-
-      // 이동 대상 폴더 생성
+      fileIds = await createTestFiles(prisma, perfProfile.fileCount);
       const [folderId] = await createNestedFolders(prisma, 1);
       targetFolderId = folderId;
     });
@@ -187,7 +193,7 @@ describePerf('Performance Tests (e2e)', () => {
       await cleanupTestData(prisma);
     });
 
-    it('100개 파일 배치 이동: < 1000ms', async () => {
+    it(`${perfProfile.fileCount}개 파일 배치 이동: < ${perfProfile.fileMoveLimitMs}ms`, async () => {
       const { result, durationMs } = await measurePerformance(async () => {
         return request(app.getHttpServer())
           .post('/files/batch/move')
@@ -199,11 +205,9 @@ describePerf('Performance Tests (e2e)', () => {
       console.log(`파일 배치 이동 소요 시간: ${durationMs.toFixed(2)}ms`);
       console.log(`API 응답 durationMs: ${result.body.durationMs}ms`);
 
-      // 성능 목표: 1000ms 이내 (테스트 환경 변동성 고려, API 자체는 500ms 이내)
-      expect(durationMs).toBeLessThan(1000);
-      // API 자체 성능은 500ms 이내여야 함
-      expect(result.body.durationMs).toBeLessThan(500);
-      expect(result.body.processed).toBe(100);
+      expect(durationMs).toBeLessThan(perfProfile.fileMoveLimitMs);
+      expect(result.body.durationMs).toBeLessThan(perfProfile.fileMoveApiLimitMs);
+      expect(result.body.processed).toBe(perfProfile.fileCount);
     });
   });
 
@@ -211,15 +215,14 @@ describePerf('Performance Tests (e2e)', () => {
     let fileIds: string[];
 
     beforeAll(async () => {
-      // 100개 파일 생성
-      fileIds = await createTestFiles(prisma, 100);
+      fileIds = await createTestFiles(prisma, perfProfile.fileCount);
     });
 
     afterAll(async () => {
       await cleanupTestData(prisma);
     });
 
-    it('100개 파일 배치 삭제: < 500ms', async () => {
+    it(`${perfProfile.fileCount}개 파일 배치 삭제: < ${perfProfile.fileDeleteLimitMs}ms`, async () => {
       const { result, durationMs } = await measurePerformance(async () => {
         return request(app.getHttpServer())
           .post('/files/batch/delete')
@@ -231,9 +234,8 @@ describePerf('Performance Tests (e2e)', () => {
       console.log(`파일 배치 삭제 소요 시간: ${durationMs.toFixed(2)}ms`);
       console.log(`API 응답 durationMs: ${result.body.durationMs}ms`);
 
-      // 성능 목표: 500ms 이내
-      expect(durationMs).toBeLessThan(500);
-      expect(result.body.processed).toBe(100);
+      expect(durationMs).toBeLessThan(perfProfile.fileDeleteLimitMs);
+      expect(result.body.processed).toBe(perfProfile.fileCount);
     });
   });
 });

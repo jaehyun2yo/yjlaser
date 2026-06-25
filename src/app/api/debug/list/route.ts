@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { requireAdmin } from '@/lib/auth/adminGuard';
 import https from 'https';
 
 function getS3() {
@@ -25,16 +26,21 @@ function getS3() {
   });
 }
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   if (process.env.NODE_ENV !== 'development') {
     return NextResponse.json({ error: 'Not available' }, { status: 403 });
+  }
+
+  const auth = await requireAdmin();
+  if (!auth.authorized) {
+    return auth.response ?? NextResponse.json({ error: 'Admin only' }, { status: 403 });
   }
 
   try {
     const s3 = getS3();
     const bucket = process.env.R2_BUCKET_NAME as string;
-    // Prefix: webhard/1764220960385-rtx952c9-1107-7
-    const prefix = 'webhard/1764220960385-rtx952c9-1107-7';
+    const prefix =
+      new URL(request.url).searchParams.get('prefix')?.trim() || 'webhard/debug-test-prefix';
 
     const command = new ListObjectsV2Command({
       Bucket: bucket,

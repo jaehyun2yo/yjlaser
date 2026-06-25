@@ -68,7 +68,7 @@ type FolderRow = {
 
 interface PrismaMock {
   contact: { findUnique: jest.Mock; update: jest.Mock };
-  company: { findFirst: jest.Mock };
+  company: { findFirst: jest.Mock; findMany: jest.Mock };
   webhardFolder: {
     findFirst: jest.Mock;
     findUnique: jest.Mock;
@@ -93,7 +93,7 @@ interface PrismaMock {
 function makePrisma(): PrismaMock {
   const prisma: PrismaMock = {
     contact: { findUnique: jest.fn(), update: jest.fn() },
-    company: { findFirst: jest.fn() },
+    company: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     webhardFolder: {
       findFirst: jest.fn(),
       findUnique: jest.fn(async (args?: { where?: { id?: string } }) => {
@@ -278,6 +278,47 @@ describe('FoldersService.createFolder authorization', () => {
     expect(prisma.webhardFolder.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ companyId: 7 }),
+      })
+    );
+  });
+
+  it('allows integration principals to create folders for external sync', async () => {
+    const { service, prisma, storageService } = buildService();
+    const integrationUser: SessionUser = {
+      userId: 'api:sync',
+      userType: 'integration',
+      companyId: null,
+    };
+    prisma.webhardFolder.findFirst.mockResolvedValueOnce(null);
+    prisma.webhardFolder.create.mockResolvedValueOnce({
+      id: 'external-sync-folder',
+      name: '외부웹하드',
+      parentId: null,
+      companyId: null,
+      path: '/외부웹하드',
+      createdAt: new Date('2026-06-22T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-22T00:00:00.000Z'),
+      deletedAt: null,
+      storageProvider: StorageProvider.GOOGLE_DRIVE,
+      driveFolderId: 'drive-folder-1',
+      company: null,
+    });
+
+    await service.createFolder({ name: '외부웹하드' }, integrationUser);
+
+    expect(storageService.createDriveFolder).toHaveBeenCalledWith({
+      name: '외부웹하드',
+      parentStorageFolderId: null,
+      storageFolderId: 'drive-folder-1',
+    });
+    expect(prisma.webhardFolder.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          name: '외부웹하드',
+          companyId: null,
+          storageProvider: StorageProvider.GOOGLE_DRIVE,
+          driveFolderId: 'drive-folder-1',
+        }),
       })
     );
   });
@@ -832,7 +873,7 @@ describe('FoldersService.ensureInquiryFolder', () => {
     prisma.contact.findUnique.mockResolvedValue(
       contactRow({ inquiryNumber: INQUIRY_NUMBER, inquiryType: 'cutting_request' })
     );
-    prisma.company.findFirst.mockResolvedValue({ id: COMPANY_ID, companyName: COMPANY_NAME });
+    prisma.company.findMany.mockResolvedValueOnce([{ id: COMPANY_ID }]);
     prisma.webhardFolder.create.mockResolvedValue(
       inquiryFolderRow(INQUIRY_NUMBER, {
         parentId: INQUIRY_ROOT_FOLDER_ID,
@@ -975,7 +1016,7 @@ describe('FoldersService.ensureInquiryFolder', () => {
     prisma.contact.findUnique.mockResolvedValue(
       contactRow({ inquiryNumber: INQUIRY_NUMBER, inquiryType: 'cutting_request' })
     );
-    prisma.company.findFirst.mockResolvedValue({ id: COMPANY_ID, companyName: COMPANY_NAME });
+    prisma.company.findMany.mockResolvedValueOnce([{ id: COMPANY_ID }]);
     prisma.webhardFolder.create.mockResolvedValue(
       inquiryFolderRow(INQUIRY_NUMBER, {
         parentId: INQUIRY_ROOT_FOLDER_ID,
@@ -992,6 +1033,37 @@ describe('FoldersService.ensureInquiryFolder', () => {
     };
     expect(createCall.data.parentId).toBe(INQUIRY_ROOT_FOLDER_ID);
     expect(createCall.data.parentId).not.toBe(ROOT_FOLDER_ID);
+  });
+
+  it('P1-3b: R2 `문의/` 아래 문의 폴더 생성은 Drive API를 호출하지 않고 R2로 생성한다', async () => {
+    const { service, prisma, storageService } = buildService();
+    prisma.webhardFolder.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(rootFolderRow())
+      .mockResolvedValueOnce(inquiryRootFolderRow());
+    prisma.contact.findUnique.mockResolvedValue(
+      contactRow({ inquiryNumber: INQUIRY_NUMBER, inquiryType: 'cutting_request' })
+    );
+    prisma.company.findFirst.mockResolvedValue({ id: COMPANY_ID, companyName: COMPANY_NAME });
+    prisma.webhardFolder.create.mockResolvedValue(
+      inquiryFolderRow(INQUIRY_NUMBER, {
+        parentId: INQUIRY_ROOT_FOLDER_ID,
+        inquiryNumber: INQUIRY_NUMBER,
+        storageProvider: StorageProvider.R2,
+        driveFolderId: null,
+      })
+    );
+
+    const result = await service.ensureInquiryFolder(CONTACT_ID);
+
+    expect(result?.name).toBe(INQUIRY_NUMBER);
+    expect(storageService.generateDriveIds).not.toHaveBeenCalled();
+    expect(storageService.createDriveFolder).not.toHaveBeenCalled();
+    const createCall = prisma.webhardFolder.create.mock.calls[0][0] as {
+      data: Record<string, unknown>;
+    };
+    expect(createCall.data.storageProvider).toBe(StorageProvider.R2);
+    expect(createCall.data.driveFolderId).toBeNull();
   });
 
   it('P1-5: 기존 업체 (칼선의뢰·목형의뢰만) 에서 lazy `문의/` 생성 후 `{O}` 생성', async () => {
@@ -1416,6 +1488,32 @@ describe('FoldersService.ensureInquiryRootFolder', () => {
     expect(createCall.data.folderKind).toBe('template');
   });
 
+  it('P1-1b: R2 업체 루트 아래 lazy `문의/` 생성은 Drive API를 호출하지 않고 R2로 생성한다', async () => {
+    const { service, prisma, storageService } = buildService();
+    prisma.webhardFolder.findFirst.mockResolvedValueOnce(null);
+    prisma.webhardFolder.create.mockResolvedValue({
+      id: INQUIRY_ROOT_FOLDER_ID,
+      name: '문의',
+      parentId: ROOT_FOLDER_ID,
+      companyId: COMPANY_ID,
+      path: `/${COMPANY_NAME}/문의`,
+      folderKind: 'template',
+      storageProvider: StorageProvider.R2,
+      driveFolderId: null,
+    });
+
+    const result = await service.ensureInquiryRootFolder(ROOT_FOLDER_ID, COMPANY_ID);
+
+    expect(result.name).toBe('문의');
+    expect(storageService.generateDriveIds).not.toHaveBeenCalled();
+    expect(storageService.createDriveFolder).not.toHaveBeenCalled();
+    const createCall = prisma.webhardFolder.create.mock.calls[0][0] as {
+      data: Record<string, unknown>;
+    };
+    expect(createCall.data.storageProvider).toBe(StorageProvider.R2);
+    expect(createCall.data.driveFolderId).toBeNull();
+  });
+
   it('P1-2: 이미 `문의/` 폴더 존재 시 findFirst hit, 중복 create 안 함 (멱등)', async () => {
     const { service, prisma } = buildService();
     const existingInquiryRoot = {
@@ -1583,6 +1681,59 @@ describe('FoldersService.moveInquiryFolderToCompleted', () => {
     );
     // WebhardFile.update 는 호출되지 않음 — R2 key 유지
     expect(prisma.webhardFile.update).not.toHaveBeenCalled();
+  });
+
+  it('E4b: R2 문의 루트 아래 완료 폴더 생성은 Drive API를 호출하지 않고 R2로 생성한다', async () => {
+    const { service, prisma, storageService } = buildService();
+    const inquiryFolder = inquiryFolderRow(`${INQUIRY_NUMBER}_${WORK_NUMBER}`, {
+      parentId: INQUIRY_ROOT_FOLDER_ID,
+      inquiryNumber: INQUIRY_NUMBER,
+      workNumber: WORK_NUMBER,
+      storageProvider: StorageProvider.R2,
+      driveFolderId: null,
+    });
+    prisma.webhardFolder.findFirst
+      .mockResolvedValueOnce(inquiryFolder)
+      .mockResolvedValueOnce(rootFolderRow())
+      .mockResolvedValueOnce(inquiryRootFolderRow())
+      .mockResolvedValueOnce(null);
+    prisma.webhardFolder.findUnique
+      .mockResolvedValueOnce({
+        id: INQUIRY_ROOT_FOLDER_ID,
+        name: '문의',
+        companyId: COMPANY_ID,
+        parentId: ROOT_FOLDER_ID,
+        storageProvider: StorageProvider.R2,
+        driveFolderId: null,
+      })
+      .mockResolvedValue({
+        path: `/${COMPANY_NAME}/문의/완료`,
+        name: '완료',
+        parentId: INQUIRY_ROOT_FOLDER_ID,
+        storageProvider: StorageProvider.R2,
+        driveFolderId: null,
+      });
+    prisma.webhardFolder.create.mockResolvedValue({
+      id: COMPLETED_FOLDER_ID,
+      storageProvider: StorageProvider.R2,
+      driveFolderId: null,
+    });
+    prisma.webhardFolder.findMany.mockResolvedValue([]);
+    prisma.webhardFolder.update.mockResolvedValue({
+      ...inquiryFolder,
+      parentId: COMPLETED_FOLDER_ID,
+    });
+
+    await service.moveInquiryFolderToCompleted(CONTACT_ID);
+
+    expect(storageService.generateDriveIds).not.toHaveBeenCalled();
+    expect(storageService.createDriveFolder).not.toHaveBeenCalled();
+    expect(storageService.moveDriveFolder).not.toHaveBeenCalled();
+    const createCall = prisma.webhardFolder.create.mock.calls[0][0] as {
+      data: Record<string, unknown>;
+    };
+    expect(createCall.data.storageProvider).toBe(StorageProvider.R2);
+    expect(createCall.data.driveFolderId).toBeNull();
   });
 
   it('루트 하위 완료 폴더에 있던 legacy 문의 폴더는 문의/완료 아래로 다시 이동한다', async () => {

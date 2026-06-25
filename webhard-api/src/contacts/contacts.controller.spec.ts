@@ -8,7 +8,7 @@
  * 2. 거래처 세션이 다른 companyId의 contact 요청 시 403 ForbiddenException
  */
 
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ContactsController } from './contacts.controller';
 import { ContactsService } from './contacts.service';
 import { ContactTimelineService } from './contact-timeline.service';
@@ -52,7 +52,7 @@ function makeApiKeyUser(): SessionUser {
     userId: 'api:web',
     companyId: null,
     programType: 'web',
-    permissions: ['contacts:read'],
+    permissions: ['job/read'],
   };
 }
 
@@ -98,6 +98,77 @@ function buildController(
     workerContactAccessService
   );
 }
+
+describe('ContactsController.findByWorkNumber — 운영 identity lookup', () => {
+  const contact = {
+    id: CONTACT_ID,
+    workNumber: '260624-F-001',
+    inquiryNumber: '260624-O-001',
+    companyId: 42,
+    webhardFolderId: 'folder-inquiry-1',
+    processStage: 'laser',
+    status: 'production',
+    companyName: '거래처A',
+    inquiryTitle: '레이저 가공 문의',
+    inquiryType: 'cutting_request',
+  };
+
+  it('작업번호로 조회한 Contact identity를 { contact }로 반환한다', async () => {
+    const findByWorkNumber = jest.fn().mockResolvedValue(contact);
+    const controller = buildController({
+      contactsService: {
+        findByWorkNumber,
+      } as unknown as Partial<ContactsService>,
+    });
+
+    const result = await controller.findByWorkNumber(' 260624-F-001 ', makeApiKeyUser());
+
+    expect(result).toEqual({ contact });
+    expect(findByWorkNumber).toHaveBeenCalledWith('260624-F-001');
+  });
+
+  it('작업번호가 없으면 BadRequestException을 던진다', async () => {
+    const findByWorkNumber = jest.fn();
+    const controller = buildController({
+      contactsService: {
+        findByWorkNumber,
+      } as unknown as Partial<ContactsService>,
+    });
+
+    await expect(controller.findByWorkNumber('   ', makeApiKeyUser())).rejects.toThrow(
+      BadRequestException
+    );
+    expect(findByWorkNumber).not.toHaveBeenCalled();
+  });
+
+  it('문의번호로 조회한 Contact identity를 { contact }로 반환한다', async () => {
+    const findByInquiryNumber = jest.fn().mockResolvedValue(contact);
+    const controller = buildController({
+      contactsService: {
+        findByInquiryNumber,
+      } as unknown as Partial<ContactsService>,
+    });
+
+    const result = await controller.findByInquiryNumber(' 260624-O-001 ', makeApiKeyUser());
+
+    expect(result).toEqual({ contact });
+    expect(findByInquiryNumber).toHaveBeenCalledWith('260624-O-001');
+  });
+
+  it('문의번호가 없으면 BadRequestException을 던진다', async () => {
+    const findByInquiryNumber = jest.fn();
+    const controller = buildController({
+      contactsService: {
+        findByInquiryNumber,
+      } as unknown as Partial<ContactsService>,
+    });
+
+    await expect(controller.findByInquiryNumber('   ', makeApiKeyUser())).rejects.toThrow(
+      BadRequestException
+    );
+    expect(findByInquiryNumber).not.toHaveBeenCalled();
+  });
+});
 
 // ──────────────────────────────────────────────
 // 1. 응답 shape = { timeline: [...] }

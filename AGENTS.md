@@ -33,7 +33,7 @@ If the correct source fix is too large for the current request, stop and explain
 - Frontend: Next.js 15 App Router under `src/`
 - Backend: NestJS API under `webhard-api/`, prefix `/api/v1`
 - Database: PostgreSQL through Prisma in `webhard-api/`
-- Storage: Cloudflare R2 through presigned URLs
+- Storage: Google Drive through the NestJS storage provider for new webhard files; Cloudflare R2 remains for portfolio images and legacy compatibility
 - Deployment: Vercel frontend, Railway backend
 
 Next.js must not access PostgreSQL directly. All database operations go through the NestJS API.
@@ -52,10 +52,35 @@ Next.js must not access PostgreSQL directly. All database operations go through 
 ## Security Rules
 
 - Never print or commit `.env.local` values, session secrets, API keys, presigned URLs, password hashes, or tokens.
-- File upload changes must preserve extension, MIME, size, R2 key, and path traversal protections.
+- File upload changes must preserve extension, MIME, size, storage provider identity, Drive file/folder ids or R2 keys, and path traversal protections.
 - Webhard access changes must preserve `companyId` ownership, external-webhard visibility filtering, and admin/company/worker boundary checks.
 - Admin, company, worker, and API-key auth paths must stay separate. Tests should name the actor being verified.
 - Database migrations need a clear execution target, backup/drain plan, and rollback or recovery path.
+
+## Testing Strategy And AI QA
+
+Before behavior changes, choose the smallest reliable test layer and state it in
+the plan or final report: unit, integration/API, component, E2E UI, AI browser
+QA, or a deliberate combination.
+
+- Prefer test-first development for auth, permission, `companyId` ownership,
+  webhard visibility, upload/download, Google Drive/R2 storage, and bug fixes.
+  The new or changed test should fail for the expected reason before the
+  implementation fix.
+- Use backend integration/API tests for admin/company/worker boundaries,
+  storage provider metadata, presigned/download permissions, and DB ownership
+  rules.
+- Use frontend unit/component tests for form validation, role-gated controls,
+  React Query invalidation/update behavior, and recoverable UI errors.
+- Use Playwright E2E UI tests only for critical browser journeys: role login,
+  webhard navigation, upload/download, dashboard refresh, worker delivery, and
+  responsive overflow smoke.
+- Use Codex Browser, GStack QA, or similar AI browser tools for exploratory QA,
+  bug reproduction, screenshots, and interaction validation. They do not
+  replace committed tests that can run again in CI.
+- When AI browser QA finds a bug, capture repro steps and add a regression test
+  at the lowest meaningful layer. Use E2E UI only when the failure depends on
+  real browser/user interaction.
 
 ## Verification
 
@@ -65,6 +90,8 @@ Pick the narrowest verification that proves the change:
 - Frontend unit tests: `pnpm test -- --testPathPattern="<path>"`
 - Backend type safety: `cd webhard-api && npx tsc --noEmit`
 - Backend unit tests: `cd webhard-api && pnpm test -- <pattern>`
+- UI E2E inventory: `pnpm test:e2e:ui -- --list`
+- UI E2E execution: `pnpm test:e2e:ui -- --reporter=line`
 - E2E or browser validation for auth, webhard, upload/download, routing, and user-visible UI flows
 
 If a verification command cannot be run, state why and what risk remains.

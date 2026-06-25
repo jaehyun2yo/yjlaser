@@ -1,6 +1,9 @@
 import { buildOrderTimelineReadModel } from './order-timeline-read';
 
 const orderId = 'order-001';
+const contactId = '11111111-2222-4333-8444-555555555555';
+const inquiryNumber = '260619-O-001';
+const workNumber = '260619-F-001';
 
 function makeOrderEvent(overrides: Record<string, unknown> = {}) {
   return {
@@ -27,6 +30,9 @@ function makeJobEvent(overrides: Record<string, unknown> = {}) {
     sourceWorker: 'management_program',
     sourceVersion: '1.2.3',
     orderId,
+    contactId,
+    inquiryNumber,
+    workNumber,
     jobId: 'job-001',
     integrationRunId: null,
     workerLocalId: 'local-001',
@@ -48,6 +54,9 @@ describe('Order timeline read model', () => {
   it('OrderEvent와 JobEvent를 충돌 없는 timeline id로 병합하고 occurred_at 내림차순 정렬한다', () => {
     const result = buildOrderTimelineReadModel({
       orderId,
+      contactId,
+      inquiryNumber,
+      workNumber,
       orderEvents: [
         makeOrderEvent({
           id: 'shared-id',
@@ -69,6 +78,11 @@ describe('Order timeline read model', () => {
     });
 
     expect(result.order_id).toBe(orderId);
+    expect(result).toMatchObject({
+      contact_id: contactId,
+      inquiry_number: inquiryNumber,
+      work_number: workNumber,
+    });
     expect(result.events.map((event) => event.timeline_id)).toEqual([
       'job_event:job-event-late',
       'order_event:shared-id',
@@ -80,6 +94,9 @@ describe('Order timeline read model', () => {
   it('legacy OrderEvent 필드를 timeline entry로 보존한다', () => {
     const result = buildOrderTimelineReadModel({
       orderId,
+      contactId,
+      inquiryNumber,
+      workNumber,
       orderEvents: [makeOrderEvent()],
       jobEvents: [],
     });
@@ -89,6 +106,9 @@ describe('Order timeline read model', () => {
       source_model: 'order_event',
       event_id: 'order-event-001',
       order_id: orderId,
+      contact_id: contactId,
+      inquiry_number: inquiryNumber,
+      work_number: workNumber,
       event_type: 'status_changed',
       source: 'admin',
       source_worker: null,
@@ -107,6 +127,9 @@ describe('Order timeline read model', () => {
   it('JobEvent 운영 필드를 timeline entry로 노출하되 raw payload와 idempotency key는 제외한다', () => {
     const result = buildOrderTimelineReadModel({
       orderId,
+      contactId,
+      inquiryNumber,
+      workNumber,
       orderEvents: [],
       jobEvents: [makeJobEvent()],
     });
@@ -116,6 +139,9 @@ describe('Order timeline read model', () => {
       source_model: 'job_event',
       event_id: 'job-event-001',
       order_id: orderId,
+      contact_id: contactId,
+      inquiry_number: inquiryNumber,
+      work_number: workNumber,
       event_type: 'drawing.classified',
       source: 'management_program',
       source_worker: 'management_program',

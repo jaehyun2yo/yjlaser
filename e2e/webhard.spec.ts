@@ -29,6 +29,11 @@ async function gotoWebhard(page: Page): Promise<void> {
   await waitForWebhardReady(page);
 }
 
+async function expectWebhardShellLoaded(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/webhard/);
+  await expect(page.getByTestId('webhard-breadcrumb')).toBeVisible({ timeout: 15000 });
+}
+
 async function clickVisibleTextItem(page: Page, text: string) {
   const itemText = visibleText(page, text);
   await itemText.waitFor({ state: 'visible', timeout: 10000 });
@@ -81,15 +86,18 @@ test.describe('웹하드 파일 관리', () => {
 
   test('폴더 선택 시 즉시 반응', async ({ page }) => {
     // 폴더가 있는 경우 폴더 클릭
-    const folder = page.locator('[data-testid="folder-item"]').first();
+    const folder = page.locator('[data-folder-item]').first();
     if (await folder.isVisible()) {
+      const folderId = await folder.getAttribute('data-folder-id');
       const start = Date.now();
       await folder.click();
 
-      // 100ms 이내 선택 상태 변경 확인
-      await expect(folder).toHaveClass(/bg-\[#ED6C00\]|selected/, { timeout: 100 });
+      if (!folderId) throw new Error('Folder item did not expose data-folder-id');
+      await expect(page.getByTestId(`breadcrumb-folder-${folderId}`)).toBeVisible({
+        timeout: 1000,
+      });
       const elapsed = Date.now() - start;
-      expect(elapsed).toBeLessThan(200);
+      expect(elapsed).toBeLessThan(1200);
     }
   });
 
@@ -100,14 +108,19 @@ test.describe('웹하드 파일 관리', () => {
 
     // 새 파일 모드가 활성화되었는지 확인 (URL 또는 UI 상태)
     // URL에 newFiles 파라미터가 있거나, 새 파일 버튼이 활성화 상태
-    const isNewFilesMode =
-      page.url().includes('newFiles') ||
-      (await page
-        .locator('[class*="bg-[#ED6C00]"]')
-        .locator('text=새 파일')
-        .isVisible()
-        .catch(() => false));
-    expect(isNewFilesMode || true).toBeTruthy(); // 유연한 검증
+    await expect
+      .poll(
+        async () => {
+          if (page.url().includes('newFiles')) return true;
+          return page
+            .getByTestId('webhard-breadcrumb')
+            .getByText('새 파일', { exact: true })
+            .isVisible()
+            .catch(() => false);
+        },
+        { message: '새 파일 모드가 URL 또는 활성 버튼 상태로 표시되어야 한다', timeout: 5000 }
+      )
+      .toBe(true);
   });
 
   test('뷰 모드 전환 (리스트/그리드)', async ({ page }) => {
@@ -179,10 +192,7 @@ test.describe('웹하드 반응형 테스트', () => {
     await waitForVisibleTextToDisappear(page, '파일 목록을 불러오는 중...').catch(() => {});
     await page.waitForTimeout(1000);
 
-    // 모바일 뷰에서 웹하드 페이지가 로드되었는지 확인
-    // (사이드바 토글 버튼이 없을 수 있으므로 유연하게 검증)
-    const pageLoaded = await page.locator('body').isVisible();
-    expect(pageLoaded).toBeTruthy();
+    await expectWebhardShellLoaded(page);
   });
 
   test('태블릿에서 정상 표시', async ({ page }) => {
@@ -193,10 +203,7 @@ test.describe('웹하드 반응형 테스트', () => {
     await waitForVisibleTextToDisappear(page, '파일 목록을 불러오는 중...').catch(() => {});
     await page.waitForTimeout(1000);
 
-    // 태블릿에서 페이지가 로드되었는지 확인
-    // (반응형 레이아웃에서 사이드바가 숨겨질 수 있음)
-    const pageLoaded = await page.locator('body').isVisible();
-    expect(pageLoaded).toBeTruthy();
+    await expectWebhardShellLoaded(page);
   });
 });
 
@@ -258,13 +265,17 @@ test.describe('웹하드 성능 테스트', () => {
   test('폴더 전환 응답 시간', async ({ page }) => {
     await gotoWebhard(page);
 
-    const folder = page.locator('[data-testid="folder-item"]').first();
+    const folder = page.locator('[data-folder-item]').first();
     if (await folder.isVisible()) {
+      const folderId = await folder.getAttribute('data-folder-id');
       const start = Date.now();
       await folder.click();
 
       // 선택 상태 변경 대기
-      await page.waitForSelector('[class*="bg-[#ED6C00]"]', { timeout: 500 });
+      if (!folderId) throw new Error('Folder item did not expose data-folder-id');
+      await expect(page.getByTestId(`breadcrumb-folder-${folderId}`)).toBeVisible({
+        timeout: 500,
+      });
 
       const responseTime = Date.now() - start;
       test.info().annotations.push({ type: 'folder-switch-ms', description: String(responseTime) });

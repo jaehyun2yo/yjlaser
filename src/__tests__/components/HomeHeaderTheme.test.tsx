@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import HomeHeader from '@/components/HomeHeader';
 
 jest.mock('@/app/actions/auth', () => ({
@@ -6,12 +6,23 @@ jest.mock('@/app/actions/auth', () => ({
 }));
 
 describe('HomeHeader section contrast theme', () => {
-  it('uses dark navigation text on the light homepage hero', () => {
+  it('uses Spring/Summer navigation text on the light homepage hero', () => {
     render(<HomeHeader />);
 
-    expect(screen.getByRole('link', { name: '소개' })).toHaveClass('text-neutral-950/80');
-    expect(screen.getByRole('link', { name: '기업 로그인 페이지로 이동' })).toHaveClass(
-      'text-brand'
+    expect(screen.getByRole('banner')).toHaveClass('text-[#44394c]');
+
+    const nav = screen.getByRole('navigation', { name: '홈 섹션' });
+    expect(within(nav).getByRole('link', { name: 'What we do' })).toHaveAttribute(
+      'href',
+      '#what-we-do'
+    );
+    expect(within(nav).getByRole('link', { name: 'Our work' })).toHaveAttribute(
+      'href',
+      '#our-work'
+    );
+    expect(within(nav).getByRole('link', { name: 'About us' })).toHaveAttribute(
+      'href',
+      '#about-us'
     );
   });
 });

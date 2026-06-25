@@ -138,6 +138,7 @@ export class FoldersController {
    * ?parentId=xxx 또는 parentId 미지정 시 루트 폴더 반환
    */
   @Get('children')
+  @AllowIntegrationPrincipal()
   async getChildFolders(
     @Query('parentId') parentId: string | undefined,
     @CurrentUser() user: SessionUser
@@ -259,6 +260,7 @@ export class FoldersController {
    * POST /folders - Create a new folder
    */
   @Post()
+  @AllowIntegrationPrincipal()
   async createFolder(@Body() dto: CreateFolderDto, @CurrentUser() user: SessionUser) {
     return this.foldersService.createFolder(dto, user);
   }
