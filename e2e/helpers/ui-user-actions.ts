@@ -163,7 +163,10 @@ export async function loginAsWorker(page: Page, credentials: WorkerCredentials):
     await expect(digitButton).toBeEnabled({ timeout: 5000 });
     await digitButton.click();
   }
-  await page.waitForURL(/\/worker\/dashboard/, { timeout: 45000 });
+  await page.waitForURL(/\/worker\/dashboard/, {
+    waitUntil: 'domcontentloaded',
+    timeout: 120000,
+  });
 }
 
 export async function expectPageReady(

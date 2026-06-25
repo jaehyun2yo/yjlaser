@@ -69,16 +69,25 @@ describe('SyncLogService pipeline backlog', () => {
     const prisma = makePrisma();
     const service = new SyncLogService(prisma as never);
     const logSpy = spyOnSyncLogLoggerLog(service);
+    const contactId = '11111111-2222-4333-8444-555555555555';
 
     await service.create({
       filename: '거래처-도면-raw-name.dxf',
       companyName: '민감거래처',
       status: SyncLogStatus.SYNCED,
+      contactId,
     } as never);
 
     const serializedCalls = JSON.stringify(logSpy.mock.calls);
     expect(serializedCalls).not.toContain('거래처-도면-raw-name.dxf');
     expect(serializedCalls).not.toContain('민감거래처');
+    expect(prisma.syncLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactId,
+        }),
+      })
+    );
     expect(logSpy).toHaveBeenCalledWith(
       {
         action: 'sync_log_created',

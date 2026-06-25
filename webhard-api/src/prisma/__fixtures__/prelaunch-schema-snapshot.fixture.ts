@@ -342,7 +342,7 @@ export const PRELAUNCH_SCHEMA_SNAPSHOT = [
       'filename String @db.VarChar(500)',
       'companyName String? @map("company_name") @db.VarChar(200)',
       'status String @db.VarChar(30)',
-      'contactId Int? @map("contact_id")',
+      'contactId String? @map("contact_id") @db.VarChar(64)',
       'orderId String? @map("order_id")',
       'errorMessage String? @map("error_message")',
       'md5Hash String? @map("md5_hash") @db.VarChar(64)',

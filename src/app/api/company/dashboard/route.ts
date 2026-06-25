@@ -32,11 +32,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 });
     }
 
+    const companyId = Number(user.userId);
+    if (!Number.isSafeInteger(companyId) || companyId <= 0) {
+      return NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get('type') || 'all';
 
     // 업체 정보 가져오기 (NestJS API)
-    const companyData = await serverGetCompany(Number(user.userId));
+    const companyData = await serverGetCompany(companyId);
 
     if (!companyData) {
       dashboardApiLogger.error('Company not found', { userId: user.userId });

@@ -1,5 +1,5 @@
-import { IsString, IsOptional, IsInt, IsEnum } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsOptional, IsInt, IsEnum, MaxLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 export enum SyncLogStatus {
   SYNCED = 'synced',
@@ -21,8 +21,10 @@ export class CreateSyncLogDto {
   status: SyncLogStatus;
 
   @IsOptional()
-  @IsInt()
-  contactId?: number;
+  @Transform(({ value }) => (typeof value === 'number' ? String(value) : value))
+  @IsString()
+  @MaxLength(64)
+  contactId?: string;
 
   @IsOptional()
   @IsString()

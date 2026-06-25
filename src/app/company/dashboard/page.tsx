@@ -1,5 +1,6 @@
 import { getSessionUser } from '@/lib/auth/session';
 import { logger } from '@/lib/utils/logger';
+import { redirect } from 'next/navigation';
 import { CompanyDashboardClient } from './CompanyDashboardClient';
 import type { ProcessStage } from '@/lib/utils/processStages';
 import type { RevisionRequestHistory } from '@/types/database.types';
@@ -74,8 +75,13 @@ interface Contact {
 
 export default async function CompanyDashboardPage() {
   const user = await getSessionUser();
-  if (!user?.userId) {
-    return null;
+  if (user?.userType !== 'company' || !user?.userId) {
+    redirect('/login?next=%2Fcompany%2Fdashboard');
+  }
+
+  const companyId = Number(user.userId);
+  if (!Number.isSafeInteger(companyId) || companyId <= 0) {
+    redirect('/login?next=%2Fcompany%2Fdashboard');
   }
 
   // 업체 정보 가져오기 (NestJS API)
@@ -94,7 +100,7 @@ export default async function CompanyDashboardPage() {
   let bookings: Booking[] = [];
 
   try {
-    const companyData = await serverGetCompany(Number(user.userId));
+    const companyData = await serverGetCompany(companyId);
 
     if (!companyData) {
       dashboardLogger.error('Company not found', { userId: user.userId });
