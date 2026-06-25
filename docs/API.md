@@ -644,22 +644,22 @@ drawing → sample → drawing_confirmed → laser → cutting → creasing → 
 
 ### 상태/공정 관리
 
-| Method | Endpoint                      | 인증    | 설명           |
-| ------ | ----------------------------- | ------- | -------------- |
-| GET    | `/contacts/status-counts`     | API Key | 상태별 카운트  |
-| PATCH  | `/contacts/:id/status`        | API Key | 상태 변경      |
-| PATCH  | `/contacts/:id/process-stage` | API Key | 공정 단계 변경 |
-| PATCH  | `/contacts/:id/toggle-urgent` | API Key | 긴급 토글      |
-| PATCH  | `/contacts/:id/inquiry-type`  | API Key | 문의 유형 변경 |
+| Method | Endpoint                      | 인증              | 설명           |
+| ------ | ----------------------------- | ----------------- | -------------- |
+| GET    | `/contacts/status-counts`     | API Key(job/read) | 상태별 카운트  |
+| PATCH  | `/contacts/:id/status`        | Admin/Worker      | 상태 변경      |
+| PATCH  | `/contacts/:id/process-stage` | Admin/Worker      | 공정 단계 변경 |
+| PATCH  | `/contacts/:id/toggle-urgent` | Admin/Worker      | 긴급 토글      |
+| PATCH  | `/contacts/:id/inquiry-type`  | Admin/Worker      | 문의 유형 변경 |
 
 ### 타임라인/노트
 
-| Method | Endpoint                      | 인증    | 설명                        |
-| ------ | ----------------------------- | ------- | --------------------------- |
-| GET    | `/contacts/:id/timeline`      | API Key | 타임라인 조회               |
-| GET    | `/contacts/:id/notes`         | API Key | 작업자 노트 목록            |
-| POST   | `/contacts/:id/notes`         | API Key | 작업자 노트 추가 (최대 3개) |
-| DELETE | `/contacts/:id/notes/:noteId` | API Key | 작업자 노트 삭제            |
+| Method | Endpoint                      | 인증              | 설명                        |
+| ------ | ----------------------------- | ----------------- | --------------------------- |
+| GET    | `/contacts/:id/timeline`      | API Key(job/read) | 타임라인 조회               |
+| GET    | `/contacts/:id/notes`         | API Key(job/read) | 작업자 노트 목록            |
+| POST   | `/contacts/:id/notes`         | Admin/Worker      | 작업자 노트 추가 (최대 3개) |
+| DELETE | `/contacts/:id/notes/:noteId` | Admin/Worker      | 작업자 노트 삭제            |
 
 ### 도면 워크플로우
 
@@ -680,19 +680,19 @@ drawing → sample → drawing_confirmed → laser → cutting → creasing → 
 
 ### 배치/유틸리티
 
-| Method | Endpoint                             | 인증    | 설명                       |
-| ------ | ------------------------------------ | ------- | -------------------------- |
-| GET    | `/contacts/count`                    | API Key | 조건부 카운트              |
-| GET    | `/contacts/recent-ids`               | API Key | 최근 문의 ID 목록          |
-| GET    | `/contacts/by-company`               | API Key | 업체별 문의 목록           |
-| GET    | `/contacts/distinct-companies`       | API Key | 고유 업체명 목록           |
-| GET    | `/contacts/analytics/stage-duration` | API Key | 공정별 소요시간 분석       |
-| POST   | `/contacts/find-duplicate`           | API Key | 중복 체크                  |
-| POST   | `/contacts/cleanup`                  | API Key | 10일 지난 삭제 건 영구삭제 |
-| POST   | `/contacts/:id/acknowledge-badge`    | API Key | 뱃지 확인 처리             |
-| POST   | `/contacts/batch-start-delivery`     | API Key | 일괄 납품 시작             |
-| POST   | `/contacts/batch-complete-delivery`  | API Key | 일괄 납품 완료             |
-| DELETE | `/contacts/batch-by-pattern`         | API Key | 패턴 기반 배치 삭제        |
+| Method | Endpoint                             | 인증              | 설명                       |
+| ------ | ------------------------------------ | ----------------- | -------------------------- |
+| GET    | `/contacts/count`                    | API Key(job/read) | 조건부 카운트              |
+| GET    | `/contacts/recent-ids`               | API Key(job/read) | 최근 문의 ID 목록          |
+| GET    | `/contacts/by-company`               | API Key(job/read) | 업체별 문의 목록           |
+| GET    | `/contacts/distinct-companies`       | API Key(job/read) | 고유 업체명 목록           |
+| GET    | `/contacts/analytics/stage-duration` | API Key(job/read) | 공정별 소요시간 분석       |
+| POST   | `/contacts/find-duplicate`           | API Key(job/read) | 중복 체크                  |
+| POST   | `/contacts/cleanup`                  | API Key           | 10일 지난 삭제 건 영구삭제 |
+| POST   | `/contacts/:id/acknowledge-badge`    | API Key           | 뱃지 확인 처리             |
+| POST   | `/contacts/batch-start-delivery`     | API Key           | 일괄 납품 시작             |
+| POST   | `/contacts/batch-complete-delivery`  | API Key           | 일괄 납품 완료             |
+| DELETE | `/contacts/batch-by-pattern`         | API Key           | 패턴 기반 배치 삭제        |
 
 ---
 

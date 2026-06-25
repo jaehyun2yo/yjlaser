@@ -1864,11 +1864,7 @@ export class FoldersService {
     }
 
     const path = await this.computeFolderPath(rootFolderId, '문의');
-    const parentDriveFolderId = await this.getParentDriveFolderIdWithClient(client, rootFolderId);
-    const driveFolderId = await this.createDriveFolderBeforeDb({
-      name: '문의',
-      parentDriveFolderId,
-    });
+    const storage = await this.prepareChildFolderStorageBeforeDb(client, rootFolderId, '문의');
     const created = await client.webhardFolder.create({
       data: {
         name: '문의',
@@ -1876,8 +1872,8 @@ export class FoldersService {
         companyId,
         path,
         folderKind: 'template',
-        storageProvider: StorageProvider.GOOGLE_DRIVE,
-        driveFolderId,
+        storageProvider: storage.storageProvider,
+        driveFolderId: storage.driveFolderId,
       },
     });
     await this.invalidateFolderCache();
@@ -1993,14 +1989,11 @@ export class FoldersService {
 
       // 6. 중간 `문의/` 폴더 하위에 inquiry 폴더 생성.
       const targetPath = await this.computeFolderPath(inquiryRoot.id, folderName);
-      const parentDriveFolderId = await this.getParentDriveFolderIdWithClient(
+      const storage = await this.prepareChildFolderStorageBeforeDb(
         client,
-        inquiryRoot.id
+        inquiryRoot.id,
+        folderName
       );
-      const driveFolderId = await this.createDriveFolderBeforeDb({
-        name: folderName,
-        parentDriveFolderId,
-      });
       const created = await client.webhardFolder.create({
         data: {
           name: folderName,
@@ -2011,8 +2004,8 @@ export class FoldersService {
           folderKind: 'inquiry',
           inquiryNumber: contact.inquiryNumber ?? null,
           workNumber: contact.workNumber ?? null,
-          storageProvider: StorageProvider.GOOGLE_DRIVE,
-          driveFolderId,
+          storageProvider: storage.storageProvider,
+          driveFolderId: storage.driveFolderId,
         },
       });
       await this.invalidateFolderCache();
@@ -2214,13 +2207,12 @@ export class FoldersService {
     });
     if (!completedFolder) {
       const completedPath = await this.computeFolderPathWithClient(client, inquiryRoot.id, '완료');
-      const completedParentDriveFolderId = await this.getParentDriveFolderIdWithClient(
-        client,
-        inquiryRoot.id
-      );
-      const completedDriveFolderId = await this.createDriveFolderBeforeDb({
+      const storage = await this.prepareFolderStorageBeforeDb({
         name: '완료',
-        parentDriveFolderId: completedParentDriveFolderId,
+        parentFolder: inquiryRoot as Pick<
+          WebhardFolder,
+          'id' | 'storageProvider' | 'driveFolderId'
+        >,
       });
       completedFolder = await client.webhardFolder.create({
         data: {
@@ -2229,8 +2221,8 @@ export class FoldersService {
           companyId: inquiryFolder.companyId,
           path: completedPath,
           folderKind: 'template',
-          storageProvider: StorageProvider.GOOGLE_DRIVE,
-          driveFolderId: completedDriveFolderId,
+          storageProvider: storage.storageProvider,
+          driveFolderId: storage.driveFolderId,
         },
         select: { id: true, storageProvider: true, driveFolderId: true },
       });

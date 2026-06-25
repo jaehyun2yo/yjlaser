@@ -2,6 +2,24 @@
 
 ## 최신 상태 (가장 위가 최신)
 
+### 세션 #139 — 2026-06-24
+
+- **작업 내용**: 운영 데이터 연동 v2 ODATA2-010 — legacy Order/JobEvent read model Contact identity 정렬
+- **반영 기준**:
+  - 운영 canonical entity는 `Contact`이며, `Contact.id` UUID와 `inquiryNumber`/`workNumber`를 중앙 조회 키로 사용한다.
+  - legacy `Order.contactId BigInt`는 Contact UUID가 아니므로 신규 클라이언트가 Contact 참조로 사용하지 않는다.
+- **완료한 것**:
+  - worker event envelope에 `contact_id`, `inquiry_number`, `work_number`를 추가하고 `contact_id` UUID 검증을 고정했다.
+  - `JobEvent`/`JobFailure` schema에 Contact identity nullable 컬럼과 조회 인덱스를 추가하는 draft migration을 작성했다. 운영 DB에는 적용하지 않았다.
+  - order timeline 응답은 `contact_id`를 Contact UUID로 반환하고, legacy numeric 값은 `legacy_order_contact_id`로만 반환한다.
+  - `OrdersService.updateOrderStatus`가 `String(Order.contactId)` 대신 `Order.inquiryNumber`로 Contact UUID를 찾아 상태와 workNumber를 동기화하도록 변경했다.
+  - operations failure read model이 raw payload 없이 `contact_id`, `inquiry_number`, `work_number`를 반환한다.
+- **검증**:
+  - `webhard-api`: events identity 테스트 3개 suite / 25 tests 통과
+  - `webhard-api`: orders timeline/status 테스트 3개 suite / 31 tests 통과
+  - `webhard-api`: operations failure read model 테스트 1개 suite / 9 tests 통과
+- **관련 커밋**: 미커밋
+
 ### 세션 #138 — 2026-06-19
 
 - **작업 내용**: UI 조작 기반 E2E 실패 수정 및 전체 통과 확인

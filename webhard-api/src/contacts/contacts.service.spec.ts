@@ -14,7 +14,12 @@
  *            번호 발급 직후 ensureInquiryFolder + relocateContactFiles 호출
  */
 
-import { Logger, UnprocessableEntityException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Logger,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { ContactsService } from './contacts.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 
@@ -25,10 +30,12 @@ interface PrismaMock {
     findUnique: jest.Mock;
     findMany: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
     count: jest.Mock;
   };
   company: {
     findFirst: jest.Mock;
+    findMany: jest.Mock;
   };
   notification: {
     create: jest.Mock;
@@ -73,10 +80,12 @@ function makePrisma(): PrismaMock {
       findUnique: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn(),
+      updateMany: jest.fn(),
       count: jest.fn().mockResolvedValue(0),
     },
     company: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     notification: {
       create: jest.fn().mockResolvedValue(undefined),
@@ -263,6 +272,147 @@ const DTO_WITH_DRAWING: CreateContactDto = {
   drawingFileUrl: 'https://cdn.yjlaser.net/drawings/initial.dxf',
   drawingFileName: 'initial.dxf',
 } as unknown as CreateContactDto;
+
+describe('ContactsService.findByWorkNumber — 운영 identity lookup', () => {
+  it('작업번호 exact lookup은 운영 연동 필수 identity 필드를 반환한다', async () => {
+    const { service, prisma } = buildService();
+    prisma.contact.findMany.mockResolvedValueOnce([
+      {
+        id: 'contact-work-number',
+        workNumber: '260624-F-001',
+        inquiryNumber: '260624-O-001',
+        companyId: 42,
+        webhardFolderId: 'folder-inquiry-1',
+        processStage: 'laser',
+        status: 'production',
+        companyName: '거래처A',
+        inquiryTitle: '레이저 가공 문의',
+        inquiryType: 'cutting_request',
+      },
+    ]);
+
+    const result = await service.findByWorkNumber('260624-F-001');
+
+    expect(result).toEqual({
+      id: 'contact-work-number',
+      workNumber: '260624-F-001',
+      inquiryNumber: '260624-O-001',
+      companyId: 42,
+      webhardFolderId: 'folder-inquiry-1',
+      processStage: 'laser',
+      status: 'production',
+      companyName: '거래처A',
+      inquiryTitle: '레이저 가공 문의',
+      inquiryType: 'cutting_request',
+    });
+    expect(prisma.contact.findMany).toHaveBeenCalledWith({
+      where: { workNumber: '260624-F-001', status: { not: 'deleting' } },
+      select: expect.objectContaining({
+        id: true,
+        workNumber: true,
+        inquiryNumber: true,
+        companyId: true,
+        webhardFolderId: true,
+        processStage: true,
+        status: true,
+        companyName: true,
+        inquiryTitle: true,
+        inquiryType: true,
+      }),
+      orderBy: { updatedAt: 'desc' },
+      take: 2,
+    });
+  });
+
+  it('문의번호 exact lookup도 동일한 identity shape를 반환한다', async () => {
+    const { service, prisma } = buildService();
+    prisma.contact.findMany.mockResolvedValueOnce([
+      {
+        id: 'contact-inquiry-number',
+        workNumber: null,
+        inquiryNumber: '260624-O-001',
+        companyId: null,
+        webhardFolderId: 'external-folder-1',
+        processStage: 'drawing',
+        status: 'received',
+        companyName: '미등록업체',
+        inquiryTitle: '외부웹하드 문의',
+        inquiryType: null,
+      },
+    ]);
+
+    const result = await service.findByInquiryNumber('260624-O-001');
+
+    expect(result).toEqual({
+      id: 'contact-inquiry-number',
+      workNumber: null,
+      inquiryNumber: '260624-O-001',
+      companyId: null,
+      webhardFolderId: 'external-folder-1',
+      processStage: 'drawing',
+      status: 'received',
+      companyName: '미등록업체',
+      inquiryTitle: '외부웹하드 문의',
+      inquiryType: null,
+    });
+    expect(prisma.contact.findMany).toHaveBeenCalledWith({
+      where: { inquiryNumber: '260624-O-001', status: { not: 'deleting' } },
+      select: expect.objectContaining({
+        id: true,
+        workNumber: true,
+        inquiryNumber: true,
+        companyId: true,
+        webhardFolderId: true,
+        processStage: true,
+        status: true,
+        companyName: true,
+        inquiryTitle: true,
+        inquiryType: true,
+      }),
+      orderBy: { updatedAt: 'desc' },
+      take: 2,
+    });
+  });
+
+  it('번호에 매칭되는 Contact가 없으면 null을 반환한다', async () => {
+    const { service, prisma } = buildService();
+    prisma.contact.findMany.mockResolvedValueOnce([]);
+
+    await expect(service.findByInquiryNumber('260624-O-404')).resolves.toBeNull();
+  });
+
+  it('같은 작업번호 Contact가 2건 이상이면 자동 매칭을 중단한다', async () => {
+    const { service, prisma } = buildService();
+    prisma.contact.findMany.mockResolvedValueOnce([
+      {
+        id: 'contact-dup-1',
+        workNumber: '260624-F-DUP',
+        inquiryNumber: '260624-O-001',
+        companyId: 1,
+        webhardFolderId: 'folder-1',
+        processStage: 'laser',
+        status: 'production',
+        companyName: '거래처A',
+        inquiryTitle: '중복1',
+        inquiryType: 'cutting_request',
+      },
+      {
+        id: 'contact-dup-2',
+        workNumber: '260624-F-DUP',
+        inquiryNumber: '260624-O-002',
+        companyId: 2,
+        webhardFolderId: 'folder-2',
+        processStage: 'laser',
+        status: 'production',
+        companyName: '거래처B',
+        inquiryTitle: '중복2',
+        inquiryType: 'cutting_request',
+      },
+    ]);
+
+    await expect(service.findByWorkNumber('260624-F-DUP')).rejects.toThrow(BadRequestException);
+  });
+});
 
 describe('ContactsService worker notifications', () => {
   it('작업자 이슈 메모 추가 시 관리자 작업관리 알림을 생성한다', async () => {
@@ -887,6 +1037,256 @@ describe('ContactsService.updateProcessStage — folder routing (Phase 5 H2)', (
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(ensureInquiryFolder).not.toHaveBeenCalled();
   });
+
+  it('H2c: expectedCurrentStage 조건부 업데이트가 race로 바뀐 stage를 감지하면 중단한다', async () => {
+    const { service, prisma } = buildService();
+    prisma.contact.findUnique
+      .mockResolvedValueOnce({
+        id: 'contact-h2c',
+        processStage: 'drawing_confirmed',
+        status: 'drawing',
+        companyName: '거래처A',
+        workNumber: F_NUMBER,
+        inquiryNumber: O_NUMBER,
+        inquiryTitle: null,
+        inquiryType: 'cutting_request',
+      })
+      .mockResolvedValueOnce({
+        id: 'contact-h2c',
+        processStage: 'cutting',
+        status: 'drawing',
+        workNumber: F_NUMBER,
+        inquiryType: 'cutting_request',
+        updatedAt: new Date('2026-06-24T00:00:00.000Z'),
+      });
+    prisma.contact.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.updateProcessStage(
+        'contact-h2c',
+        'laser',
+        { actorType: 'system', actorName: 'management_program' },
+        { expectedCurrentStage: 'drawing_confirmed' }
+      )
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(prisma.contact.updateMany).toHaveBeenCalledWith({
+      where: { id: 'contact-h2c', processStage: 'drawing_confirmed' },
+      data: expect.objectContaining({ processStage: 'laser' }),
+    });
+    expect(prisma.contact.update).not.toHaveBeenCalled();
+  });
+
+  it('H2d: laser_cutting 특수 완료 branch도 expectedCurrentStage race를 감지하면 중단한다', async () => {
+    const { service, prisma } = buildService();
+    prisma.contact.findUnique
+      .mockResolvedValueOnce({
+        id: 'contact-h2d',
+        processStage: 'laser',
+        status: 'cutting',
+        companyName: '거래처A',
+        workNumber: F_NUMBER,
+        inquiryNumber: O_NUMBER,
+        inquiryTitle: null,
+        inquiryType: 'laser_cutting',
+      })
+      .mockResolvedValueOnce({
+        id: 'contact-h2d',
+        processStage: 'drawing_confirmed',
+        status: 'drawing',
+        workNumber: F_NUMBER,
+        inquiryType: 'laser_cutting',
+        updatedAt: new Date('2026-06-24T00:00:00.000Z'),
+      });
+    prisma.contact.updateMany.mockResolvedValue({ count: 0 });
+    prisma.contact.update.mockResolvedValue({
+      id: 'contact-h2d',
+      processStage: null,
+      status: 'completed',
+      workNumber: F_NUMBER,
+      inquiryType: 'laser_cutting',
+      updatedAt: new Date('2026-06-24T00:00:00.000Z'),
+    });
+
+    await expect(
+      service.updateProcessStage(
+        'contact-h2d',
+        'cutting',
+        { actorType: 'system', actorName: 'nesting_program' },
+        { expectedCurrentStage: 'laser' }
+      )
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(prisma.contact.updateMany).toHaveBeenCalledWith({
+      where: { id: 'contact-h2d', processStage: 'laser' },
+      data: expect.objectContaining({ status: 'completed', processStage: null }),
+    });
+    expect(prisma.contact.update).not.toHaveBeenCalled();
+  });
+
+  it('H2e: laser_cutting retry가 이미 완료된 row를 만나면 이벤트와 타임라인을 재발행하지 않는다', async () => {
+    const { service, prisma, gateway, timeline } = buildService();
+    prisma.contact.findUnique
+      .mockResolvedValueOnce({
+        id: 'contact-h2e',
+        processStage: 'laser',
+        status: 'cutting',
+        companyName: '거래처A',
+        workNumber: F_NUMBER,
+        inquiryNumber: O_NUMBER,
+        inquiryTitle: null,
+        inquiryType: 'laser_cutting',
+      })
+      .mockResolvedValueOnce({
+        id: 'contact-h2e',
+        processStage: null,
+        status: 'completed',
+        workNumber: F_NUMBER,
+        inquiryType: 'laser_cutting',
+        updatedAt: new Date('2026-06-24T00:00:00.000Z'),
+      });
+    prisma.contact.updateMany.mockResolvedValue({ count: 0 });
+
+    const result = await service.updateProcessStage(
+      'contact-h2e',
+      'cutting',
+      { actorType: 'system', actorName: 'nesting_program' },
+      { expectedCurrentStage: 'laser' }
+    );
+
+    expect(result).toMatchObject({
+      id: 'contact-h2e',
+      process_stage: null,
+      status: 'completed',
+      status_changed: false,
+    });
+    expect(prisma.contact.updateMany).toHaveBeenCalledWith({
+      where: { id: 'contact-h2e', processStage: 'laser' },
+      data: expect.objectContaining({ status: 'completed', processStage: null }),
+    });
+    expect(gateway.emitContactProcessStageChanged).not.toHaveBeenCalled();
+    expect(gateway.emitContactStatusChanged).not.toHaveBeenCalled();
+    expect(timeline.recordChange).not.toHaveBeenCalled();
+  });
+
+  it('H2f: expectedCurrentStage retry가 이미 목표 stage로 바뀐 row를 만나면 이벤트와 타임라인을 재발행하지 않는다', async () => {
+    const { service, prisma, gateway, timeline } = buildService();
+    prisma.contact.findUnique
+      .mockResolvedValueOnce({
+        id: 'contact-h2f',
+        processStage: 'drawing_confirmed',
+        status: 'drawing',
+        companyName: '거래처A',
+        workNumber: F_NUMBER,
+        inquiryNumber: O_NUMBER,
+        inquiryTitle: null,
+        inquiryType: 'cutting_request',
+      })
+      .mockResolvedValueOnce({
+        id: 'contact-h2f',
+        processStage: 'laser',
+        status: 'drawing',
+        workNumber: F_NUMBER,
+        inquiryType: 'cutting_request',
+        updatedAt: new Date('2026-06-24T00:00:00.000Z'),
+      });
+    prisma.contact.updateMany.mockResolvedValue({ count: 0 });
+
+    const result = await service.updateProcessStage(
+      'contact-h2f',
+      'laser',
+      { actorType: 'system', actorName: 'management_program' },
+      { expectedCurrentStage: 'drawing_confirmed' }
+    );
+
+    expect(result).toMatchObject({
+      id: 'contact-h2f',
+      process_stage: 'laser',
+      previous_stage: 'drawing_confirmed',
+      status: 'drawing',
+      status_changed: false,
+    });
+    expect(prisma.contact.updateMany).toHaveBeenCalledWith({
+      where: { id: 'contact-h2f', processStage: 'drawing_confirmed' },
+      data: expect.objectContaining({ processStage: 'laser' }),
+    });
+    expect(gateway.emitContactProcessStageChanged).not.toHaveBeenCalled();
+    expect(gateway.emitContactStatusChanged).not.toHaveBeenCalled();
+    expect(timeline.recordChange).not.toHaveBeenCalled();
+  });
+
+  it('H2g: laser_cutting retry가 첫 조회에서 이미 완료 상태이면 expectedCurrentStage 충돌 대신 no-op으로 반환한다', async () => {
+    const { service, prisma, gateway, timeline } = buildService();
+    prisma.contact.findUnique.mockResolvedValueOnce({
+      id: 'contact-h2g',
+      processStage: null,
+      status: 'completed',
+      companyName: '거래처A',
+      workNumber: F_NUMBER,
+      inquiryNumber: O_NUMBER,
+      inquiryTitle: null,
+      inquiryType: 'laser_cutting',
+      updatedAt: new Date('2026-06-24T00:00:00.000Z'),
+    });
+
+    const result = await service.updateProcessStage(
+      'contact-h2g',
+      'cutting',
+      { actorType: 'system', actorName: 'nesting_program' },
+      { expectedCurrentStage: 'laser' }
+    );
+
+    expect(result).toMatchObject({
+      id: 'contact-h2g',
+      process_stage: null,
+      status: 'completed',
+      status_changed: false,
+    });
+    expect(prisma.contact.updateMany).not.toHaveBeenCalled();
+    expect(prisma.contact.update).not.toHaveBeenCalled();
+    expect(gateway.emitContactProcessStageChanged).not.toHaveBeenCalled();
+    expect(gateway.emitContactStatusChanged).not.toHaveBeenCalled();
+    expect(timeline.recordChange).not.toHaveBeenCalled();
+  });
+
+  it('H2h: laser_cutting 완료 timeline note는 updateProcessStage options.note를 우선 사용한다', async () => {
+    const { service, prisma, timeline } = buildService();
+    prisma.contact.findUnique
+      .mockResolvedValueOnce({
+        id: 'contact-h2h',
+        processStage: 'laser',
+        status: 'cutting',
+        companyName: '거래처A',
+        workNumber: F_NUMBER,
+        inquiryNumber: O_NUMBER,
+        inquiryTitle: null,
+        inquiryType: 'laser_cutting',
+      })
+      .mockResolvedValueOnce({
+        id: 'contact-h2h',
+        processStage: null,
+        status: 'completed',
+        workNumber: F_NUMBER,
+        inquiryType: 'laser_cutting',
+        updatedAt: new Date('2026-06-24T00:00:00.000Z'),
+      });
+    prisma.contact.updateMany.mockResolvedValue({ count: 1 });
+
+    await service.updateProcessStage(
+      'contact-h2h',
+      'cutting',
+      { actorType: 'system', actorName: 'nesting_program' },
+      { expectedCurrentStage: 'laser', note: '네스팅 배치완료 후 자동 완료' }
+    );
+
+    expect(timeline.recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contactId: 'contact-h2h',
+        changeType: 'completed',
+        note: '네스팅 배치완료 후 자동 완료',
+      })
+    );
+  });
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -896,6 +1296,26 @@ describe('ContactsService.updateProcessStage — folder routing (Phase 5 H2)', (
 //   - transaction rollback 검증 (onProcessStageChanged throw → contact update 롤백)
 // ══════════════════════════════════════════════════════════════
 describe('ContactsService.updateProcessStage — task 23 phase 5 (stage-transition-backend)', () => {
+  it('invalid processStage 값은 DB update 전에 거부한다', async () => {
+    const { service, prisma } = buildService();
+    prisma.contact.findUnique.mockResolvedValue({
+      id: 'contact-invalid-stage',
+      processStage: 'laser',
+      status: 'production',
+      companyName: '거래처A',
+      workNumber: F_NUMBER,
+      inquiryNumber: O_NUMBER,
+      inquiryTitle: null,
+      inquiryType: 'mold_request',
+    });
+
+    await expect(service.updateProcessStage('contact-invalid-stage', 'bad_stage')).rejects.toThrow(
+      BadRequestException
+    );
+
+    expect(prisma.contact.update).not.toHaveBeenCalled();
+  });
+
   it('T23-P5-1: workNumber 이미 존재 + drawing→drawing_confirmed 재전환 → onProcessStageChanged 호출', async () => {
     // QA 제보의 핵심 버그: drawing_confirmed 를 되돌렸다 다시 전진하거나 외부 동기화 Contact 가
     // workNumber 를 이미 갖고 있는 경우, 기존 코드는 issueWorkNumber=false 여서 폴더 sync 가 skip 됐다.
@@ -1430,7 +1850,7 @@ describe('ContactsService.create — 웹하드 폴더 자동 연결 (task 20 Pha
       status: 'drawing',
       processStage: 'drawing',
     });
-    prisma.company.findFirst.mockResolvedValue({ id: 101 });
+    prisma.company.findMany.mockResolvedValue([{ id: 101 }]);
 
     await service.create({
       ...BASE_DTO,
@@ -1446,6 +1866,85 @@ describe('ContactsService.create — 웹하드 폴더 자동 연결 (task 20 Pha
       INQUIRY_FOLDER_ID,
       expect.anything()
     );
+  });
+
+  it('P2-1b: 등록 업체 companyName 은 Contact 생성 시 company relation 으로 연결한다', async () => {
+    const generateNumber = jest.fn().mockResolvedValue(O_NUMBER);
+    const { service, prisma } = buildService({ generateNumber });
+    prisma.company.findMany.mockResolvedValue([{ id: 101 }]);
+    prisma.contact.create.mockResolvedValue({
+      id: 'contact-p2-1b',
+      companyName: '거래처A',
+      companyId: 101,
+      inquiryType: 'cutting_request',
+      inquiryNumber: O_NUMBER,
+      drawingFileUrl: null,
+      drawingFileName: null,
+      status: 'received',
+      processStage: null,
+    });
+
+    await service.create({
+      ...BASE_DTO,
+      inquiryType: 'cutting_request',
+    } as unknown as CreateContactDto);
+
+    expect(prisma.contact.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        companyName: '거래처A',
+        company: { connect: { id: 101 } },
+      }),
+    });
+    expect(prisma.company.findMany).toHaveBeenCalledWith({
+      where: {
+        companyName: '거래처A',
+        deletedAt: null,
+        status: 'active',
+        isApproved: true,
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+      take: 2,
+    });
+  });
+
+  it('P2-1c: 등록 업체 companyName 후보가 2개 이상이면 자동 company 연결과 폴더 sync를 중단한다', async () => {
+    const generateNumber = jest.fn().mockResolvedValue(O_NUMBER);
+    const onContactCreated = jest.fn();
+    const { service, prisma } = buildService({ generateNumber, onContactCreated });
+    const syncSpy = jest
+      .spyOn(
+        service as unknown as {
+          syncWebsiteContactFilesToWebhard(contactId: string): Promise<void>;
+        },
+        'syncWebsiteContactFilesToWebhard'
+      )
+      .mockResolvedValue(undefined);
+    prisma.company.findMany.mockResolvedValue([{ id: 101 }, { id: 102 }]);
+    prisma.contact.create.mockResolvedValue({
+      id: 'contact-p2-1c',
+      companyName: '거래처A',
+      companyId: null,
+      inquiryType: 'cutting_request',
+      inquiryNumber: O_NUMBER,
+      drawingFileUrl: 'r2://bucket/duplicate-company.dxf',
+      drawingFileName: 'duplicate-company.dxf',
+      status: 'received',
+      processStage: null,
+    });
+
+    await service.create({
+      ...BASE_DTO,
+      inquiryType: 'cutting_request',
+    } as unknown as CreateContactDto);
+
+    expect(prisma.contact.create).toHaveBeenCalledWith({
+      data: expect.not.objectContaining({
+        company: expect.anything(),
+      }),
+    });
+    expect(onContactCreated).not.toHaveBeenCalled();
+    expect(syncSpy).not.toHaveBeenCalled();
   });
 
   it('P2-2: inquiryType=mold_request → workNumber 발급 + ensureInquiryFolder 호출', async () => {
@@ -1467,7 +1966,7 @@ describe('ContactsService.create — 웹하드 폴더 자동 연결 (task 20 Pha
       status: 'confirmed',
       processStage: 'drawing_confirmed',
     });
-    prisma.company.findFirst.mockResolvedValue({ id: 101 });
+    prisma.company.findMany.mockResolvedValue([{ id: 101 }]);
 
     await service.create({
       ...BASE_DTO,
@@ -1495,7 +1994,7 @@ describe('ContactsService.create — 웹하드 폴더 자동 연결 (task 20 Pha
       status: 'received',
       processStage: null,
     });
-    prisma.company.findFirst.mockResolvedValue({ id: 101 });
+    prisma.company.findMany.mockResolvedValue([{ id: 101 }]);
 
     await service.create(BASE_DTO);
 
@@ -1522,7 +2021,7 @@ describe('ContactsService.create — 웹하드 폴더 자동 연결 (task 20 Pha
       status: 'drawing',
       processStage: 'drawing',
     });
-    prisma.company.findFirst.mockResolvedValue({ id: 101 });
+    prisma.company.findMany.mockResolvedValue([{ id: 101 }]);
 
     await expect(
       service.create({
@@ -1555,7 +2054,7 @@ describe('ContactsService.create — 웹하드 폴더 자동 연결 (task 20 Pha
       status: 'drawing',
       processStage: 'drawing',
     });
-    prisma.company.findFirst.mockResolvedValue(null);
+    prisma.company.findMany.mockResolvedValue([]);
     prisma.notification.create.mockResolvedValue({});
 
     await service.create({
@@ -1596,7 +2095,7 @@ describe('ContactsService.create — 웹하드 폴더 자동 연결 (task 20 Pha
       status: 'received',
       processStage: null,
     });
-    prisma.company.findFirst.mockResolvedValue(null);
+    prisma.company.findMany.mockResolvedValue([]);
     prisma.notification.create.mockRejectedValue(new Error('notif insert failed'));
 
     await expect(
@@ -1649,7 +2148,7 @@ describe('ContactsService.create — 웹하드 폴더 자동 연결 (task 20 Pha
         'https://cdn.yjlaser.net/contacts/reference-photos/1779340000000-abc123de-0-샘플사진.jpg',
       ]),
     });
-    prisma.company.findFirst.mockResolvedValue({ id: 101 });
+    prisma.company.findMany.mockResolvedValue([{ id: 101 }]);
     prisma.webhardFile.findFirst.mockResolvedValue(null);
     prisma.webhardFile.create
       .mockResolvedValueOnce({ id: 'drawing-file-id' })
@@ -1738,7 +2237,7 @@ describe('ContactsService.create — !company fallback (task 21 Phase 2)', () =>
       status: 'confirmed',
       processStage: 'drawing_confirmed',
     });
-    prisma.company.findFirst.mockResolvedValue(null);
+    prisma.company.findMany.mockResolvedValue([]);
     prisma.notification.create.mockResolvedValue({});
 
     await service.create({
@@ -1770,7 +2269,7 @@ describe('ContactsService.create — !company fallback (task 21 Phase 2)', () =>
       status: 'drawing',
       processStage: 'drawing',
     });
-    prisma.company.findFirst.mockResolvedValue(null);
+    prisma.company.findMany.mockResolvedValue([]);
     prisma.notification.create.mockResolvedValue({});
 
     const result = await service.create({
@@ -1808,7 +2307,7 @@ describe('ContactsService.create — !company fallback (task 21 Phase 2)', () =>
       status: 'confirmed',
       processStage: 'drawing_confirmed',
     });
-    prisma.company.findFirst.mockResolvedValue(null);
+    prisma.company.findMany.mockResolvedValue([]);
     prisma.notification.create.mockResolvedValue({});
 
     const result = await service.create({
@@ -1841,7 +2340,7 @@ describe('ContactsService.create — !company fallback (task 21 Phase 2)', () =>
       status: 'drawing',
       processStage: 'drawing',
     });
-    prisma.company.findFirst.mockResolvedValue(null);
+    prisma.company.findMany.mockResolvedValue([]);
     prisma.notification.create.mockResolvedValue({});
 
     await service.create({
@@ -1881,7 +2380,7 @@ describe('ContactsService.create — !company fallback (task 21 Phase 2)', () =>
       status: 'confirmed',
       processStage: 'drawing_confirmed',
     });
-    prisma.company.findFirst.mockResolvedValue(null);
+    prisma.company.findMany.mockResolvedValue([]);
     prisma.notification.create.mockResolvedValue({});
 
     // !company 분기 try/catch 로 예외 흡수 — service.create 는 성공.
@@ -1917,7 +2416,7 @@ describe('ContactsService.create — !company fallback (task 21 Phase 2)', () =>
       status: 'drawing',
       processStage: 'drawing',
     });
-    prisma.company.findFirst.mockResolvedValue({ id: 101 });
+    prisma.company.findMany.mockResolvedValue([{ id: 101 }]);
 
     await service.create({
       ...BASE_DTO,

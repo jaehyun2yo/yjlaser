@@ -734,6 +734,7 @@ function makeMigratePrisma(setup: {
     id: string;
     webhardFolderId: string | null;
     companyId: number | null;
+    companyName?: string | null;
   }>;
   company: { id: number; companyName: string } | null;
 }): MigratePrismaMock {
@@ -912,6 +913,7 @@ function makeMigratePrisma(setup: {
         if (where.companyId === null) targets = targets.filter((c) => c.companyId === null);
         for (const t of targets) {
           if (data.companyId !== undefined) t.companyId = data.companyId;
+          if (data.companyName !== undefined) t.companyName = data.companyName;
         }
         return { count: targets.length };
       }
@@ -1270,5 +1272,92 @@ describe('ContactFolderSyncService.migrateExternalFolderTreeToCompany (task 26)'
     expect(arg.where.webhardFolderId.in).toContain(EXTERNAL_ROOT_ID);
     expect(arg.where.companyId).toBeNull();
     expect(arg.data).toEqual({ companyId: COMPANY_ID, companyName: COMPANY_NAME });
+  });
+
+  it('M10: 미등록 외부웹하드 문의 폴더 매핑 후 과거 Contact/File/Folder가 업체 소유로 수렴하고 외부 husk는 유지된다', async () => {
+    const inquiryRoot: FolderRow = {
+      id: 'company-inquiry-root',
+      name: '문의',
+      parentId: COMPANY_ROOT_ID,
+      path: `/${COMPANY_NAME}/문의`,
+      companyId: COMPANY_ID,
+      folderKind: 'template',
+      deletedAt: null,
+    };
+    const externalInquiry: FolderRow = {
+      id: 'external-inquiry-folder',
+      name: '260624-O-001',
+      parentId: EXTERNAL_ROOT_ID,
+      path: '/외부웹하드/대성목형(2265-1295)/260624-O-001',
+      companyId: null,
+      folderKind: 'inquiry',
+      deletedAt: null,
+    };
+    const folders: FolderRow[] = [
+      externalRootRow(),
+      externalInquiry,
+      companyRootRow(),
+      inquiryRoot,
+    ];
+    const files: FileRow[] = [
+      {
+        id: 'historical-file',
+        folderId: externalInquiry.id,
+        companyId: null,
+        deletedAt: null,
+        path: 'webhard/external/historical-file.dxf',
+      },
+    ];
+    const contacts = [
+      {
+        id: 'historical-contact',
+        webhardFolderId: externalInquiry.id,
+        companyId: null,
+        companyName: '대성목형(2265-1295)',
+      },
+    ];
+    const prisma = makeMigratePrisma({
+      folders,
+      files,
+      contacts,
+      company: { id: COMPANY_ID, companyName: COMPANY_NAME },
+    });
+    const foldersService = makeFoldersService();
+    foldersService.ensureInquiryRootFolder.mockResolvedValue(inquiryRoot);
+    const { service } = buildService(foldersService, prisma as never);
+
+    const result = await service.migrateExternalFolderTreeToCompany(
+      EXTERNAL_ROOT_ID,
+      COMPANY_ID,
+      prisma as never
+    );
+
+    expect(result).toEqual({
+      movedFolders: 1,
+      movedFiles: 1,
+      deletedExternalFolders: 0,
+      conflicts: [],
+    });
+    expect(folders.find((f) => f.id === EXTERNAL_ROOT_ID)?.deletedAt).toBeNull();
+    expect(folders.find((f) => f.id === externalInquiry.id)).toEqual(
+      expect.objectContaining({
+        parentId: inquiryRoot.id,
+        companyId: COMPANY_ID,
+        path: `/${COMPANY_NAME}/문의/260624-O-001`,
+      })
+    );
+    expect(files[0]).toEqual(
+      expect.objectContaining({
+        folderId: externalInquiry.id,
+        companyId: COMPANY_ID,
+        path: 'webhard/external/historical-file.dxf',
+      })
+    );
+    expect(contacts[0]).toEqual(
+      expect.objectContaining({
+        companyId: COMPANY_ID,
+        companyName: COMPANY_NAME,
+      })
+    );
   });
 });

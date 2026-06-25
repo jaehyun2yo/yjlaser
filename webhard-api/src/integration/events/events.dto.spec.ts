@@ -17,6 +17,9 @@ const validEnvelope = {
   source_version: '1.46.37',
   occurred_at: '2026-06-19T09:00:00+09:00',
   order_id: 'order-001',
+  contact_id: '11111111-2222-4333-8444-555555555555',
+  inquiry_number: '260619-O-001',
+  work_number: '260619-F-001',
   job_id: 'job-001',
   integration_run_id: 'run-001',
   worker_local_id: 'outbox-123',
@@ -152,6 +155,19 @@ describe('EventEnvelopeDto', () => {
     });
 
     expect(errors.map((error) => error.property)).toContain('occurred_at');
+  });
+
+  it('Contact 중심 identity 필드의 UUID와 문자열 길이를 검증한다', async () => {
+    const errors = await validateEnvelope({
+      ...validEnvelope,
+      contact_id: 'legacy-numeric-contact-id',
+      inquiry_number: 'I'.repeat(101),
+      work_number: 'W'.repeat(101),
+    });
+
+    expect(errors.map((error) => error.property)).toEqual(
+      expect.arrayContaining(['contact_id', 'inquiry_number', 'work_number'])
+    );
   });
 });
 

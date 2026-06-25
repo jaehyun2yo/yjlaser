@@ -1,4 +1,6 @@
 import { FilesService } from './files.service';
+import { StorageProvider } from '@prisma/client';
+import { ConfirmUploadDto } from './dto/file.dto';
 import { GetNewFilesQueryDto } from './dto/new-files.dto';
 import { GetBadgeCountsQueryDto } from './dto/badge-counts.dto';
 import { SessionUser } from '../auth/auth.service';
@@ -420,5 +422,179 @@ describe('GetNewFilesQueryDto sortBy validation', () => {
     const dto = new GetNewFilesQueryDto();
     expect(dto.sortBy).toBe('created_at');
     expect(dto.sortOrder).toBe('desc');
+  });
+});
+
+interface UploadRoutingFolderRow {
+  id: string;
+  name: string;
+  path: string;
+  parentId: string | null;
+  companyId: number | null;
+  folderKind: string;
+  deletedAt: Date | null;
+  storageProvider: StorageProvider;
+  driveFolderId: string | null;
+}
+
+function buildConfirmUploadRoutingService() {
+  const company = { id: 4, companyName: '대성목형', managerName: null };
+  const externalRoot: UploadRoutingFolderRow = {
+    id: 'external-root-folder',
+    name: '대성목형(2265-1295)',
+    path: '/외부웹하드/대성목형(2265-1295)',
+    parentId: 'webhard-external-root',
+    companyId: null,
+    folderKind: 'generic',
+    deletedAt: null,
+    storageProvider: StorageProvider.R2,
+    driveFolderId: null,
+  };
+  const companyRoot: UploadRoutingFolderRow = {
+    id: 'company-root-folder',
+    name: company.companyName,
+    path: `/${company.companyName}`,
+    parentId: null,
+    companyId: company.id,
+    folderKind: 'company_root',
+    deletedAt: null,
+    storageProvider: StorageProvider.R2,
+    driveFolderId: null,
+  };
+  const foldersById = new Map([
+    [externalRoot.id, externalRoot],
+    [companyRoot.id, companyRoot],
+  ]);
+  const createdAt = new Date('2026-06-24T09:00:00.000Z');
+
+  const prisma = {
+    executeWithRetry: jest.fn(async (fn: () => unknown) => fn()),
+    webhardFolder: {
+      findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+        return foldersById.get(where.id) ?? null;
+      }),
+      findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        if (where.companyId === company.id && where.parentId === null) {
+          return { id: companyRoot.id };
+        }
+        return null;
+      }),
+    },
+    companyFolderAlias: {
+      findFirst: jest.fn(async ({ where }: { where: { folderName: string; status: string } }) => {
+        if (where.folderName === externalRoot.name && where.status === 'approved') {
+          return { company };
+        }
+        return null;
+      }),
+    },
+    company: {
+      findFirst: jest.fn(async () => null),
+      findUnique: jest.fn(async ({ where }: { where: { id: number } }) => {
+        return where.id === company.id ? company : null;
+      }),
+    },
+    notification: {
+      create: jest.fn().mockResolvedValue({}),
+    },
+    webhardFile: {
+      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: 'routed-file',
+        name: data.name,
+        originalName: data.originalName,
+        size: BigInt(Number(data.size)),
+        mimeType: data.mimeType,
+        path: data.path,
+        folderId: data.folderId,
+        companyId: data.companyId,
+        uploadedBy: data.uploadedBy,
+        inquiryNumber: data.inquiryNumber,
+        isDownloaded: data.isDownloaded,
+        storageProvider: data.storageProvider,
+        driveFileId: null,
+        driveMimeType: null,
+        createdAt,
+        updatedAt: createdAt,
+        deletedAt: null,
+        deletedBy: null,
+        company: { companyName: company.companyName, managerName: null },
+      })),
+    },
+  };
+  const storageService = {
+    invalidateStorageCache: jest.fn().mockResolvedValue(undefined),
+  };
+  const eventsGateway = {
+    emitToFolder: jest.fn(),
+  };
+  const autoContactService = {
+    detectAndCreate: jest.fn().mockResolvedValue({ contactId: 'auto-contact' }),
+  };
+  const foldersService = {
+    propagateUpdatedAt: jest.fn().mockResolvedValue(undefined),
+  };
+  const service = new FilesService(
+    prisma as never,
+    storageService as never,
+    eventsGateway as never,
+    autoContactService as never,
+    foldersService as never,
+    {} as never
+  );
+
+  return { service, prisma, eventsGateway, foldersService, externalRoot, companyRoot, company };
+}
+
+describe('FilesService.confirmUpload — 외부웹하드 매핑 후 신규 업로드 라우팅', () => {
+  it('원본 외부웹하드 husk folderId로 confirm해도 파일 DB row는 매핑된 업체 root folder/companyId로 저장된다', async () => {
+    const { service, prisma, eventsGateway, foldersService, externalRoot, companyRoot, company } =
+      buildConfirmUploadRoutingService();
+    const dto: ConfirmUploadDto = {
+      key: 'webhard/company-root-folder/routed-file.dxf',
+      name: 'routed-file.dxf',
+      originalName: 'routed-file.dxf',
+      size: 1024,
+      mimeType: 'application/dxf',
+      folderId: externalRoot.id,
+      storageProvider: 'r2',
+    };
+
+    const result = await service.confirmUpload(dto, adminUser);
+
+    expect(prisma.companyFolderAlias.findFirst).toHaveBeenCalledWith({
+      where: { folderName: externalRoot.name, status: 'approved' },
+      include: {
+        company: {
+          select: { id: true, companyName: true },
+        },
+      },
+    });
+    expect(prisma.webhardFile.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        folderId: companyRoot.id,
+        companyId: company.id,
+        path: dto.key,
+        storageProvider: StorageProvider.R2,
+      }),
+      include: {
+        company: {
+          select: {
+            companyName: true,
+            managerName: true,
+          },
+        },
+      },
+    });
+    expect(result.folder_id).toBe(companyRoot.id);
+    expect(result.company_id).toBe(company.id);
+    expect(eventsGateway.emitToFolder).toHaveBeenCalledWith(companyRoot.id, {
+      type: 'file:created',
+      folderId: companyRoot.id,
+      data: { fileId: 'routed-file' },
+    });
+    expect(foldersService.propagateUpdatedAt).toHaveBeenCalledWith(
+      companyRoot.id,
+      expect.any(Date)
+    );
   });
 });

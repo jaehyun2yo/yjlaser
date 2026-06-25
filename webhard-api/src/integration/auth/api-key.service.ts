@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as crypto from 'crypto';
+import { getDefaultIntegrationPermissions } from './integration-permissions';
 
 @Injectable()
 export class ApiKeyService {
@@ -31,7 +32,7 @@ export class ApiKeyService {
         name,
         keyHash,
         programType,
-        permissions,
+        permissions: this.mergeDefaultPermissions(programType, permissions),
       },
     });
 
@@ -66,7 +67,7 @@ export class ApiKeyService {
     const result = {
       id: apiKey.id,
       programType: apiKey.programType,
-      permissions: apiKey.permissions,
+      permissions: this.uniquePermissions(apiKey.permissions),
     };
 
     // 캐시 저장
@@ -104,7 +105,8 @@ export class ApiKeyService {
       id: k.id,
       name: k.name,
       program_type: k.programType,
-      permissions: k.permissions,
+      permissions: this.uniquePermissions(k.permissions),
+      stored_permissions: k.permissions,
       is_active: k.isActive,
       last_used_at: k.lastUsedAt?.toISOString() ?? null,
       created_at: k.createdAt.toISOString(),
@@ -121,5 +123,16 @@ export class ApiKeyService {
 
   private hashKey(rawKey: string): string {
     return crypto.createHash('sha256').update(rawKey).digest('hex');
+  }
+
+  private mergeDefaultPermissions(programType: string, permissions: string[] = []): string[] {
+    return this.uniquePermissions([
+      ...permissions,
+      ...getDefaultIntegrationPermissions(programType),
+    ]);
+  }
+
+  private uniquePermissions(permissions: string[] = []): string[] {
+    return Array.from(new Set(permissions));
   }
 }

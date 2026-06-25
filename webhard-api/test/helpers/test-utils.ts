@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { Prisma, StorageProvider } from '@prisma/client';
 import { Readable } from 'stream';
 import { AppModule } from '../../src/app.module';
+import { assertOperationalFixtureSeedAllowed } from '../../src/integration/operational-fixture-policy';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { GoogleDriveStorageProvider } from '../../src/storage/google-drive-storage.provider';
 import type {
@@ -30,6 +31,8 @@ import type {
   UploadBufferResult,
   UploadSessionResult,
 } from '../../src/storage/storage-provider.interface';
+
+export { assertOperationalFixtureSeedAllowed };
 
 // 세션 쿠키 이름 (서버와 동일해야 함)
 export const SESSION_COOKIE_NAME = 'admin-session';
@@ -510,6 +513,202 @@ export async function createTestCompany(
     select: {
       id: true,
       companyName: true,
+    },
+  });
+}
+
+export interface OperationalWorkflowFixtureOptions {
+  prefix?: string;
+  company?: Partial<Prisma.CompanyUncheckedCreateInput> | null;
+  contact?: Partial<Prisma.ContactUncheckedCreateInput>;
+  folder?: Partial<Prisma.WebhardFolderUncheckedCreateInput>;
+  file?: Partial<Prisma.WebhardFileUncheckedCreateInput>;
+}
+
+export interface OperationalWorkflowFixture {
+  company: { id: number; companyName: string } | null;
+  contact: {
+    id: string;
+    inquiryNumber: string | null;
+    workNumber: string | null;
+    companyId: number | null;
+    webhardFolderId: string | null;
+  };
+  folder: {
+    id: string;
+    contactId: string | null;
+    companyId: number | null;
+    inquiryNumber: string | null;
+    workNumber: string | null;
+  };
+  file: {
+    id: string;
+    folderId: string | null;
+    companyId: number | null;
+    inquiryNumber: string | null;
+  };
+}
+
+function assertSafeOperationalFixturePrefix(prefix: string): void {
+  if (!/^operational-test-[a-z0-9-]{8,}$/i.test(prefix)) {
+    throw new Error(`Unsafe operational fixture prefix: ${prefix}`);
+  }
+}
+
+/**
+ * Contact/Webhard 운영 연동 테스트용 로컬 fixture.
+ * Supabase anon/authenticated direct table access 대신 Prisma test helper 경로를 고정한다.
+ */
+export async function createOperationalWorkflowFixture(
+  prisma: PrismaService,
+  options: OperationalWorkflowFixtureOptions = {}
+): Promise<OperationalWorkflowFixture> {
+  assertOperationalFixtureSeedAllowed();
+
+  const unique = crypto.randomUUID().slice(0, 12);
+  const prefix = options.prefix ?? `operational-test-${unique}`;
+  assertSafeOperationalFixturePrefix(prefix);
+
+  const company =
+    options.company === null
+      ? null
+      : await createTestCompany(prisma, {
+          companyName: `${prefix}-company`,
+          username: `${prefix}-company`,
+          businessRegistrationNumber: `${prefix}-brn`,
+          managerEmail: `${prefix}@example.com`,
+          ...options.company,
+        });
+
+  const contactId = options.contact?.id ?? crypto.randomUUID();
+  const folderId = options.folder?.id ?? crypto.randomUUID();
+  const fileId = options.file?.id ?? crypto.randomUUID();
+  const companyName = company?.companyName ?? `${prefix}-external-company`;
+  const inquiryNumber = options.contact?.inquiryNumber ?? `260624-O-${unique.slice(0, 4)}`;
+  const workNumber = options.contact?.workNumber ?? `260624-F-${unique.slice(4, 8)}`;
+  const companyId = options.contact?.companyId ?? company?.id ?? null;
+  const folderPath =
+    companyId === null
+      ? `/외부웹하드/${companyName}/문의/${inquiryNumber}`
+      : `/${companyName}/문의/${inquiryNumber}`;
+
+  const contact = await prisma.contact.create({
+    data: {
+      id: contactId,
+      name: `${prefix}-contact`,
+      email: `${prefix}@example.com`,
+      phone: '010-0000-0000',
+      companyName,
+      companyId,
+      status: 'new',
+      source: 'webhard',
+      inquiryType: 'cutting_request',
+      inquiryNumber,
+      workNumber,
+      processStage: 'drawing_confirmed',
+      webhardFolderId: folderId,
+      ...options.contact,
+    },
+    select: {
+      id: true,
+      inquiryNumber: true,
+      workNumber: true,
+      companyId: true,
+      webhardFolderId: true,
+    },
+  });
+
+  const folder = await prisma.webhardFolder.create({
+    data: {
+      id: folderId,
+      name: inquiryNumber ?? `${prefix}-folder`,
+      parentId: null,
+      companyId,
+      path: folderPath,
+      contactId,
+      folderKind: 'inquiry',
+      inquiryNumber,
+      workNumber,
+      storageProvider: StorageProvider.R2,
+      ...options.folder,
+    },
+    select: {
+      id: true,
+      contactId: true,
+      companyId: true,
+      inquiryNumber: true,
+      workNumber: true,
+    },
+  });
+
+  const file = await prisma.webhardFile.create({
+    data: {
+      id: fileId,
+      name: `${prefix}-drawing.dxf`,
+      originalName: `${prefix}-drawing.dxf`,
+      size: 1024,
+      mimeType: 'application/dxf',
+      path: `webhard/${prefix}/${fileId}.dxf`,
+      folderId,
+      companyId,
+      uploadedBy: 'admin',
+      inquiryNumber,
+      isDownloaded: false,
+      storageProvider: StorageProvider.R2,
+      ...options.file,
+    },
+    select: {
+      id: true,
+      folderId: true,
+      companyId: true,
+      inquiryNumber: true,
+    },
+  });
+
+  return { company, contact, folder, file };
+}
+
+export async function cleanupOperationalWorkflowFixtures(
+  prisma: PrismaService,
+  prefix: string
+): Promise<void> {
+  assertOperationalFixtureSeedAllowed();
+  assertSafeOperationalFixturePrefix(prefix);
+
+  await prisma.webhardFile.deleteMany({
+    where: {
+      OR: [{ name: { startsWith: prefix } }, { path: { startsWith: `webhard/${prefix}` } }],
+    },
+  });
+
+  let deletedFolders = 1;
+  while (deletedFolders > 0) {
+    const result = await prisma.webhardFolder.deleteMany({
+      where: {
+        OR: [
+          { name: { startsWith: prefix } },
+          { path: { startsWith: `/${prefix}` } },
+          { path: { startsWith: `/외부웹하드/${prefix}` } },
+        ],
+        children: { none: {} },
+      },
+    });
+    deletedFolders = result.count;
+  }
+
+  await prisma.contact.deleteMany({
+    where: {
+      OR: [
+        { name: { startsWith: prefix } },
+        { email: { startsWith: prefix } },
+        { companyName: { startsWith: prefix } },
+      ],
+    },
+  });
+
+  await prisma.company.deleteMany({
+    where: {
+      OR: [{ companyName: { startsWith: prefix } }, { username: { startsWith: prefix } }],
     },
   });
 }

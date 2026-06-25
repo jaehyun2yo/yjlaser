@@ -2,6 +2,120 @@
 
 ## [Unreleased]
 
+### 2026-06-24 — operational-contact-identity-read-model
+
+**Scope**: 운영 데이터 연동 v2 ODATA2-010의 legacy Order/JobEvent read model 정렬.
+
+**수정**:
+
+- worker event envelope에 `contact_id`, `inquiry_number`, `work_number` 계약을 추가했다.
+- `JobEvent`/`JobFailure`에 Contact UUID, 문의번호, 현장번호 nullable 컬럼과 조회 인덱스를 추가하는 additive migration을 `webhard-api/prisma/migrations/20260624180000_add_job_event_contact_identity/`에 작성했다. 실제 운영 DB 적용은 backup/승인 gate 전까지 실행하지 않는다.
+- order timeline의 `contact_id`를 Contact UUID로 고정하고 legacy numeric `Order.contactId`는 `legacy_order_contact_id`로만 보존한다. `order_id` 없이 Contact identity만 있는 `JobEvent`만 fallback으로 포함하고, 다른 `order_id`가 있는 이벤트는 섞지 않는다.
+- `OrdersService.updateOrderStatus`가 더 이상 `String(Order.contactId)`로 Contact를 업데이트하지 않고 `inquiryNumber` 우선, `workNumber` fallback 순서로 Contact UUID를 찾아 동기화한다. 중복 Contact는 Order mutation 전에 차단한다.
+- Order process-stage API도 status/timeline과 같은 duplicate-safe Contact resolver를 사용한다.
+- operations failure read model이 raw payload 없이 Contact identity를 반환한다.
+
+**검증**:
+
+- `cd webhard-api && pnpm test -- src/integration/events/events.dto.spec.ts src/integration/events/events.transaction.spec.ts src/integration/events/events.failure.spec.ts --runInBand` 통과 — 25 passed.
+- `cd webhard-api && pnpm test -- src/integration/orders/order-timeline-read.spec.ts src/integration/orders/order-timeline.spec.ts src/integration/orders/__tests__/orders.service.spec.ts --runInBand` 통과 — 36 passed.
+- `cd webhard-api && pnpm test -- src/integration/operations/operations-read.spec.ts --runInBand` 통과 — 9 passed.
+
+### 2026-06-24 — operational-trace-logging
+
+**Scope**: 운영 데이터 연동 v2 ODATA2-009의 회사사이트 integration file register 로그 계약 정리.
+
+**수정**:
+
+- `IntegrationFilesService.registerFile`의 문자열 로그를 공통 `formatLogEvent` JSON 이벤트로 전환했다.
+- file register start/success/failure, `duration_ms`, source worker, storage provider, count, duplicate 여부를 기록한다.
+- idempotency key, 파일 경로, 원본 파일명, drive file id는 raw 로그에 남기지 않고 hash/존재 여부만 남긴다.
+
+**검증**:
+
+- `cd webhard-api && npx jest src/integration/files/file-register.logging.spec.ts --runInBand` 통과 — 3 passed.
+- `cd webhard-api && $env:NODE_OPTIONS='--max-old-space-size=8192'; npx tsc --noEmit --pretty false` 통과.
+- 변경 파일 대상 `rg -n "password|token|secret|presigned|Authorization" ...` 무히트.
+
+### 2026-06-24 — operational-backfill-dry-run
+
+**Scope**: 운영 데이터 연동 v2의 기존 데이터 백필 전 count-only dry-run 도구 추가.
+
+**수정**:
+
+- `scripts/operational-backfill-dry-run.ts`를 추가해 Contact/WebhardFolder/WebhardFile/외부웹하드 매핑 후보를 aggregate count로만 집계한다.
+- 출력 계약은 업체명, 문의번호, 작업번호, 폴더명, 파일명 같은 row 값을 포함하지 않도록 테스트로 고정했다.
+- remote/unknown `DATABASE_URL`은 `ALLOW_REMOTE_OPERATIONAL_BACKFILL_DRY_RUN=true` 승인 플래그 없이는 실행하지 않는다.
+- remote guard는 숫자형 loopback IP만 local로 인정하며, `127.*` 형태의 DNS hostname은 remote/unknown으로 차단한다.
+- 외부웹하드 매핑 후보는 approved alias 2건 이상, stale approved alias, 정규화 업체명 후보 2건 이상을 stop count로 집계하고 기본 text 출력에도 표시한다.
+- `WebhardFile.contactId`, `WebhardFile.workNumber`가 현재 Prisma schema에 없어 파일 단위 직접 identity 집계가 불가능한 gap을 보고서에 남긴다.
+
+**검증**:
+
+- `cd webhard-api && npx jest src/integration/operational-backfill-dry-run.spec.ts --runInBand` 통과 — 2 passed.
+- `cd webhard-api && npx tsc --noEmit --pretty false` 통과.
+- `cd webhard-api && npx tsx scripts/operational-backfill-dry-run.ts --dry-run --json` 실행 시 remote/unknown DB safety guard가 승인 없이 차단함.
+
+### 2026-06-24 — operational-workflow-v2-e2e-rehearsal
+
+**Scope**: 운영 데이터 연동 v2의 기존 워크프로세스와 개발 워크프로세스를 Contact 중심 E2E로 검증.
+
+**수정**:
+
+- `e2e/ui-operational-workflow-v2.spec.ts`를 추가해 Supabase direct table access 없이 NestJS API fixture만으로 운영 리허설을 실행한다.
+- 등록 업체 문의 생성 후 `drawing_confirmed -> laser -> cutting` 단계 전환과 업체 대시보드 노출을 검증했다.
+- 미등록 외부웹하드 업로드, 업체 폴더 매핑, 과거 Contact 노출, 매핑 이후 신규 업로드 라우팅을 같은 E2E에서 검증했다.
+- 등록 업체 `companyName`으로 생성되는 Contact가 생성 시점에 `companyId`를 연결하도록 보강했다.
+- R2-backed 폴더 아래 lazy `문의/` 및 문의 폴더 생성 시 Google Drive mutation API를 호출하지 않고 R2 메타데이터를 유지하도록 보강했다.
+- 기존 server-to-server `permissions: ["all"]` API key를 권한 wildcard로 명시 지원해 Next server dashboard의 `job/read` 호출 호환을 복구했다.
+- API key 검증은 저장된 권한만 사용하도록 해 기존 event-only key가 새 기본 권한으로 자동 승격되지 않게 했다.
+- integration Contact stage writer는 `management_program`의 `drawing_confirmed -> laser`, `nesting_program`의 `laser -> cutting`만 허용하도록 제한했다.
+- 운영 리허설 E2E는 기본적으로 loopback URL에서만 실행되며, cleanup은 실패를 수집하면서 계속 진행하도록 보강했다.
+- Contact 생성 시 업체명 매칭은 미삭제·active·승인 업체 1건일 때만 자동 연결하고, 중복 후보면 자동 연결과 폴더 sync를 중단한다.
+- 중복 업체 후보에서는 `resolveCompanyRoot` fallback과 post-create file sync도 중단해 같은 이름의 폴더로 잘못 수렴하지 않게 했다.
+- integration stage update는 `expectedCurrentStage` 조건부 업데이트로 동시 변경 시 stage 역전이를 중단한다.
+- `laser_cutting` 즉시 완료 특수 branch도 `expectedCurrentStage` 조건부 업데이트를 적용해 동시 변경을 덮어쓰지 않게 했다.
+- R2 문의 루트 아래 `완료` 폴더 lazy 생성도 R2 메타데이터를 유지하고 Google Drive mutation API를 호출하지 않게 했다.
+- legacy `/integration/laser-completions`도 `nesting_program` + `contact/process-stage:write` 권한으로 제한하고 공유 Contact stage writer를 사용하도록 보강했다.
+- 이미 완료된 `laser_cutting` retry는 이벤트와 타임라인을 중복 발행하지 않는 no-op으로 처리한다.
+- 이미 목표 stage로 바뀐 `expectedCurrentStage` retry도 이벤트와 타임라인을 중복 발행하지 않는 no-op으로 처리한다.
+- legacy laser completion 요청의 `message`는 공유 Contact stage writer를 거쳐 완료 timeline note에 유지된다.
+
+**검증**:
+
+- `cd webhard-api && npx jest src/contacts/contacts.service.spec.ts --runInBand` 통과 — 80 passed.
+- `cd webhard-api && npx jest src/folders/_lib/resolve-company-root.util.spec.ts --runInBand` 통과 — 5 passed.
+- `cd webhard-api && $env:NODE_OPTIONS='--max-old-space-size=8192'; npx jest src/folders/folders.service.spec.ts --runInBand --testNamePattern="P1-1b|P1-3b|E4b"` 통과.
+- `cd webhard-api && npx jest src/integration/contacts/contact-stage.controller.spec.ts src/integration/auth/api-key.service.spec.ts src/integration/auth/integration-permissions.spec.ts src/integration/auth/api-key.guard.spec.ts --runInBand` 통과 — 27 passed.
+- `cd webhard-api && $env:NODE_OPTIONS='--max-old-space-size=8192'; npx jest src/integration/laser-completions/laser-completions.controller.spec.ts src/integration/laser-completions/laser-completions.service.spec.ts --runInBand` 통과 — 12 passed.
+- `cd webhard-api && npx tsc --noEmit --pretty false` 통과.
+- `pnpm exec playwright test e2e/ui-operational-workflow-v2.spec.ts --project=chromium --workers=1` 통과 — 3 passed.
+- `pnpm exec prettier --check ...` 및 `git diff --check` 통과.
+
+### 2026-06-24 — operational-contact-stage-integration
+
+**Scope**: 외부 프로그램 API key가 Contact 공정 단계를 운영 원장 기준으로 전환할 수 있는 integration 전용 경로와 전용 권한 추가.
+
+**수정**:
+
+- `PATCH /api/v1/integration/contacts/:id/process-stage`를 추가해 `contact/process-stage:write` 권한 API key만 Contact 공정 단계를 변경하도록 했다.
+- 기존 admin/worker 전용 `/contacts/:id/process-stage` 권한은 넓히지 않고, integration 라우트에서만 `system` actor로 `ContactsService.updateProcessStage`를 호출한다.
+- `management_program`과 `nesting_program` 기본 권한에 `contact/process-stage:write`를 추가하고, 외부웹하드 동기화 key와 admin session은 integration 전용 Contact stage route를 사용할 수 없도록 차단했다.
+- `ApiKeyService`가 생성 시 programType 기본 권한을 저장하도록 했다. 검증 시점에는 저장된 권한만 사용해 기존 key의 권한 자동 승격을 막는다.
+- Contact processStage allowlist와 required 검증을 service/DTO 경계에 추가해 비정상/누락/null stage를 DB 업데이트 전에 거부한다.
+- Contact identity lookup(`/contacts/by-work-number`, `/contacts/by-inquiry-number`)은 `job/read` 권한 API key만 접근하도록 제한했다.
+- Contact 목록/단건/업체별 목록/중복 조회/집계/최근 ID/하위문의/작업자 노트/timeline read 라우트도 `job/read`를 요구하도록 제한해 `file/register` key가 문의 데이터를 읽지 못하게 했다.
+- 업체 세션이 운영 identity lookup, 업체별 목록, 중복 조회 NestJS 라우트를 직접 호출해 다른 업체 문의를 조회하지 못하도록 controller 경계에서 차단했다.
+- 관리자 server key 호환을 위해 `admin_dashboard` 기본 권한에 `job/read`를 추가했다.
+- API key 목록 응답의 `permissions`는 저장된 권한을 표시하고, `stored_permissions`도 하위 호환 필드로 유지한다.
+- integration Contact stage route가 관리프로그램의 `drawing_confirmed -> laser`와 레이저네스팅프로그램의 `laser -> cutting`을 모두 처리하는 범용 공정 writer임을 테스트로 고정했다.
+
+**검증**:
+
+- `cd webhard-api && pnpm test -- contact-stage.controller contacts-identity.controller contacts.controller api-key.scope integration-permissions api-key.service contacts.service` 통과 — 146 passed. Jest worker graceful-exit warning 있음.
+- `cd webhard-api && npx tsc --noEmit --pretty false` 통과.
+- `cd webhard-api && pnpm exec prettier --check src/contacts/contacts.controller.ts src/contacts/contacts.controller.spec.ts src/contacts/contacts-identity.controller.spec.ts src/integration/auth/integration-permissions.ts src/integration/auth/integration-permissions.spec.ts` 통과.
+
 ### 2026-06-19 — ui-driven-e2e-suite-stabilization
 
 **Scope**: 실제 브라우저 UI 조작 기반 E2E 묶음의 실패 원인을 수정하고 전체 통과를 확인.

@@ -1,6 +1,6 @@
 # 2026-06-24 Supabase 보안 보완 지시
 
-상태: in_progress
+상태: done
 부모 색인: ../../../docs/parent-review-index.md
 근거: Supabase Security Advisor 메일(2026-06-22), `webhard-api/prisma/schema.prisma`, `webhard-api/prisma/migrations/**`, `docs/security/supabase-security-readonly-result-2026-06-24.md`, `docs/security/supabase-rls-grant-redesign-plan-2026-06-24.md`, `docs/security/supabase-rls-grant-redesign-draft-2026-06-24.sql`, `docs/security/supabase-security-postapply-check-2026-06-24.sql`, 로컬 보안 스캔 산출물
 
@@ -27,9 +27,9 @@ Supabase Advisor가 `rls_disabled_in_public`, `sensitive_columns_exposed` Critic
 3. 완료: 회사사이트 Prisma table, 관리프로그램 `im_*` table, public view grant, 모바일 view/RPC/Edge Function 예외를 분리한 RLS/grant migration 후보를 만들었다.
 4. 완료: rollback 계획과 적용 후 검증 SQL을 확인한 뒤 RLS/grant 마이그레이션을 운영 적용했다.
 5. 완료: `docs/security/supabase-security-postapply-check-2026-06-24.sql`을 운영 DB metadata로 실행해 failure 0건을 확인했다.
-6. 배포 전 root npm과 `webhard-api` pnpm lockfile 보정분을 포함해 빌드/스모크 테스트한다.
-7. secret fallback static gate와 tracked secret scan을 보안 회귀 검증에 포함한다.
-8. 완료 시 `PROJECT_STATUS.md`, 루트 `docs/todo.md`, 이 문서를 갱신한다.
+6. 완료: root npm과 `webhard-api` pnpm lockfile 보정분을 포함해 빌드/스모크 테스트했다.
+7. 완료: secret fallback static gate와 tracked secret scan을 보안 회귀 검증에 포함했다.
+8. 완료: `docs/reports/2026-06-24-operational-security-handoff.md`에 운영 보안 완료 기록을 남겼다.
 
 ## 문서 갱신 규칙
 

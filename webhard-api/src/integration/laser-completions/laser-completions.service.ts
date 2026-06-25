@@ -39,6 +39,12 @@ interface LaserCompletionContact {
   processStage: string | null;
 }
 
+interface ContactStageUpdateResult {
+  process_stage?: string | null;
+  status?: string | null;
+  status_changed?: boolean;
+}
+
 @Injectable()
 export class LaserCompletionsService {
   private readonly logger = new Logger(LaserCompletionsService.name);
@@ -124,14 +130,24 @@ export class LaserCompletionsService {
         };
       }
 
-      await this.contactsService.completeLaserOnlyContact(
+      const stageUpdateResult = (await this.contactsService.updateProcessStage(
         contact.id,
+        'cutting',
         {
           actorType: 'system',
           actorName: this.resolveActorName(dto),
         },
-        this.resolveCompletionOptions(dto)
-      );
+        this.resolveStageUpdateOptions(dto)
+      )) as ContactStageUpdateResult;
+
+      if (this.isAlreadyCompletedStageRetry(stageUpdateResult)) {
+        return {
+          workNumber,
+          status: 'already_completed',
+          contactId: contact.id,
+          message: '이미 완료 처리된 레이저 전용 문의',
+        };
+      }
 
       return {
         workNumber,
@@ -176,11 +192,23 @@ export class LaserCompletionsService {
     return dto.actorName?.trim() || dto.source?.trim() || 'laser_nesting_program';
   }
 
-  private resolveCompletionOptions(
-    dto: CompleteLaserCompletionsDto
-  ): { note?: string } | undefined {
+  private resolveStageUpdateOptions(dto: CompleteLaserCompletionsDto): {
+    expectedCurrentStage: 'laser';
+    note?: string;
+  } {
     const note = dto.message?.trim();
-    return note ? { note } : undefined;
+    return {
+      expectedCurrentStage: 'laser',
+      ...(note ? { note } : {}),
+    };
+  }
+
+  private isAlreadyCompletedStageRetry(result: ContactStageUpdateResult): boolean {
+    return (
+      result.status_changed === false &&
+      result.status === 'completed' &&
+      result.process_stage === null
+    );
   }
 
   private applySummary(summary: LaserCompletionSummary, status: LaserCompletionStatus): void {

@@ -50,6 +50,9 @@ export interface OrderTimelineEvent {
   source_model: OrderTimelineSourceModel;
   event_id: string;
   order_id: string;
+  contact_id: string | null;
+  inquiry_number: string | null;
+  work_number: string | null;
   event_type: string;
   source: string;
   source_worker: string | null;
@@ -71,7 +74,10 @@ export interface OrderTimelineEvent {
 
 export interface OrderTimelineResponse {
   order_id: string;
-  contact_id: number | null;
+  contact_id: string | null;
+  legacy_order_contact_id: number | null;
+  inquiry_number: string | null;
+  work_number: string | null;
   company_name: string;
   production_status: string | null;
   confirmation_status: string | null;
@@ -309,6 +315,9 @@ export interface OperationFailure {
   failure_id: string;
   job_id: string | null;
   order_id: string | null;
+  contact_id: string | null;
+  inquiry_number: string | null;
+  work_number: string | null;
   source_worker: string;
   event_type: string | null;
   error_code: string;

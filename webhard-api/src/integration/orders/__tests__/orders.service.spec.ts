@@ -32,6 +32,7 @@ interface MockPrisma {
     create: jest.Mock;
   };
   contact: {
+    findMany: jest.Mock;
     findFirst: jest.Mock;
     findUnique: jest.Mock;
     create: jest.Mock;
@@ -97,6 +98,7 @@ function makePrisma(): MockPrisma {
       create: jest.fn(),
     },
     contact: {
+      findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
@@ -301,6 +303,13 @@ describe('OrdersService.updateOrderStatus', () => {
     prisma.order.findUnique.mockResolvedValue(existing);
     prisma.order.update.mockResolvedValue(updated);
     prisma.orderEvent.create.mockResolvedValue({});
+    prisma.contact.findMany.mockResolvedValue([
+      {
+        id: '11111111-2222-4333-8444-555555555555',
+        inquiryNumber: '260320-O-001',
+        workNumber: null,
+      },
+    ]);
     prisma.contact.update.mockResolvedValue({});
 
     const result = await service.updateOrderStatus('order-001', {
@@ -311,7 +320,11 @@ describe('OrdersService.updateOrderStatus', () => {
     expect(prisma.order.update).toHaveBeenCalled();
     expect(prisma.orderEvent.create).toHaveBeenCalled();
     // contacts 동기화 Prisma ORM 호출 확인
-    expect(prisma.contact.update).toHaveBeenCalled();
+    expect(prisma.contact.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: '11111111-2222-4333-8444-555555555555' },
+      })
+    );
   });
 
   it('무효한 상태 전환 (received → delivered) → BadRequestException', async () => {
@@ -356,6 +369,13 @@ describe('OrdersService.updateOrderStatus', () => {
     prisma.order.findUnique.mockResolvedValue(existing);
     prisma.order.update.mockResolvedValue(updated);
     prisma.orderEvent.create.mockResolvedValue({});
+    prisma.contact.findMany.mockResolvedValue([
+      {
+        id: '11111111-2222-4333-8444-555555555555',
+        inquiryNumber: '260320-O-001',
+        workNumber: null,
+      },
+    ]);
     prisma.contact.update.mockResolvedValue({});
 
     await service.updateOrderStatus('order-001', {
@@ -368,6 +388,16 @@ describe('OrdersService.updateOrderStatus', () => {
       return args?.data?.previousStatus !== undefined;
     });
     expect(onHoldCall).toBeDefined();
+    expect(prisma.contact.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: '11111111-2222-4333-8444-555555555555' },
+      })
+    );
+    expect(prisma.contact.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: '10' },
+      })
+    );
   });
 
   it('production 전환 시 workNumber 자동 부여 Prisma 호출', async () => {
@@ -378,12 +408,13 @@ describe('OrdersService.updateOrderStatus', () => {
     prisma.orderEvent.create.mockResolvedValue({});
     // contact 상태 동기화
     prisma.contact.update.mockResolvedValue({});
-    // getNextNumbers: findFirst for inquiry + work
-    prisma.contact.findFirst
-      .mockResolvedValueOnce(null) // inquiry_number 조회
-      .mockResolvedValueOnce(null); // work_number 조회
-    // production 전환 시 workNumber 확인 + 업데이트
-    prisma.contact.findUnique.mockResolvedValue({ workNumber: null });
+    prisma.contact.findMany.mockResolvedValue([
+      {
+        id: '11111111-2222-4333-8444-555555555555',
+        inquiryNumber: '260320-O-001',
+        workNumber: null,
+      },
+    ]);
 
     await service.updateOrderStatus('order-001', {
       status: 'production' as never,
@@ -395,11 +426,149 @@ describe('OrdersService.updateOrderStatus', () => {
       return args?.data?.workNumber !== undefined;
     });
     expect(workNumberCall).toBeDefined();
+    expect(prisma.contact.findUnique).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: '10' },
+      })
+    );
+  });
+
+  it('문의번호 일치 Contact를 작업번호 충돌 Contact보다 우선해 동기화한다', async () => {
+    const existing = makeOrder({ status: 'received', inquiryNumber: '260320-O-001' });
+    const updated = makeOrder({ status: 'drawing', inquiryNumber: '260320-O-001' });
+    prisma.order.findUnique.mockResolvedValue(existing);
+    prisma.order.update.mockResolvedValue(updated);
+    prisma.orderEvent.create.mockResolvedValue({});
+    prisma.contact.findMany.mockResolvedValueOnce([
+      {
+        id: '11111111-2222-4333-8444-111111111111',
+        inquiryNumber: '260320-O-001',
+        workNumber: null,
+      },
+    ]);
+    prisma.contact.update.mockResolvedValue({});
+
+    await service.updateOrderStatus('order-001', {
+      status: 'drawing' as never,
+    });
+
+    expect(prisma.contact.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.contact.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { inquiryNumber: '260320-O-001', status: { not: 'deleting' } },
+      })
+    );
+    expect(prisma.contact.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: '11111111-2222-4333-8444-111111111111' },
+      })
+    );
+  });
+
+  it('중복 Contact가 있으면 Order 상태와 이벤트를 쓰기 전에 중단한다', async () => {
+    const existing = makeOrder({ status: 'received', inquiryNumber: '260320-O-001' });
+    prisma.order.findUnique.mockResolvedValue(existing);
+    prisma.contact.findMany.mockResolvedValueOnce([
+      {
+        id: '11111111-2222-4333-8444-111111111111',
+        inquiryNumber: '260320-O-001',
+        workNumber: null,
+      },
+      {
+        id: '11111111-2222-4333-8444-222222222222',
+        inquiryNumber: '260320-O-001',
+        workNumber: null,
+      },
+    ]);
+
+    await expect(
+      service.updateOrderStatus('order-001', {
+        status: 'drawing' as never,
+      })
+    ).rejects.toThrow(BadRequestException);
+
+    expect(prisma.order.update).not.toHaveBeenCalled();
+    expect(prisma.orderEvent.create).not.toHaveBeenCalled();
+    expect(prisma.contact.update).not.toHaveBeenCalled();
   });
 });
 
 // ──────────────────────────────────────────────────────────────
-// 5. getOrderStats — 통계 조회 (Prisma ORM)
+// 5. Process stage — Order → Contact 연결 조회
+// ──────────────────────────────────────────────────────────────
+describe('OrdersService process stage Contact lookup', () => {
+  let service: OrdersService;
+  let prisma: MockPrisma;
+  let contactsService: { updateProcessStage: jest.Mock };
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    contactsService = { updateProcessStage: jest.fn() };
+    service = new OrdersService(
+      prisma as never,
+      makeNumberService() as never,
+      { recordChange: jest.fn() } as never,
+      contactsService as never
+    );
+  });
+
+  it('getProcessStage는 삭제 제외 + 중복 검사 lookup으로 Contact를 찾는다', async () => {
+    prisma.order.findUnique.mockResolvedValue({ inquiryNumber: '260320-O-001' });
+    prisma.contact.findMany.mockResolvedValueOnce([
+      {
+        id: '11111111-2222-4333-8444-111111111111',
+        inquiryNumber: '260320-O-001',
+        workNumber: null,
+      },
+    ]);
+    prisma.contact.findUnique.mockResolvedValue({
+      id: '11111111-2222-4333-8444-111111111111',
+      processStage: 'drawing',
+      status: 'drawing',
+      workNumber: null,
+      inquiryNumber: '260320-O-001',
+      inquiryType: 'cutting_request',
+      companyName: '원컴퍼니',
+    });
+
+    const result = await service.getProcessStage('order-001');
+
+    expect(prisma.contact.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { inquiryNumber: '260320-O-001', status: { not: 'deleting' } },
+      })
+    );
+    expect(prisma.contact.findFirst).not.toHaveBeenCalled();
+    expect(result.contact_id).toBe('11111111-2222-4333-8444-111111111111');
+  });
+
+  it('updateProcessStage는 중복 Contact가 있으면 ContactsService 호출 전 중단한다', async () => {
+    prisma.order.findUnique.mockResolvedValue({ inquiryNumber: '260320-O-001' });
+    prisma.contact.findMany.mockResolvedValueOnce([
+      {
+        id: '11111111-2222-4333-8444-111111111111',
+        inquiryNumber: '260320-O-001',
+        workNumber: null,
+      },
+      {
+        id: '11111111-2222-4333-8444-222222222222',
+        inquiryNumber: '260320-O-001',
+        workNumber: null,
+      },
+    ]);
+
+    await expect(
+      service.updateProcessStage('order-001', {
+        processStage: 'laser',
+      } as never)
+    ).rejects.toThrow(BadRequestException);
+
+    expect(contactsService.updateProcessStage).not.toHaveBeenCalled();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────
+// 6. getOrderStats — 통계 조회 (Prisma ORM)
 // ──────────────────────────────────────────────────────────────
 describe('OrdersService.getOrderStats', () => {
   let service: OrdersService;

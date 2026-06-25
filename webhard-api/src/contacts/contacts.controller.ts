@@ -22,6 +22,7 @@ import {
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { ApiKeyGuard } from '../integration/auth/api-key.guard';
 import { AllowWorkerSession } from '../integration/auth/allow-worker-session.decorator';
+import { RequireIntegrationPermission } from '../integration/auth/require-integration-permission.decorator';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { CompanyAccessGuard } from '../auth/guards/company-access.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -91,7 +92,9 @@ export class ContactsController {
    * 상태별 카운트 (RPC get_status_counts 대체)
    */
   @Get('status-counts')
-  async getStatusCounts(@Query('search') search?: string) {
+  @RequireIntegrationPermission('job/read')
+  async getStatusCounts(@CurrentUser() user: SessionUser, @Query('search') search?: string) {
+    this.assertAdminOrIntegration(user);
     return this.contactsService.getStatusCounts(search);
   }
 
@@ -100,11 +103,14 @@ export class ContactsController {
    * 공정별 소요시간 분석
    */
   @Get('analytics/stage-duration')
+  @RequireIntegrationPermission('job/read')
   async getStageDuration(
+    @CurrentUser() user: SessionUser,
     @Query('companyName') companyName?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string
   ) {
+    this.assertAdminOrIntegration(user);
     return this.timelineService.getStageDurationAnalytics({ companyName, dateFrom, dateTo });
   }
 
@@ -113,7 +119,9 @@ export class ContactsController {
    * 조건부 카운트
    */
   @Get('count')
-  async count(@Query() query: CountContactDto) {
+  @RequireIntegrationPermission('job/read')
+  async count(@Query() query: CountContactDto, @CurrentUser() user: SessionUser) {
+    this.assertAdminOrIntegration(user);
     const count = await this.contactsService.count(query);
     return { count };
   }
@@ -123,7 +131,12 @@ export class ContactsController {
    * 최근 문의 ID 목록
    */
   @Get('recent-ids')
-  async getRecentIds(@Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number) {
+  @RequireIntegrationPermission('job/read')
+  async getRecentIds(
+    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
+    @CurrentUser() user: SessionUser
+  ) {
+    this.assertAdminOrIntegration(user);
     const ids = await this.contactsService.getRecentIds(limit);
     return { ids };
   }
@@ -133,11 +146,36 @@ export class ContactsController {
    * 작업번호(F-번호)로 문의 조회
    */
   @Get('by-work-number')
-  async findByWorkNumber(@Query('workNumber') workNumber: string) {
-    if (!workNumber) {
+  @RequireIntegrationPermission('job/read')
+  async findByWorkNumber(
+    @Query('workNumber') workNumber: string,
+    @CurrentUser() user: SessionUser
+  ) {
+    this.assertAdminOrIntegration(user);
+    const normalizedWorkNumber = workNumber?.trim();
+    if (!normalizedWorkNumber) {
       throw new BadRequestException('workNumber 파라미터가 필요합니다.');
     }
-    const contact = await this.contactsService.findByWorkNumber(workNumber);
+    const contact = await this.contactsService.findByWorkNumber(normalizedWorkNumber);
+    return { contact };
+  }
+
+  /**
+   * GET /api/v1/contacts/by-inquiry-number
+   * 문의번호(O-번호)로 문의 조회
+   */
+  @Get('by-inquiry-number')
+  @RequireIntegrationPermission('job/read')
+  async findByInquiryNumber(
+    @Query('inquiryNumber') inquiryNumber: string,
+    @CurrentUser() user: SessionUser
+  ) {
+    this.assertAdminOrIntegration(user);
+    const normalizedInquiryNumber = inquiryNumber?.trim();
+    if (!normalizedInquiryNumber) {
+      throw new BadRequestException('inquiryNumber 파라미터가 필요합니다.');
+    }
+    const contact = await this.contactsService.findByInquiryNumber(normalizedInquiryNumber);
     return { contact };
   }
 
@@ -146,7 +184,9 @@ export class ContactsController {
    * 업체별 문의 목록 조회
    */
   @Get('by-company')
-  async findByCompany(@Query() query: CompanyContactsQueryDto) {
+  @RequireIntegrationPermission('job/read')
+  async findByCompany(@Query() query: CompanyContactsQueryDto, @CurrentUser() user: SessionUser) {
+    this.assertAdminOrIntegration(user);
     return this.contactsService.findByCompany(query);
   }
 
@@ -165,10 +205,13 @@ export class ContactsController {
    * 중복 체크 (company_name + original_filename)
    */
   @Post('find-duplicate')
+  @RequireIntegrationPermission('job/read')
   async findDuplicate(
     @Body('companyName') companyName: string,
-    @Body('originalFilename') originalFilename: string
+    @Body('originalFilename') originalFilename: string,
+    @CurrentUser() user: SessionUser
   ) {
+    this.assertAdminOrIntegration(user);
     const contact = await this.contactsService.findDuplicate(companyName, originalFilename);
     return { exists: !!contact, contactId: contact?.id ?? null };
   }
@@ -188,7 +231,12 @@ export class ContactsController {
    * 고유 업체명 목록 조회
    */
   @Get('distinct-companies')
-  async getDistinctCompanies(@Query('status') status?: string) {
+  @RequireIntegrationPermission('job/read')
+  async getDistinctCompanies(
+    @Query('status') status: string | undefined,
+    @CurrentUser() user: SessionUser
+  ) {
+    this.assertAdminOrIntegration(user);
     const companies = await this.contactsService.getDistinctCompanyNames(status);
     return { companies };
   }
@@ -329,7 +377,9 @@ export class ContactsController {
    * 문의 목록 조회
    */
   @Get()
-  async findAll(@Query() query: QueryContactDto) {
+  @RequireIntegrationPermission('job/read')
+  async findAll(@Query() query: QueryContactDto, @CurrentUser() user: SessionUser) {
+    this.assertAdminOrIntegration(user);
     return this.contactsService.findAll(query);
   }
 
@@ -693,7 +743,9 @@ export class ContactsController {
    * 하위 문의 목록 조회
    */
   @Get(':id/children')
-  async getChildren(@Param('id', ParseUUIDPipe) id: string) {
+  @RequireIntegrationPermission('job/read')
+  async getChildren(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: SessionUser) {
+    this.assertAdminOrIntegration(user);
     return this.contactsService.getChildren(id);
   }
 
@@ -739,7 +791,9 @@ export class ContactsController {
    * 문의 단건 조회
    */
   @Get(':id')
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+  @RequireIntegrationPermission('job/read')
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: SessionUser) {
+    this.assertAdminOrIntegration(user);
     return this.contactsService.findOne(id);
   }
 
@@ -823,7 +877,9 @@ export class ContactsController {
    * 작업자 노트 목록 조회
    */
   @Get(':id/notes')
-  async getWorkerNotes(@Param('id', ParseUUIDPipe) id: string) {
+  @RequireIntegrationPermission('job/read')
+  async getWorkerNotes(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: SessionUser) {
+    this.assertAdminOrIntegration(user);
     return this.contactsService.getWorkerNotes(id);
   }
 
@@ -888,6 +944,7 @@ export class ContactsController {
    * 넘기더라도 무시한다 — 세션 타입에서만 결정한다.
    */
   @Get(':id/timeline')
+  @RequireIntegrationPermission('job/read')
   async getTimeline(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: SessionUser) {
     const forCompany = user?.userType === 'company';
 
@@ -975,6 +1032,12 @@ export class ContactsController {
   private assertAdminOrWorker(user: SessionUser): void {
     if (user.userType !== 'admin' && user.userType !== 'worker') {
       throw new ForbiddenException('Admin or worker access required');
+    }
+  }
+
+  private assertAdminOrIntegration(user: SessionUser): void {
+    if (!user || (user.userType !== 'admin' && user.userType !== 'integration')) {
+      throw new ForbiddenException('Admin or integration access required');
     }
   }
 

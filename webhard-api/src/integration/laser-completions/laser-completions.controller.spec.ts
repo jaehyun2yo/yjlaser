@@ -10,6 +10,7 @@ import { LaserCompletionsService } from './laser-completions.service';
 describe('LaserCompletionsController API key 인증', () => {
   let app: INestApplication;
   let service: jest.Mocked<Pick<LaserCompletionsService, 'completeByWorkNumbers'>>;
+  let validateKey: jest.Mock;
 
   beforeAll(async () => {
     service = {
@@ -26,13 +27,14 @@ describe('LaserCompletionsController API key 인증', () => {
         results: [],
       }),
     };
+    validateKey = jest.fn().mockResolvedValue(null);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [LaserCompletionsController],
       providers: [
         ApiKeyGuard,
         { provide: LaserCompletionsService, useValue: service },
-        { provide: ApiKeyService, useValue: { validateKey: jest.fn().mockResolvedValue(null) } },
+        { provide: ApiKeyService, useValue: { validateKey } },
         { provide: AuthService, useValue: { verifySession: jest.fn().mockReturnValue(null) } },
       ],
     }).compile();
@@ -54,6 +56,56 @@ describe('LaserCompletionsController API key 인증', () => {
       .post('/integration/laser-completions')
       .send({ workNumbers: ['260409-F-001'] })
       .expect(401);
+
+    expect(service.completeByWorkNumbers).not.toHaveBeenCalled();
+  });
+
+  it('nesting_program + contact/process-stage:write 권한만 laser completion을 실행할 수 있다', async () => {
+    validateKey.mockResolvedValueOnce({
+      id: 'key-nesting',
+      programType: 'nesting_program',
+      permissions: ['contact/process-stage:write'],
+    });
+
+    await request(app.getHttpServer())
+      .post('/integration/laser-completions')
+      .set('X-API-Key', 'nesting-key')
+      .send({ workNumbers: ['260409-F-001'] })
+      .expect(201);
+
+    expect(service.completeByWorkNumbers).toHaveBeenCalledWith({
+      workNumbers: ['260409-F-001'],
+    });
+  });
+
+  it('stage 권한이 없는 외부웹하드 key는 service 호출 전에 거부한다', async () => {
+    validateKey.mockResolvedValueOnce({
+      id: 'key-external',
+      programType: 'external_webhard_sync',
+      permissions: ['file/register', 'event/write'],
+    });
+
+    await request(app.getHttpServer())
+      .post('/integration/laser-completions')
+      .set('X-API-Key', 'external-key')
+      .send({ workNumbers: ['260409-F-001'] })
+      .expect(403);
+
+    expect(service.completeByWorkNumbers).not.toHaveBeenCalled();
+  });
+
+  it('stage 권한이 있어도 nesting_program이 아니면 service 호출 전에 거부한다', async () => {
+    validateKey.mockResolvedValueOnce({
+      id: 'key-management',
+      programType: 'management_program',
+      permissions: ['contact/process-stage:write'],
+    });
+
+    await request(app.getHttpServer())
+      .post('/integration/laser-completions')
+      .set('X-API-Key', 'management-key')
+      .send({ workNumbers: ['260409-F-001'] })
+      .expect(403);
 
     expect(service.completeByWorkNumbers).not.toHaveBeenCalled();
   });

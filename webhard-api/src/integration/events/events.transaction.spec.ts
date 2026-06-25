@@ -16,6 +16,9 @@ const validEnvelope = {
   source_version: '1.46.37',
   occurred_at: '2026-06-19T09:05:00+09:00',
   order_id: 'order-001',
+  contact_id: '11111111-2222-4333-8444-555555555555',
+  inquiry_number: '260619-O-001',
+  work_number: '260619-F-001',
   job_id: 'job-001',
   result: 'success',
   processed_count: 1,
@@ -91,6 +94,15 @@ describe('EventsController JobEvent transaction', () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.tx.jobEvent.findUnique).toHaveBeenCalledTimes(1);
     expect(prisma.tx.jobEvent.create).toHaveBeenCalledTimes(1);
+    expect(prisma.tx.jobEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactId: validEnvelope.contact_id,
+          inquiryNumber: validEnvelope.inquiry_number,
+          workNumber: validEnvelope.work_number,
+        }),
+      })
+    );
     expect(prisma.jobEvent.findUnique).not.toHaveBeenCalled();
     expect(prisma.jobEvent.create).not.toHaveBeenCalled();
   });

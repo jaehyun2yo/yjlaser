@@ -96,6 +96,35 @@ describe('ApiKeyGuard principal model', () => {
     await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
   });
 
+  it('allows legacy all permission as a server-to-server wildcard', async () => {
+    const reflector = {
+      getAllAndOverride: jest.fn((key: string) => {
+        if (key === IS_PUBLIC_KEY || key === ALLOW_WORKER_SESSION_KEY) return false;
+        if (key === INTEGRATION_PERMISSION_KEY) return 'job/read';
+        return undefined;
+      }),
+    } as unknown as Reflector;
+    const apiKeyService = {
+      validateKey: jest.fn().mockResolvedValue({
+        id: 'api-key-all',
+        programType: 'migration',
+        permissions: ['all'],
+      }),
+    } as unknown as ApiKeyService;
+    const authService = {
+      verifySession: jest.fn().mockReturnValue(null),
+      verifyWorkerSession: jest.fn().mockReturnValue(null),
+    } as unknown as AuthService;
+    const request = {
+      cookies: {},
+      headers: { 'x-api-key': 'server-key' },
+    } as Record<string, unknown>;
+
+    const guard = new ApiKeyGuard(reflector, apiKeyService, authService);
+
+    await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
+  });
+
   it('rejects an API key principal when route metadata permission is missing', async () => {
     const reflector = {
       getAllAndOverride: jest.fn((key: string) => {

@@ -1,4 +1,5 @@
 export const INTEGRATION_PERMISSIONS = [
+  'contact/process-stage:write',
   'event/write',
   'file/register',
   'job/read',
@@ -24,14 +25,21 @@ export const DEFAULT_INTEGRATION_WORKER_PERMISSIONS: Record<
 > = {
   external_webhard_sync: ['file/register', 'event/write'],
   website_worker: ['event/write'],
-  management_program: ['event/write', 'job/read'],
-  nesting_program: ['event/write', 'job/read'],
+  management_program: ['event/write', 'job/read', 'contact/process-stage:write'],
+  nesting_program: ['event/write', 'job/read', 'contact/process-stage:write'],
   manual_worker: ['event/write', 'job/read'],
-  admin_dashboard: ['operation/read'],
+  admin_dashboard: ['operation/read', 'job/read'],
 };
 
 export function isIntegrationPermission(value: string): value is IntegrationPermission {
   return (INTEGRATION_PERMISSIONS as readonly string[]).includes(value);
+}
+
+export function hasIntegrationPermission(
+  permissions: readonly string[],
+  requiredPermission: IntegrationPermission
+): boolean {
+  return permissions.includes('all') || permissions.includes(requiredPermission);
 }
 
 export function getDefaultIntegrationPermissions(

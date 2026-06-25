@@ -33,6 +33,9 @@ describe('Operations read-only action contract', () => {
             failure_id: 'failure-001',
             job_id: 'job-001',
             order_id: 'order-001',
+            contact_id: '11111111-2222-4333-8444-555555555555',
+            inquiry_number: '260619-O-001',
+            work_number: '260619-F-001',
             source_worker: 'external_webhard_sync',
             event_type: 'file_synced',
             error_code: 'STATE_APPLY_FAILED',
@@ -57,7 +60,10 @@ describe('Operations read-only action contract', () => {
     mockedUseOrderTimeline.mockReturnValue({
       data: {
         order_id: 'order-001',
-        contact_id: 123,
+        contact_id: '11111111-2222-4333-8444-555555555555',
+        legacy_order_contact_id: 123,
+        inquiry_number: '260619-O-001',
+        work_number: '260619-F-001',
         company_name: '원컴퍼니',
         production_status: 'DXF_READY',
         confirmation_status: 'CONFIRMED',

@@ -33,6 +33,9 @@ const envelopeWithWorkerFailure = {
   source_version: '1.46.37',
   occurred_at: '2026-06-19T09:15:00+09:00',
   order_id: '11111111-1111-4111-8111-111111111111',
+  contact_id: '11111111-2222-4333-8444-555555555555',
+  inquiry_number: '260619-O-001',
+  work_number: '260619-F-001',
   job_id: 'job-002',
   result: 'failed',
   processed_count: 0,
@@ -258,6 +261,9 @@ describe('EventsController state apply failure', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           orderId: envelopeWithWorkerFailure.order_id,
+          contactId: envelopeWithWorkerFailure.contact_id,
+          inquiryNumber: envelopeWithWorkerFailure.inquiry_number,
+          workNumber: envelopeWithWorkerFailure.work_number,
           jobId: envelopeWithWorkerFailure.job_id,
           sourceWorker: envelopeWithWorkerFailure.source_worker,
           eventType: envelopeWithWorkerFailure.event_type,

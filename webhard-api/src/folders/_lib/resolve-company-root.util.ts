@@ -6,10 +6,14 @@ import { normalizeCompanyName } from './company-name-match.util';
  * `resolveCompanyRoot` 실패 사유 코드.
  *
  * - `NO_COMPANY_ROOT`: 정식 Company row 매칭은 성공했으나 그 `companyId` 의 루트 폴더가 없음.
+ * - `AMBIGUOUS_COMPANY_MATCH`: 활성/승인 Company row 가 2건 이상 매칭되어 자동 선택 불가.
  * - `NO_FALLBACK_MATCH`: Company 매칭 실패 + 완전 일치/정규화 매칭 fallback 모두 실패.
  *   `companyName` 누락 시에도 동일 코드를 반환한다.
  */
-export type CompanyRootReasonCode = 'NO_COMPANY_ROOT' | 'NO_FALLBACK_MATCH';
+export type CompanyRootReasonCode =
+  | 'NO_COMPANY_ROOT'
+  | 'NO_FALLBACK_MATCH'
+  | 'AMBIGUOUS_COMPANY_MATCH';
 
 export interface ResolveCompanyRootResult {
   rootFolderId: string | null;
@@ -41,11 +45,24 @@ export async function resolveCompanyRoot(
     return { rootFolderId: null, companyId: null, reasonCode: 'NO_FALLBACK_MATCH' };
   }
 
-  // 1단계: 정식 Company row 매칭.
-  const company = await client.company.findFirst({
-    where: { companyName },
+  // 1단계: 정식 Company row 매칭. 중복 후보는 자동 선택하지 않는다.
+  const companyMatches = await client.company.findMany({
+    where: {
+      companyName,
+      deletedAt: null,
+      status: 'active',
+      isApproved: true,
+    },
     select: { id: true },
+    orderBy: { id: 'asc' },
+    take: 2,
   });
+
+  if (companyMatches.length > 1) {
+    return { rootFolderId: null, companyId: null, reasonCode: 'AMBIGUOUS_COMPANY_MATCH' };
+  }
+
+  const company = companyMatches[0] ?? null;
 
   if (company) {
     const rootFolder = await client.webhardFolder.findFirst({

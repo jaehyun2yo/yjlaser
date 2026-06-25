@@ -413,6 +413,9 @@ model JobEvent {
   sourceWorker     String   @map("source_worker") @db.VarChar(50)
   sourceVersion    String?  @map("source_version") @db.VarChar(50)
   orderId          String?  @map("order_id")
+  contactId        String?  @map("contact_id") @db.Uuid
+  inquiryNumber    String?  @map("inquiry_number") @db.VarChar(100)
+  workNumber       String?  @map("work_number") @db.VarChar(100)
   jobId            String?  @map("job_id")
   integrationRunId String?  @map("integration_run_id")
   workerLocalId    String?  @map("worker_local_id") @db.VarChar(255)
@@ -427,12 +430,15 @@ model JobEvent {
   orderEventId     String?  @map("order_event_id")
   createdAt        DateTime @default(now()) @map("created_at")
 
-  order                Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  order                Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
   integrationRun       IntegrationRun? @relation(fields: [integrationRunId], references: [id], onDelete: SetNull)
-  failure              JobFailure?   @relation("JobEventFailure", fields: [failureId], references: [id], onDelete: SetNull)
-  lastEventForFailures JobFailure[]  @relation("JobFailureLastEvent")
+  failure              JobFailure?     @relation("JobEventFailure", fields: [failureId], references: [id], onDelete: SetNull)
+  lastEventForFailures JobFailure[]    @relation("JobFailureLastEvent")
 
   @@index([orderId, occurredAt(sort: Desc)])
+  @@index([contactId, occurredAt(sort: Desc)])
+  @@index([inquiryNumber, occurredAt(sort: Desc)])
+  @@index([workNumber, occurredAt(sort: Desc)])
   @@index([jobId, occurredAt(sort: Desc)])
   @@index([integrationRunId, occurredAt(sort: Desc)])
   @@index([sourceWorker, occurredAt(sort: Desc)])
@@ -445,6 +451,9 @@ model JobFailure {
   id             String    @id @default(uuid())
   jobId          String?   @map("job_id")
   orderId        String?   @map("order_id")
+  contactId      String?   @map("contact_id") @db.Uuid
+  inquiryNumber  String?   @map("inquiry_number") @db.VarChar(100)
+  workNumber     String?   @map("work_number") @db.VarChar(100)
   sourceWorker   String    @map("source_worker") @db.VarChar(50)
   eventType      String?   @map("event_type") @db.VarChar(100)
   errorCode      String    @map("error_code") @db.VarChar(100)
@@ -464,6 +473,9 @@ model JobFailure {
 
   @@index([jobId, createdAt(sort: Desc)])
   @@index([orderId, createdAt(sort: Desc)])
+  @@index([contactId, createdAt(sort: Desc)])
+  @@index([inquiryNumber, createdAt(sort: Desc)])
+  @@index([workNumber, createdAt(sort: Desc)])
   @@index([sourceWorker, resolvedAt, createdAt(sort: Desc)])
   @@index([retryable, resolvedAt, createdAt(sort: Desc)])
   @@index([lastEventId])

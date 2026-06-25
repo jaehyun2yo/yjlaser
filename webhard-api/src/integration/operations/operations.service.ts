@@ -13,6 +13,9 @@ type JobFailureWithLastEvent = {
   id: string;
   jobId: string | null;
   orderId: string | null;
+  contactId: string | null;
+  inquiryNumber: string | null;
+  workNumber: string | null;
   sourceWorker: string;
   eventType: string | null;
   errorCode: string;
@@ -72,6 +75,9 @@ export class OperationsService {
               id: true,
               jobId: true,
               orderId: true,
+              contactId: true,
+              inquiryNumber: true,
+              workNumber: true,
               sourceWorker: true,
               eventType: true,
               errorCode: true,
@@ -180,6 +186,9 @@ export class OperationsService {
       failure_id: failure.id,
       job_id: failure.jobId,
       order_id: failure.orderId,
+      contact_id: failure.contactId,
+      inquiry_number: failure.inquiryNumber,
+      work_number: failure.workNumber,
       source_worker: failure.sourceWorker,
       event_type: failure.eventType,
       error_code: failure.errorCode,

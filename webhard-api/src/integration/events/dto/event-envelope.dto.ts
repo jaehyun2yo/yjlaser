@@ -7,6 +7,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
   ValidateIf,
@@ -68,6 +69,21 @@ export class EventEnvelopeDto {
   @IsString()
   @MaxLength(255)
   order_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  @MaxLength(100)
+  contact_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  inquiry_number?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  work_number?: string;
 
   @IsOptional()
   @IsString()

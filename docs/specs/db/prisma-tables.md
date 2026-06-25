@@ -293,6 +293,9 @@ Worker 이벤트 수신 원장. `OrderEvent`를 중복 처리 source로 확장�
 | source_worker      | VarChar(50)   | management/nesting/sync 등 source worker  |
 | source_version     | VarChar(50)?  | Worker app version                        |
 | order_id           | UUID? (FK)    | → orders (SetNull)                        |
+| contact_id         | UUID?         | canonical Contact UUID                    |
+| inquiry_number     | VarChar(100)? | 문의번호                                  |
+| work_number        | VarChar(100)? | 현장번호                                  |
 | job_id             | String?       | 후속 `Job` 모델 reference placeholder     |
 | integration_run_id | UUID? (FK)    | → integration_runs (SetNull)              |
 | worker_local_id    | VarChar(255)? | Worker local outbox/record reference      |
@@ -309,7 +312,7 @@ Worker 이벤트 수신 원장. `OrderEvent`를 중복 처리 source로 확장�
 
 Constraints: `idempotency_key` unique.
 
-Indexes: (order_id, occurred_at DESC), (job_id, occurred_at DESC), (integration_run_id, occurred_at DESC), (source_worker, occurred_at DESC), failure_id, occurred_at DESC
+Indexes: (order_id, occurred_at DESC), (contact_id, occurred_at DESC), (inquiry_number, occurred_at DESC), (work_number, occurred_at DESC), (job_id, occurred_at DESC), (integration_run_id, occurred_at DESC), (source_worker, occurred_at DESC), failure_id, occurred_at DESC
 
 ### job_failures
 
@@ -320,6 +323,9 @@ Worker 이벤트 처리 실패와 상태 적용 실패를 운영 화면에서 �
 | id              | UUID (PK)     |                                           |
 | job_id          | String?       | 후속 `Job` 모델 reference placeholder     |
 | order_id        | UUID?         | 주문별 실패 조회용 reference              |
+| contact_id      | UUID?         | canonical Contact UUID                    |
+| inquiry_number  | VarChar(100)? | 문의번호                                  |
+| work_number     | VarChar(100)? | 현장번호                                  |
 | source_worker   | VarChar(50)   | management/nesting/sync 등 source worker  |
 | event_type      | VarChar(100)? | 실패를 만든 event type                    |
 | error_code      | VarChar(100)  | 정규화된 error code                       |
@@ -334,7 +340,7 @@ Worker 이벤트 처리 실패와 상태 적용 실패를 운영 화면에서 �
 | created_at      | DateTime      | Default now                               |
 | updated_at      | DateTime      | `@updatedAt`                              |
 
-Indexes: (job_id, created_at DESC), (order_id, created_at DESC), (source_worker, resolved_at, created_at DESC), (retryable, resolved_at, created_at DESC), last_event_id
+Indexes: (job_id, created_at DESC), (order_id, created_at DESC), (contact_id, created_at DESC), (inquiry_number, created_at DESC), (work_number, created_at DESC), (source_worker, resolved_at, created_at DESC), (retryable, resolved_at, created_at DESC), last_event_id
 
 ### integration_runs
 
