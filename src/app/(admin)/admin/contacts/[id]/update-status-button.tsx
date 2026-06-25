@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/react-query/queryKeys';
 import type { Contact } from '@/lib/types';
@@ -27,10 +27,15 @@ export function UpdateStatusButton({ contactId, currentStatus }: UpdateStatusBut
   const queryClient = useQueryClient();
   const [status, setStatus] = useState(currentStatus);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   const handleStatusChange = useCallback(
     async (newStatus: string) => {
-      if (isUpdating || newStatus === status) return;
+      if (!isHydrated || isUpdating || newStatus === status) return;
 
       setIsUpdating(true);
       const previousStatus = status;
@@ -111,15 +116,18 @@ export function UpdateStatusButton({ contactId, currentStatus }: UpdateStatusBut
         setIsUpdating(false);
       }
     },
-    [contactId, status, isUpdating, queryClient]
+    [contactId, status, isHydrated, isUpdating, queryClient]
   );
 
   return (
     <div className="flex gap-2">
       <select
+        data-testid="admin-status-select"
+        data-hydrated={isHydrated ? 'true' : 'false'}
+        data-updating={isUpdating ? 'true' : 'false'}
         value={status}
         onChange={(e) => handleStatusChange(e.target.value)}
-        disabled={isUpdating}
+        disabled={!isHydrated || isUpdating}
         className={`px-3 py-1 text-xs border ${BORDER_COLOR.default} rounded ${BG_COLOR.card} ${TEXT_COLOR.primary} focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50`}
       >
         <option value="received">접수</option>

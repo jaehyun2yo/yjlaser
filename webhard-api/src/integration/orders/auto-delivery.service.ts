@@ -7,6 +7,7 @@ import { OrderStatus } from './dto/order.dto';
 @Injectable()
 export class AutoDeliveryService {
   private readonly logger = new Logger(AutoDeliveryService.name);
+  private readonly schedulerDisabled = process.env.OPERATIONAL_E2E_DISABLE_SCHEDULERS === 'true';
 
   constructor(
     private prisma: PrismaService,
@@ -15,6 +16,10 @@ export class AutoDeliveryService {
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async handleAutoDeliveryCompletion() {
+    if (this.schedulerDisabled) {
+      return;
+    }
+
     const now = new Date();
 
     const orders = await this.prisma.order.findMany({

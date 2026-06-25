@@ -38,6 +38,7 @@ interface WebhardNavProps {
 
 export function WebhardNav({
   userType,
+  userId,
   onMobileSidebarOpen,
   onFileUpload,
   isUploading,
@@ -428,6 +429,7 @@ export function WebhardNav({
           setIsFolderSelectOpen(true);
         }}
         isLaserOnly={false}
+        companyId={userType === 'company' ? userId : undefined}
       />
 
       {/* 폴더 업로드 모달 */}

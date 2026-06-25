@@ -4,6 +4,13 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: process.env.OPERATIONAL_E2E_ENV_FILE || '.env.local' });
 
 const usesGoogleDriveStorage = Boolean(process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID);
+const isOperationalE2ERun =
+  process.env.OPERATIONAL_E2E_STRICT_ENV_FILE_CHECK === 'true' ||
+  process.argv.some(
+    (arg) =>
+      arg.includes('ui-operational-workflow-v2.spec.ts') ||
+      arg.includes('ui-operational-workflow-user.spec.ts')
+  );
 
 /**
  * Playwright E2E 테스트 설정
@@ -85,13 +92,13 @@ export default defineConfig({
     {
       command: 'pnpm --dir webhard-api start',
       url: 'http://localhost:4000/api/v1/health',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: !isOperationalE2ERun && !process.env.CI,
       timeout: 120 * 1000,
     },
     {
       command: 'npx next dev', // Turbopack 없이 실행 (Turbopack 패닉 방지)
       url: 'http://localhost:3000',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: !isOperationalE2ERun && !process.env.CI,
       timeout: 120 * 1000,
     },
   ],

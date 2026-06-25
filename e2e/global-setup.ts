@@ -156,8 +156,16 @@ function supabaseRefEntries(entries: Array<readonly [string, string | undefined]
 function isOperationalE2ERun(): boolean {
   return (
     process.env.OPERATIONAL_E2E_STRICT_ENV_FILE_CHECK === 'true' ||
-    process.argv.some((arg) => arg.includes('ui-operational-workflow-v2.spec.ts'))
+    process.argv.some(
+      (arg) =>
+        arg.includes('ui-operational-workflow-v2.spec.ts') ||
+        arg.includes('ui-operational-workflow-user.spec.ts')
+    )
   );
+}
+
+function displayAuthFile(authFile: string): string {
+  return isOperationalE2ERun() ? '<authFile>' : authFile;
 }
 
 function assertE2ESafetyBeforeSeed(baseURL: string): void {
@@ -350,7 +358,7 @@ async function globalSetup(config: FullConfig) {
 
     if (ageInHours < 24 && remainingSeconds !== null && remainingSeconds > MIN_AUTH_REUSE_SECONDS) {
       console.log('✅ 기존 인증 상태 재사용 (세션 만료까지 60분 이상 남음)');
-      console.log(`   파일: ${authFile}`);
+      console.log(`   파일: ${displayAuthFile(authFile)}`);
       console.log(`   생성: ${Math.round(ageInHours * 60)}분 전`);
       console.log(`   남은 세션: ${Math.round(remainingSeconds / 60)}분`);
 
@@ -373,7 +381,7 @@ async function globalSetup(config: FullConfig) {
   const didCreateAdminSession = createAdminStorageState(baseURL, authFile);
 
   if (didCreateAdminSession && (await isStoredAuthStateValid(baseURL, authFile))) {
-    console.log(`✅ 인증 상태 저장 완료: ${authFile}`);
+    console.log(`✅ 인증 상태 저장 완료: ${displayAuthFile(authFile)}`);
     console.log('✅ Global Setup 완료 - 이제 모든 테스트가 이 세션을 재사용합니다.');
     return;
   }
@@ -418,7 +426,7 @@ async function globalSetup(config: FullConfig) {
     // 인증 상태 저장
     await context.storageState({ path: authFile });
 
-    console.log(`✅ 인증 상태 저장 완료: ${authFile}`);
+    console.log(`✅ 인증 상태 저장 완료: ${displayAuthFile(authFile)}`);
     console.log('✅ Global Setup 완료 - 이제 모든 테스트가 이 세션을 재사용합니다.');
   } catch (error) {
     console.error('❌ Global Setup 실패:', error);

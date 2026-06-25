@@ -11,6 +11,8 @@ interface Folder {
   id: string;
   name: string;
   parent_id: string | null;
+  company_id?: number | null;
+  companyId?: number | null;
 }
 
 type InquiryType = 'cutting_request' | 'mold_request' | 'laser_cutting' | 'other';
@@ -62,6 +64,7 @@ interface InquiryTypeSelectModalProps {
   onSelect: (folderId: string) => void;
   onOtherSelect: () => void;
   isLaserOnly: boolean;
+  companyId?: string;
 }
 
 export function InquiryTypeSelectModal({
@@ -70,20 +73,111 @@ export function InquiryTypeSelectModal({
   onSelect,
   onOtherSelect,
   isLaserOnly,
+  companyId,
 }: InquiryTypeSelectModalProps) {
   const [error, setError] = useState<string | null>(null);
 
-  const { data: folders = [] } = useQuery<Folder[]>({
-    queryKey: queryKeys.webhard.folders.all(),
+  const {
+    data: folders = [],
+    error: folderLookupError,
+    isLoading: isLoadingFolders,
+  } = useQuery<Folder[]>({
+    queryKey: [...queryKeys.webhard.folders.all(), 'inquiry-type', companyId ?? 'all'],
     queryFn: async () => {
-      const response = await fetch('/api/webhard/folders');
+      const params = new URLSearchParams();
+      if (companyId) params.set('companyId', companyId);
+      params.set('includeAll', 'true');
+      const query = params.toString();
+      const response = await fetch(`/api/webhard/folders${query ? `?${query}` : ''}`);
       if (!response.ok) throw new Error('Failed to fetch folders');
       const data = await response.json();
-      return data.folders || data || [];
+      const initialFolders = (data.folders || data || []) as Folder[];
+      const numericCompanyId = companyId ? Number(companyId) : null;
+      const hasCompanyId = numericCompanyId !== null && Number.isFinite(numericCompanyId);
+      const isCurrentCompanyFolder = (folder: Folder) =>
+        hasCompanyId &&
+        (folder.company_id === numericCompanyId || folder.companyId === numericCompanyId);
+      const scopedInitialFolders = hasCompanyId
+        ? initialFolders.filter(isCurrentCompanyFolder)
+        : initialFolders;
+
+      if (hasCompanyId) {
+        const companyRootFolders = scopedInitialFolders.filter(
+          (folder) => folder.parent_id === null
+        );
+        if (companyRootFolders.length !== 1) {
+          throw new Error('Company webhard root folder is not unique');
+        }
+
+        const companyRoot = companyRootFolders[0];
+        const scopedDirectChildren = scopedInitialFolders.filter(
+          (folder) => folder.parent_id === companyRoot.id
+        );
+        if (
+          scopedDirectChildren.some(
+            (folder) => folder.name === '칼선의뢰' || folder.name === '목형의뢰'
+          )
+        ) {
+          return scopedDirectChildren;
+        }
+
+        const childParams = new URLSearchParams({
+          parentId: companyRoot.id,
+          companyId: companyId ?? '',
+        });
+        const childResponse = await fetch(`/api/webhard/folders?${childParams.toString()}`);
+        if (!childResponse.ok) throw new Error('Failed to fetch company root folders');
+        const childData = await childResponse.json();
+        return (((childData.folders || childData || []) as Folder[]) ?? []).filter(
+          (folder) => isCurrentCompanyFolder(folder) && folder.parent_id === companyRoot.id
+        );
+      }
+
+      if (
+        scopedInitialFolders.some(
+          (folder) => folder.name === '칼선의뢰' || folder.name === '목형의뢰'
+        )
+      ) {
+        return scopedInitialFolders;
+      }
+
+      const rootCandidates =
+        scopedInitialFolders.length > 0 ? scopedInitialFolders : initialFolders;
+      const rootFolders = rootCandidates.filter((folder) => folder.parent_id === null);
+      const companyRoot =
+        rootFolders.find((folder) => hasCompanyId && isCurrentCompanyFolder(folder)) ??
+        (rootFolders.length === 1 ? rootFolders[0] : null);
+
+      const rootsToProbe = companyRoot ? [companyRoot] : rootFolders;
+      if (rootsToProbe.length === 0) {
+        return initialFolders;
+      }
+
+      const childFolders: Folder[] = [];
+      for (const rootFolder of rootsToProbe) {
+        const childParams = new URLSearchParams({ parentId: rootFolder.id });
+        if (companyId) childParams.set('companyId', companyId);
+        const childResponse = await fetch(`/api/webhard/folders?${childParams.toString()}`);
+        if (!childResponse.ok) throw new Error('Failed to fetch company root folders');
+        const childData = await childResponse.json();
+        childFolders.push(...(((childData.folders || childData || []) as Folder[]) ?? []));
+      }
+
+      const scopedChildFolders = hasCompanyId
+        ? childFolders.filter(isCurrentCompanyFolder)
+        : childFolders;
+      return scopedChildFolders.length > 0
+        ? scopedChildFolders
+        : scopedInitialFolders.length > 0
+          ? scopedInitialFolders
+          : initialFolders;
     },
     enabled: isOpen,
     staleTime: 30_000,
   });
+  const folderLookupErrorMessage = folderLookupError
+    ? '의뢰 폴더 정보를 확인할 수 없습니다. 관리자에게 문의하세요.'
+    : null;
 
   const handleSelect = (option: InquiryOption) => {
     setError(null);
@@ -150,7 +244,8 @@ export function InquiryTypeSelectModal({
                   <button
                     key={option.type}
                     onClick={() => handleSelect(option)}
-                    className={`w-full flex items-center gap-4 p-4 rounded-xl border ${BORDER_COLOR.light} ${BG_COLOR.hoverMuted} transition-all hover:border-orange-300 hover:shadow-sm text-left`}
+                    disabled={isLoadingFolders || Boolean(folderLookupError)}
+                    className={`w-full flex items-center gap-4 p-4 rounded-xl border ${BORDER_COLOR.light} ${BG_COLOR.hoverMuted} transition-all hover:border-orange-300 hover:shadow-sm text-left disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     <div
                       className={`flex-shrink-0 w-12 h-12 rounded-lg ${BG_COLOR.brandLight} flex items-center justify-center ${TEXT_COLOR.brand}`}
@@ -165,11 +260,11 @@ export function InquiryTypeSelectModal({
                 ))}
               </div>
 
-              {error && (
+              {(error || folderLookupErrorMessage) && (
                 <div
                   className={`mt-3 p-3 rounded-lg ${BG_COLOR.error} ${TEXT_COLOR.error} text-sm`}
                 >
-                  {error}
+                  {error || folderLookupErrorMessage}
                 </div>
               )}
             </div>
