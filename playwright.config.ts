@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import * as dotenv from 'dotenv';
 
-dotenv.config({ path: '.env.local' });
+dotenv.config({ path: process.env.OPERATIONAL_E2E_ENV_FILE || '.env.local' });
 
 const usesGoogleDriveStorage = Boolean(process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID);
 

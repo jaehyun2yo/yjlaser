@@ -155,6 +155,36 @@ describe('ApiKeyGuard principal model', () => {
     await expect(guard.canActivate(createContext(request))).rejects.toThrow(ForbiddenException);
   });
 
+  it('rejects external_webhard_sync API keys from job/read routes', async () => {
+    const reflector = {
+      getAllAndOverride: jest.fn((key: string) => {
+        if (key === IS_PUBLIC_KEY || key === ALLOW_WORKER_SESSION_KEY) return false;
+        if (key === INTEGRATION_PERMISSION_KEY) return 'job/read';
+        return undefined;
+      }),
+    } as unknown as Reflector;
+    const apiKeyService = {
+      validateKey: jest.fn().mockResolvedValue({
+        id: 'api-key-external-sync',
+        programType: 'external_webhard_sync',
+        permissions: ['file/register', 'event/write'],
+      }),
+    } as unknown as ApiKeyService;
+    const authService = {
+      verifySession: jest.fn().mockReturnValue(null),
+      verifyWorkerSession: jest.fn().mockReturnValue(null),
+    } as unknown as AuthService;
+    const request = {
+      cookies: {},
+      headers: { 'x-api-key': 'external-sync-key' },
+    } as Record<string, unknown>;
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    const guard = new ApiKeyGuard(reflector, apiKeyService, authService);
+
+    await expect(guard.canActivate(createContext(request))).rejects.toThrow(ForbiddenException);
+  });
+
   it('logs rejected API keys without the submitted raw key', async () => {
     const reflector = {
       getAllAndOverride: jest.fn().mockReturnValue(false),

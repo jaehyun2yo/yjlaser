@@ -176,6 +176,28 @@ describe('Integration contacts process-stage API', () => {
     );
   });
 
+  it('management_program API key cannot spoof another integration actorName', async () => {
+    contactsService.findOne.mockResolvedValueOnce({
+      id: CONTACT_ID,
+      process_stage: 'drawing_confirmed',
+    } as never);
+
+    const response = await request(app.getHttpServer())
+      .patch(`/integration/contacts/${CONTACT_ID}/process-stage`)
+      .set('X-API-Key', MANAGEMENT_PROGRAM_KEY)
+      .send({
+        processStage: 'laser',
+        actorName: 'nesting_program',
+      })
+      .expect(403);
+
+    expect(response.body).toMatchObject({
+      code: 'INTEGRATION_ACTOR_MISMATCH',
+    });
+    expect(contactsService.findOne).not.toHaveBeenCalled();
+    expect(contactsService.updateProcessStage).not.toHaveBeenCalled();
+  });
+
   it('stored event-only management_program key cannot use Contact stage route through runtime defaults', async () => {
     await request(app.getHttpServer())
       .patch(`/integration/contacts/${CONTACT_ID}/process-stage`)
@@ -208,6 +230,19 @@ describe('Integration contacts process-stage API', () => {
       .set('X-API-Key', MANAGEMENT_PROGRAM_KEY)
       .send({
         processStage: 'cutting',
+      })
+      .expect(422);
+
+    expect(contactsService.findOne).not.toHaveBeenCalled();
+    expect(contactsService.updateProcessStage).not.toHaveBeenCalled();
+  });
+
+  it('nesting_program cannot perform management_program laser transition', async () => {
+    await request(app.getHttpServer())
+      .patch(`/integration/contacts/${CONTACT_ID}/process-stage`)
+      .set('X-API-Key', NESTING_PROGRAM_KEY)
+      .send({
+        processStage: 'laser',
       })
       .expect(422);
 
