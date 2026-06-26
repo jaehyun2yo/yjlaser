@@ -801,13 +801,24 @@ drawing → sample → drawing_confirmed → laser → cutting → creasing → 
 
 ### 휴지통 (`/trash`)
 
-| Method | Endpoint             | 인증              | 설명             |
-| ------ | -------------------- | ----------------- | ---------------- |
-| GET    | `/trash`             | API Key + Company | 휴지통 파일 목록 |
-| GET    | `/trash/count`       | API Key + Company | 휴지통 파일 수   |
-| POST   | `/trash/:id/restore` | API Key + Company | 파일 복원        |
-| DELETE | `/trash/:id`         | API Key + Company | 파일 영구 삭제   |
-| DELETE | `/trash`             | API Key + Company | 휴지통 비우기    |
+| Method | Endpoint             | 인증              | 설명                                  |
+| ------ | -------------------- | ----------------- | ------------------------------------- |
+| GET    | `/trash`             | API Key + Company | 휴지통 파일 목록                      |
+| GET    | `/trash/count`       | API Key + Company | 휴지통 파일 수                        |
+| POST   | `/trash/:id/restore` | API Key + Company | 파일 복원                             |
+| DELETE | `/trash/:id`         | API Key + Company | 승인 body 필요. 휴지통 파일 영구 삭제 |
+| DELETE | `/trash`             | API Key + Company | 승인 body 필요. 휴지통 비우기         |
+
+영구삭제 요청 body:
+
+```json
+{
+  "confirmPermanentDelete": true,
+  "confirmationText": "PERMANENT_DELETE"
+}
+```
+
+승인 body가 없거나 대상이 휴지통 상태가 아니면 영구삭제는 실패한다.
 
 ### 공유 링크 (`/share-links`)
 

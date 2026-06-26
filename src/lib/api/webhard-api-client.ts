@@ -13,6 +13,7 @@ import type {
   TrashFileDTO,
   BatchOperationResultDTO,
 } from '@/app/webhard/_lib/types';
+import { PERMANENT_DELETE_APPROVAL } from '@/lib/api/permanent-delete-approval';
 
 // API Base URL - 항상 Next.js 프록시 사용 (CSP 준수)
 const API_BASE = '/api/webhard';
@@ -288,12 +289,14 @@ export async function restoreFile(fileId: string): Promise<{ success: boolean }>
 export async function permanentlyDeleteFile(fileId: string): Promise<{ success: boolean }> {
   return webhardFetch<{ success: boolean }>(`/trash/${fileId}`, {
     method: 'DELETE',
+    body: JSON.stringify(PERMANENT_DELETE_APPROVAL),
   });
 }
 
 export async function emptyTrash(): Promise<{ deleted: number }> {
   return webhardFetch<{ deleted: number }>('/trash', {
     method: 'DELETE',
+    body: JSON.stringify(PERMANENT_DELETE_APPROVAL),
   });
 }
 

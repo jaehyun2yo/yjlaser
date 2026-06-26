@@ -103,6 +103,11 @@ export interface RestoreFileInput {
 
 export interface DeleteFileInput {
   storageFileId: string;
+  /**
+   * Hard delete must be set only after the caller has verified user approval
+   * and that the logical record is already in trash.
+   */
+  permanentDeleteApproved?: boolean;
 }
 
 export interface StorageProviderClient {

@@ -1,4 +1,5 @@
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { StorageProvider } from '@prisma/client';
 import { TrashService } from '../trash.service';
 
 // ============================================================
@@ -13,6 +14,8 @@ function makeTrashFile(overrides: Record<string, unknown> = {}) {
     size: BigInt(1024),
     mimeType: 'application/pdf',
     path: 'webhard/test.pdf',
+    storageProvider: StorageProvider.R2,
+    driveFileId: null,
     folderId: null,
     companyId: null,
     uploadedBy: 'admin',
@@ -45,6 +48,7 @@ function makeStorageService() {
   return {
     deleteFile: jest.fn().mockResolvedValue(undefined),
     deleteFiles: jest.fn().mockResolvedValue(undefined),
+    deleteDriveFile: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -57,6 +61,10 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
 
 const adminUser = { userType: 'admin' as const, userId: 'admin', companyId: 0 };
 const companyUser = { userType: 'company' as const, userId: '5', companyId: 5 };
+const permanentDeleteApproval = {
+  confirmPermanentDelete: true,
+  confirmationText: 'PERMANENT_DELETE' as const,
+};
 
 // ============================================================
 // getTrashFiles
@@ -210,13 +218,24 @@ describe('TrashService.restoreFile', () => {
 // ============================================================
 
 describe('TrashService.permanentlyDeleteFile', () => {
+  it('명시 승인 없이는 영구 삭제하지 않음', async () => {
+    const { service, prisma, storage } = makeService();
+
+    await expect(service.permanentlyDeleteFile('file-uuid-1', adminUser)).rejects.toThrow(
+      BadRequestException
+    );
+
+    expect(prisma.webhardFile.findUnique).not.toHaveBeenCalled();
+    expect(storage.deleteFile).not.toHaveBeenCalled();
+  });
+
   it('파일을 스토리지와 DB에서 모두 삭제', async () => {
     const file = makeTrashFile();
     const { service, prisma, storage } = makeService();
     (prisma.webhardFile.findUnique as jest.Mock).mockResolvedValue(file);
     (prisma.webhardFile.delete as jest.Mock).mockResolvedValue(file);
 
-    await service.permanentlyDeleteFile('file-uuid-1', adminUser);
+    await service.permanentlyDeleteFile('file-uuid-1', adminUser, permanentDeleteApproval);
 
     expect(storage.deleteFile).toHaveBeenCalledWith('webhard/test.pdf');
     expect(prisma.webhardFile.delete).toHaveBeenCalledWith(
@@ -224,13 +243,31 @@ describe('TrashService.permanentlyDeleteFile', () => {
     );
   });
 
+  it('Google Drive 파일은 승인 플래그와 함께 휴지통 영구삭제 경로로 전달', async () => {
+    const file = makeTrashFile({
+      storageProvider: StorageProvider.GOOGLE_DRIVE,
+      driveFileId: 'drive-file-1',
+    });
+    const { service, prisma, storage } = makeService();
+    (prisma.webhardFile.findUnique as jest.Mock).mockResolvedValue(file);
+    (prisma.webhardFile.delete as jest.Mock).mockResolvedValue(file);
+
+    await service.permanentlyDeleteFile('file-uuid-1', adminUser, permanentDeleteApproval);
+
+    expect(storage.deleteDriveFile).toHaveBeenCalledWith({
+      storageFileId: 'drive-file-1',
+      permanentDeleteApproved: true,
+    });
+    expect(storage.deleteFile).not.toHaveBeenCalled();
+  });
+
   it('파일이 없으면 NotFoundException', async () => {
     const { service, prisma } = makeService();
     (prisma.webhardFile.findUnique as jest.Mock).mockResolvedValue(null);
 
-    await expect(service.permanentlyDeleteFile('nonexistent', adminUser)).rejects.toThrow(
-      NotFoundException
-    );
+    await expect(
+      service.permanentlyDeleteFile('nonexistent', adminUser, permanentDeleteApproval)
+    ).rejects.toThrow(NotFoundException);
   });
 
   it('deletedAt이 null인 파일 → NotFoundException', async () => {
@@ -239,9 +276,9 @@ describe('TrashService.permanentlyDeleteFile', () => {
       makeTrashFile({ deletedAt: null })
     );
 
-    await expect(service.permanentlyDeleteFile('file-uuid-1', adminUser)).rejects.toThrow(
-      NotFoundException
-    );
+    await expect(
+      service.permanentlyDeleteFile('file-uuid-1', adminUser, permanentDeleteApproval)
+    ).rejects.toThrow(NotFoundException);
   });
 
   it('타 업체 파일에 업체 사용자 접근 → ForbiddenException', async () => {
@@ -250,9 +287,9 @@ describe('TrashService.permanentlyDeleteFile', () => {
       makeTrashFile({ companyId: 999 })
     );
 
-    await expect(service.permanentlyDeleteFile('file-uuid-1', companyUser)).rejects.toThrow(
-      ForbiddenException
-    );
+    await expect(
+      service.permanentlyDeleteFile('file-uuid-1', companyUser, permanentDeleteApproval)
+    ).rejects.toThrow(ForbiddenException);
   });
 });
 
@@ -261,11 +298,20 @@ describe('TrashService.permanentlyDeleteFile', () => {
 // ============================================================
 
 describe('TrashService.emptyTrash', () => {
+  it('명시 승인 없이는 휴지통을 비우지 않음', async () => {
+    const { service, prisma, storage } = makeService();
+
+    await expect(service.emptyTrash(adminUser)).rejects.toThrow(BadRequestException);
+
+    expect(prisma.webhardFile.findMany).not.toHaveBeenCalled();
+    expect(storage.deleteFiles).not.toHaveBeenCalled();
+  });
+
   it('파일이 없으면 deleted: 0 반환, deleteMany 미호출', async () => {
     const { service, prisma } = makeService();
     (prisma.webhardFile.findMany as jest.Mock).mockResolvedValue([]);
 
-    const result = await service.emptyTrash(adminUser);
+    const result = await service.emptyTrash(adminUser, permanentDeleteApproval);
 
     expect(result.deleted).toBe(0);
     expect(prisma.webhardFile.deleteMany).not.toHaveBeenCalled();
@@ -280,7 +326,7 @@ describe('TrashService.emptyTrash', () => {
     (prisma.webhardFile.findMany as jest.Mock).mockResolvedValue(files);
     (prisma.webhardFile.deleteMany as jest.Mock).mockResolvedValue({ count: 2 });
 
-    const result = await service.emptyTrash(adminUser);
+    const result = await service.emptyTrash(adminUser, permanentDeleteApproval);
 
     expect(storage.deleteFiles).toHaveBeenCalledWith(['webhard/a.pdf', 'webhard/b.pdf']);
     expect(result.deleted).toBe(2);
@@ -292,9 +338,21 @@ describe('TrashService.emptyTrash', () => {
     (prisma.webhardFile.findMany as jest.Mock).mockResolvedValue(files);
     (prisma.webhardFile.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
 
-    const result = await service.emptyTrash(companyUser);
+    const result = await service.emptyTrash(companyUser, permanentDeleteApproval);
 
     expect(storage.deleteFiles).toHaveBeenCalled();
     expect(result.deleted).toBe(1);
+  });
+});
+
+describe('TrashService.cleanupExpiredFiles', () => {
+  it('자동 영구 삭제는 실행하지 않음', async () => {
+    const { service, prisma, storage } = makeService();
+
+    const result = await service.cleanupExpiredFiles();
+
+    expect(result).toEqual({ deleted: 0 });
+    expect(prisma.webhardFile.findMany).not.toHaveBeenCalled();
+    expect(storage.deleteFiles).not.toHaveBeenCalled();
   });
 });

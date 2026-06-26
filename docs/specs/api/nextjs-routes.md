@@ -195,44 +195,44 @@ Current protected mutation examples:
 
 ## Webhard (Next.js proxy to NestJS or direct Supabase)
 
-| Method   | Path                                     | Auth    | Description             |
-| -------- | ---------------------------------------- | ------- | ----------------------- |
-| GET      | /api/webhard/files                       | Session | File list by folder     |
-| POST     | /api/webhard/files/new                   | Session | Create file metadata    |
-| POST     | /api/webhard/files/presigned-url         | Session | Get R2 upload URL       |
-| POST     | /api/webhard/files/confirm               | Session | Confirm upload complete |
-| POST     | /api/webhard/files/mark-downloaded       | Session | Mark file downloaded    |
-| POST     | /api/webhard/files/mark-all-downloaded   | Session | Mark all downloaded     |
-| GET      | /api/webhard/files/badge-counts          | Session | Unread badge counts     |
-| POST     | /api/webhard/files/[id]/delete           | Session | Soft delete file        |
-| POST     | /api/webhard/files/[id]/move             | Session | Move file               |
-| POST     | /api/webhard/files/[id]/rename           | Session | Rename file             |
-| GET      | /api/webhard/files/[id]/download         | Session | Download file           |
-| POST     | /api/webhard/files/batch/delete          | Session | Batch delete            |
-| POST     | /api/webhard/files/batch/move            | Session | Batch move              |
-| POST     | /api/webhard/files/batch/upload          | Session | Batch upload            |
-| GET/POST | /api/webhard/folders                     | Session | Folder list/create      |
-| GET      | /api/webhard/folders/[id]                | Session | Folder detail           |
-| GET      | /api/webhard/folders/[id]/ancestors      | Session | Breadcrumb path         |
-| POST     | /api/webhard/folders/[id]/delete         | Session | Delete folder           |
-| POST     | /api/webhard/folders/[id]/move           | Session | Move folder             |
-| POST     | /api/webhard/folders/[id]/rename         | Session | Rename folder           |
-| GET      | /api/webhard/trash                       | Session | Trash list              |
-| POST     | /api/webhard/trash/[id]/restore          | Session | Restore from trash      |
-| POST     | /api/webhard/trash/[id]/permanent-delete | Session | Permanent delete        |
-| POST     | /api/webhard/batch-delete                | Session | Batch permanent delete  |
-| GET      | /api/webhard/search                      | Session | Full-text search        |
-| GET      | /api/webhard/storage                     | Session | Storage usage           |
-| GET      | /api/webhard/storage/breakdown           | Session | Storage by company      |
-| GET/PUT  | /api/webhard/settings                    | Session | User webhard settings   |
-| GET      | /api/webhard/badge-counts                | Session | Badge counts            |
-| POST/GET | /api/webhard/share                       | Session | Create/list shares      |
-| GET      | /api/webhard/share/[token]               | None    | Public share access     |
-| POST     | /api/webhard/upload                      | Session | Upload flow             |
-| POST     | /api/webhard/upload/batch                | Session | Batch upload flow       |
-| POST     | /api/webhard/upload/batch-complete       | Session | Batch upload confirm    |
-| GET      | /api/webhard/download                    | Session | Download file           |
-| GET      | /api/webhard/activity                    | Admin   | Webhard activity        |
+| Method   | Path                                     | Auth    | Description                      |
+| -------- | ---------------------------------------- | ------- | -------------------------------- |
+| GET      | /api/webhard/files                       | Session | File list by folder              |
+| POST     | /api/webhard/files/new                   | Session | Create file metadata             |
+| POST     | /api/webhard/files/presigned-url         | Session | Get R2 upload URL                |
+| POST     | /api/webhard/files/confirm               | Session | Confirm upload complete          |
+| POST     | /api/webhard/files/mark-downloaded       | Session | Mark file downloaded             |
+| POST     | /api/webhard/files/mark-all-downloaded   | Session | Mark all downloaded              |
+| GET      | /api/webhard/files/badge-counts          | Session | Unread badge counts              |
+| POST     | /api/webhard/files/[id]/delete           | Session | Soft delete file                 |
+| POST     | /api/webhard/files/[id]/move             | Session | Move file                        |
+| POST     | /api/webhard/files/[id]/rename           | Session | Rename file                      |
+| GET      | /api/webhard/files/[id]/download         | Session | Download file                    |
+| POST     | /api/webhard/files/batch/delete          | Session | Batch delete                     |
+| POST     | /api/webhard/files/batch/move            | Session | Batch move                       |
+| POST     | /api/webhard/files/batch/upload          | Session | Batch upload                     |
+| GET/POST | /api/webhard/folders                     | Session | Folder list/create               |
+| GET      | /api/webhard/folders/[id]                | Session | Folder detail                    |
+| GET      | /api/webhard/folders/[id]/ancestors      | Session | Breadcrumb path                  |
+| POST     | /api/webhard/folders/[id]/delete         | Session | Delete folder                    |
+| POST     | /api/webhard/folders/[id]/move           | Session | Move folder                      |
+| POST     | /api/webhard/folders/[id]/rename         | Session | Rename folder                    |
+| GET      | /api/webhard/trash                       | Session | Trash list                       |
+| POST     | /api/webhard/trash/[id]/restore          | Session | Restore from trash               |
+| DELETE   | /api/webhard/trash/[id]/permanent-delete | Session | 승인 body 필요. Permanent delete |
+| POST     | /api/webhard/batch-delete                | Session | Batch permanent delete           |
+| GET      | /api/webhard/search                      | Session | Full-text search                 |
+| GET      | /api/webhard/storage                     | Session | Storage usage                    |
+| GET      | /api/webhard/storage/breakdown           | Session | Storage by company               |
+| GET/PUT  | /api/webhard/settings                    | Session | User webhard settings            |
+| GET      | /api/webhard/badge-counts                | Session | Badge counts                     |
+| POST/GET | /api/webhard/share                       | Session | Create/list shares               |
+| GET      | /api/webhard/share/[token]               | None    | Public share access              |
+| POST     | /api/webhard/upload                      | Session | Upload flow                      |
+| POST     | /api/webhard/upload/batch                | Session | Batch upload flow                |
+| POST     | /api/webhard/upload/batch-complete       | Session | Batch upload confirm             |
+| GET      | /api/webhard/download                    | Session | Download file                    |
+| GET      | /api/webhard/activity                    | Admin   | Webhard activity                 |
 
 ## Sync (External Webhard Integration)
 

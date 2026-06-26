@@ -16,14 +16,11 @@ import type {
 /**
  * WebhardFileDTO → TrashFileDTO 변환 (휴지통용)
  */
-export function fileToTrashDTO(
-  file: WebhardFileDTO,
-  folderPath?: string
-): TrashFileDTO {
+export function fileToTrashDTO(file: WebhardFileDTO, folderPath?: string): TrashFileDTO {
   const deletedAt = file.deleted_at ? new Date(file.deleted_at) : new Date();
   const daysUntilDelete = Math.max(
     0,
-    3 - Math.floor((Date.now() - deletedAt.getTime()) / (1000 * 60 * 60 * 24))
+    30 - Math.floor((Date.now() - deletedAt.getTime()) / (1000 * 60 * 60 * 24))
   );
 
   return {

@@ -261,13 +261,13 @@ const fullName = `${timestamp}-${random}-${sanitized}`;
 
 ### 3.3 휴지통 API (`/api/v1/trash`)
 
-| HTTP   | 엔드포인트           | 서비스 메서드             | 설명                                 |
-| ------ | -------------------- | ------------------------- | ------------------------------------ |
-| GET    | `/trash`             | `getTrashFiles()`         | 휴지통 파일 목록 (보존기한 3일 이내) |
-| GET    | `/trash/count`       | `getTrashCount()`         | 휴지통 파일 수                       |
-| POST   | `/trash/:id/restore` | `restoreFile()`           | 파일 복원                            |
-| DELETE | `/trash/:id`         | `permanentlyDeleteFile()` | 파일 영구 삭제 (R2 + DB)             |
-| DELETE | `/trash`             | `emptyTrash()`            | 휴지통 비우기 (전체 영구 삭제)       |
+| HTTP   | 엔드포인트           | 서비스 메서드             | 설명                                  |
+| ------ | -------------------- | ------------------------- | ------------------------------------- |
+| GET    | `/trash`             | `getTrashFiles()`         | 휴지통 파일 목록                      |
+| GET    | `/trash/count`       | `getTrashCount()`         | 휴지통 파일 수                        |
+| POST   | `/trash/:id/restore` | `restoreFile()`           | 파일 복원                             |
+| DELETE | `/trash/:id`         | `permanentlyDeleteFile()` | 승인 body 필요. 휴지통 파일 영구 삭제 |
+| DELETE | `/trash`             | `emptyTrash()`            | 승인 body 필요. 휴지통 비우기         |
 
 ### 3.4 저장공간 API (`/api/v1/storage`)
 
@@ -584,14 +584,14 @@ const downloadSingleFile = async (file: WebhardFileDTO) => {
 
 ### 6.1 삭제 유형 분류
 
-| 유형               | 설명                  | 백엔드 메서드                          | R2 삭제 여부 |
-| ------------------ | --------------------- | -------------------------------------- | ------------ |
-| Soft Delete (단일) | 휴지통 이동           | `FilesService.deleteFile()`            | X            |
-| Soft Delete (배치) | 다중 파일 휴지통      | `FilesService.batchDeleteFiles()`      | X            |
-| 폴더 재귀 삭제     | 하위 전체 Soft Delete | `FoldersService.deleteFolder()`        | X            |
-| 영구 삭제 (단일)   | R2 + DB 삭제          | `TrashService.permanentlyDeleteFile()` | O            |
-| 휴지통 비우기      | 전체 영구 삭제        | `TrashService.emptyTrash()`            | O            |
-| 자동 정리          | 보존기한 초과 삭제    | `TrashService.cleanupExpiredFiles()`   | O            |
+| 유형               | 설명                       | 백엔드 메서드                          | R2 삭제 여부 |
+| ------------------ | -------------------------- | -------------------------------------- | ------------ |
+| Soft Delete (단일) | 휴지통 이동                | `FilesService.deleteFile()`            | X            |
+| Soft Delete (배치) | 다중 파일 휴지통           | `FilesService.batchDeleteFiles()`      | X            |
+| 폴더 재귀 삭제     | 하위 전체 Soft Delete      | `FoldersService.deleteFolder()`        | X            |
+| 영구 삭제 (단일)   | 승인 후 R2/Drive + DB 삭제 | `TrashService.permanentlyDeleteFile()` | O            |
+| 휴지통 비우기      | 승인 후 전체 영구 삭제     | `TrashService.emptyTrash()`            | O            |
+| 자동 정리          | 사용자 승인 정책으로 no-op | `TrashService.cleanupExpiredFiles()`   | X            |
 
 ### 6.2 Soft Delete 프로세스
 
@@ -658,7 +658,13 @@ async deleteFolder(folderId: string, user: SessionUser): Promise<void> {
 ```typescript
 // webhard-api/src/trash/trash.service.ts
 
-async permanentlyDeleteFile(fileId: string, user: SessionUser): Promise<void> {
+async permanentlyDeleteFile(
+  fileId: string,
+  user: SessionUser,
+  approval: PermanentDeleteApprovalDto
+): Promise<void> {
+  this.assertPermanentDeleteApproval(approval);
+
   const file = await this.prisma.executeWithRetry(
     () => this.prisma.webhardFile.findFirst({
       where: { id: fileId, deletedAt: { not: null } },
@@ -669,8 +675,8 @@ async permanentlyDeleteFile(fileId: string, user: SessionUser): Promise<void> {
   if (!file) throw new NotFoundException('File not found in trash');
   this.verifyFileAccess(file, user);
 
-  // 1. R2에서 파일 삭제
-  await this.storageService.deleteFile(file.path);
+  // 1. R2/Drive에서 파일 삭제. Drive는 trashed=true item만 files.delete 허용.
+  await this.deleteFileFromStorage(file, true);
 
   // 2. DB에서 레코드 삭제
   await this.prisma.executeWithRetry(
@@ -972,15 +978,13 @@ initializeCompanyFolders(companyId, companyName)
 파일 삭제 (Soft Delete)
   └── deletedAt = NOW(), deletedBy = userId
 
-3일 이내 (보존 기한):
-  ├── 조회 가능: GET /trash (deletedAt > cutoffDate)
+휴지통 상태:
+  ├── 조회 가능: GET /trash (deletedAt IS NOT NULL)
   ├── 복원 가능: POST /trash/:id/restore → deletedAt = NULL
-  └── 영구 삭제 가능: DELETE /trash/:id → R2 삭제 + DB 삭제
+  └── 승인 후 영구 삭제 가능: DELETE /trash/:id → R2/Drive 삭제 + DB 삭제
 
-3일 초과:
-  └── 자동 정리: cleanupExpiredFiles()
-      ├── R2에서 파일 삭제 (배치)
-      └── DB에서 레코드 삭제 (배치)
+보관 기간 초과:
+  └── 자동 영구삭제 없음. 휴지통 목록에 남고 사용자 승인 후에만 삭제.
 ```
 
 ### 9.2 휴지통 조회 (잔여일수 계산)

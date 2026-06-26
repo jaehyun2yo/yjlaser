@@ -1,10 +1,23 @@
-import { Injectable, NotFoundException, ForbiddenException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { StorageProvider } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageRepairService } from '../storage/storage-repair.service';
 import { StorageService } from '../storage/storage.service';
 import { SessionUser } from '../auth/auth.service';
-import { TrashFileDto, TrashListResponseDto, GetTrashQueryDto } from './dto/trash.dto';
+import {
+  PERMANENT_DELETE_CONFIRMATION,
+  TrashFileDto,
+  TrashListResponseDto,
+  GetTrashQueryDto,
+  PermanentDeleteApprovalDto,
+} from './dto/trash.dto';
 
 type WebhardFileRecord = {
   id: string;
@@ -28,6 +41,8 @@ const TRASH_RETENTION_DAYS = 30;
 
 @Injectable()
 export class TrashService {
+  private readonly logger = new Logger(TrashService.name);
+
   constructor(
     private prisma: PrismaService,
     private storageService: StorageService,
@@ -40,15 +55,9 @@ export class TrashService {
   async getTrashFiles(query: GetTrashQueryDto, user: SessionUser): Promise<TrashListResponseDto> {
     const { companyId, page = 1, limit = 50 } = query;
 
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - TRASH_RETENTION_DAYS);
-
     // Build where clause
     const where: Record<string, unknown> = {
-      deletedAt: {
-        not: null,
-        gt: cutoffDate, // Only files within retention period
-      },
+      deletedAt: { not: null },
     };
 
     // Company access control
@@ -116,14 +125,8 @@ export class TrashService {
    * Get trash count
    */
   async getTrashCount(user: SessionUser): Promise<{ count: number }> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - TRASH_RETENTION_DAYS);
-
     const where: Record<string, unknown> = {
-      deletedAt: {
-        not: null,
-        gt: cutoffDate,
-      },
+      deletedAt: { not: null },
     };
 
     if (user.userType === 'company') {
@@ -189,7 +192,14 @@ export class TrashService {
   /**
    * Permanently delete a file
    */
-  async permanentlyDeleteFile(fileId: string, user: SessionUser): Promise<void> {
+  async permanentlyDeleteFile(
+    fileId: string,
+    user: SessionUser,
+    approval?: PermanentDeleteApprovalDto | null
+  ): Promise<void> {
+    const startTime = Date.now();
+    this.assertPermanentDeleteApproval(approval);
+
     const file = await this.prisma.executeWithRetry<WebhardFileRecord | null>(
       () => this.prisma.webhardFile.findUnique({ where: { id: fileId } }),
       { operationName: 'permanentlyDeleteFile.findUnique' }
@@ -201,16 +211,27 @@ export class TrashService {
 
     this.verifyFileAccess(file, user);
 
-    await this.deleteFileFromStorage(file);
-
-    // Delete from database
+    let storageDeleted = false;
     try {
+      await this.deleteFileFromStorage(file, true);
+      storageDeleted = true;
+
+      // Delete from database
       await this.prisma.executeWithRetry(
         () => this.prisma.webhardFile.delete({ where: { id: fileId } }),
         { operationName: 'permanentlyDeleteFile.delete' }
       );
+      this.logger.log(
+        `Permanent trash file delete completed: provider=${file.storageProvider}, elapsedMs=${
+          Date.now() - startTime
+        }`
+      );
     } catch (error) {
-      if (file.storageProvider === StorageProvider.GOOGLE_DRIVE && file.driveFileId) {
+      if (
+        storageDeleted &&
+        file.storageProvider === StorageProvider.GOOGLE_DRIVE &&
+        file.driveFileId
+      ) {
         await this.storageRepairService?.recordDriveDbMismatch({
           operation: 'delete',
           storageProvider: 'google_drive',
@@ -220,6 +241,11 @@ export class TrashService {
           actualDriveState: { deleted: true, dbDeleteFailed: true },
         });
       }
+      this.logger.warn(
+        `Permanent trash file delete failed: elapsedMs=${Date.now() - startTime}, errorType=${this.getErrorType(
+          error
+        )}`
+      );
       throw error;
     }
   }
@@ -227,15 +253,15 @@ export class TrashService {
   /**
    * Empty trash (delete all files in trash)
    */
-  async emptyTrash(user: SessionUser): Promise<{ deleted: number }> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - TRASH_RETENTION_DAYS);
+  async emptyTrash(
+    user: SessionUser,
+    approval?: PermanentDeleteApprovalDto | null
+  ): Promise<{ deleted: number }> {
+    const startTime = Date.now();
+    this.assertPermanentDeleteApproval(approval);
 
     const where: Record<string, unknown> = {
-      deletedAt: {
-        not: null,
-        gt: cutoffDate,
-      },
+      deletedAt: { not: null },
     };
 
     if (user.userType === 'company') {
@@ -263,7 +289,7 @@ export class TrashService {
       return { deleted: 0 };
     }
 
-    await this.deleteFilesFromStorage(files);
+    await this.deleteFilesFromStorage(files, true);
 
     // Delete from database
     const result = await this.prisma.executeWithRetry<{ count: number }>(
@@ -274,54 +300,22 @@ export class TrashService {
       { operationName: 'emptyTrash.deleteMany' }
     );
 
+    this.logger.log(
+      `Permanent trash empty completed: requested=${files.length}, deleted=${
+        result.count
+      }, elapsedMs=${Date.now() - startTime}`
+    );
+
     return { deleted: result.count };
   }
 
   /**
    * Clean up expired files (files older than retention period)
-   * This should be called by a scheduled job
+   * Permanent delete now requires explicit user approval, so scheduled cleanup is disabled.
    */
   async cleanupExpiredFiles(): Promise<{ deleted: number }> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - TRASH_RETENTION_DAYS);
-
-    const files = await this.prisma.executeWithRetry<
-      Array<{
-        id: string;
-        path: string;
-        storageProvider: StorageProvider;
-        driveFileId: string | null;
-      }>
-    >(
-      () =>
-        this.prisma.webhardFile.findMany({
-          where: {
-            deletedAt: {
-              not: null,
-              lte: cutoffDate,
-            },
-          },
-          select: { id: true, path: true, storageProvider: true, driveFileId: true },
-        }),
-      { operationName: 'cleanupExpiredFiles.findMany' }
-    );
-
-    if (files.length === 0) {
-      return { deleted: 0 };
-    }
-
-    await this.deleteFilesFromStorage(files);
-
-    // Delete from database
-    const result = await this.prisma.executeWithRetry<{ count: number }>(
-      () =>
-        this.prisma.webhardFile.deleteMany({
-          where: { id: { in: files.map((f) => f.id) } },
-        }),
-      { operationName: 'cleanupExpiredFiles.deleteMany' }
-    );
-
-    return { deleted: result.count };
+    this.logger.warn('Expired trash cleanup skipped: permanent_delete_requires_user_approval');
+    return { deleted: 0 };
   }
 
   /**
@@ -337,16 +331,26 @@ export class TrashService {
     }
   }
 
-  private async deleteFileFromStorage(file: {
-    path: string;
-    storageProvider: StorageProvider;
-    driveFileId: string | null;
-  }): Promise<void> {
+  private async deleteFileFromStorage(
+    file: {
+      path: string;
+      storageProvider: StorageProvider;
+      driveFileId: string | null;
+    },
+    permanentDeleteApproved: boolean
+  ): Promise<void> {
+    if (!permanentDeleteApproved) {
+      throw new BadRequestException('Permanent delete requires explicit approval');
+    }
+
     if (file.storageProvider === StorageProvider.GOOGLE_DRIVE) {
       if (!file.driveFileId) {
         throw new NotFoundException('Drive file not found');
       }
-      await this.storageService.deleteDriveFile({ storageFileId: file.driveFileId });
+      await this.storageService.deleteDriveFile({
+        storageFileId: file.driveFileId,
+        permanentDeleteApproved,
+      });
       return;
     }
 
@@ -358,7 +362,8 @@ export class TrashService {
       path: string;
       storageProvider: StorageProvider;
       driveFileId: string | null;
-    }>
+    }>,
+    permanentDeleteApproved: boolean
   ): Promise<void> {
     const driveFiles = files.filter(
       (file) => file.storageProvider === StorageProvider.GOOGLE_DRIVE
@@ -367,10 +372,29 @@ export class TrashService {
       .filter((file) => file.storageProvider !== StorageProvider.GOOGLE_DRIVE)
       .map((file) => file.path);
 
-    await Promise.all(driveFiles.map((file) => this.deleteFileFromStorage(file)));
+    await Promise.all(
+      driveFiles.map((file) => this.deleteFileFromStorage(file, permanentDeleteApproved))
+    );
     if (r2Keys.length > 0) {
+      if (!permanentDeleteApproved) {
+        throw new BadRequestException('Permanent delete requires explicit approval');
+      }
       await this.storageService.deleteFiles(r2Keys);
     }
+  }
+
+  private assertPermanentDeleteApproval(approval?: PermanentDeleteApprovalDto | null): void {
+    if (
+      approval?.confirmPermanentDelete !== true ||
+      approval.confirmationText !== PERMANENT_DELETE_CONFIRMATION
+    ) {
+      this.logger.warn('Permanent trash delete blocked: reason=missing_or_invalid_approval');
+      throw new BadRequestException('Permanent delete requires explicit approval');
+    }
+  }
+
+  private getErrorType(error: unknown): string {
+    return error instanceof Error ? error.constructor.name : typeof error;
   }
 
   /**

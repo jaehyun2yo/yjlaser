@@ -1325,7 +1325,8 @@ Folder delete from the web UI is exposed through the folder context menu and fol
 
 ### DELETE /api/v1/trash/:id
 
-파일 영구 삭제 (R2 스토리지에서도 삭제).
+승인 body가 있을 때만 휴지통 파일을 영구 삭제한다. Google Drive 파일은 Drive item이
+이미 `trashed=true`일 때만 `files.delete`를 호출한다.
 
 **Guard:** ApiKeyGuard + CompanyAccessGuard
 
@@ -1334,6 +1335,15 @@ Folder delete from the web UI is exposed through the folder context menu and fol
 | 필드 | 타입          | Required | 설명    |
 | ---- | ------------- | -------- | ------- |
 | id   | string (UUID) | **Yes**  | 파일 ID |
+
+**Request Body:**
+
+```json
+{
+  "confirmPermanentDelete": true,
+  "confirmationText": "PERMANENT_DELETE"
+}
+```
 
 **Response:**
 
@@ -1345,14 +1355,23 @@ Folder delete from the web UI is exposed through the folder context menu and fol
 
 ### DELETE /api/v1/trash
 
-휴지통 비우기 (전체 영구 삭제).
+승인 body가 있을 때만 휴지통을 비운다. 보관 기간 만료 자동 영구삭제는 사용하지 않는다.
 
 **Guard:** ApiKeyGuard + CompanyAccessGuard
+
+**Request Body:**
+
+```json
+{
+  "confirmPermanentDelete": true,
+  "confirmationText": "PERMANENT_DELETE"
+}
+```
 
 **Response:**
 
 ```json
-{ "deletedCount": 3 }
+{ "deleted": 3 }
 ```
 
 ---

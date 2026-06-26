@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { StorageProvider } from '@prisma/client';
 import { GoogleDriveStorageProvider } from '../google-drive-storage.provider';
 
@@ -96,30 +96,75 @@ describe('GoogleDriveStorageProvider batch file operations', () => {
     expect(makeProvider().provider).toBe(StorageProvider.GOOGLE_DRIVE);
   });
 
-  it('falls back to Drive trash when permanent delete is not permitted', async () => {
+  it('blocks permanent delete without explicit approval', async () => {
     const provider = makeProvider();
-    const deleteError = Object.assign(new Error('insufficient file permissions'), { code: 403 });
-    const deleteMock = jest.fn().mockRejectedValue(deleteError);
-    const updateMock = jest.fn().mockResolvedValue({ data: { id: 'drive-file-1', trashed: true } });
+    const deleteMock = jest.fn();
     const state = provider as unknown as {
-      drive: { files: { delete: jest.Mock; update: jest.Mock } };
+      drive: { files: { delete: jest.Mock } };
     };
     state.drive = {
       files: {
         delete: deleteMock,
-        update: updateMock,
       },
     };
 
-    await expect(provider.deleteFile({ storageFileId: 'drive-file-1' })).resolves.toBeUndefined();
+    await expect(provider.deleteFile({ storageFileId: 'drive-file-1' })).rejects.toBeInstanceOf(
+      BadRequestException
+    );
+
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks permanent delete when the Drive item is not already trashed', async () => {
+    const provider = makeProvider();
+    const getMock = jest.fn().mockResolvedValue({ data: { id: 'drive-file-1', trashed: false } });
+    const deleteMock = jest.fn();
+    const state = provider as unknown as {
+      drive: { files: { get: jest.Mock; delete: jest.Mock } };
+    };
+    state.drive = {
+      files: {
+        get: getMock,
+        delete: deleteMock,
+      },
+    };
+
+    await expect(
+      provider.deleteFile({ storageFileId: 'drive-file-1', permanentDeleteApproved: true })
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(getMock).toHaveBeenCalledWith({
+      fileId: 'drive-file-1',
+      fields: 'id,trashed',
+      supportsAllDrives: true,
+    });
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it('permanently deletes only an approved trashed Drive item', async () => {
+    const provider = makeProvider();
+    const getMock = jest.fn().mockResolvedValue({ data: { id: 'drive-file-1', trashed: true } });
+    const deleteMock = jest.fn().mockResolvedValue({ data: {} });
+    const state = provider as unknown as {
+      drive: { files: { get: jest.Mock; delete: jest.Mock } };
+    };
+    state.drive = {
+      files: {
+        get: getMock,
+        delete: deleteMock,
+      },
+    };
+
+    await expect(
+      provider.deleteFile({ storageFileId: 'drive-file-1', permanentDeleteApproved: true })
+    ).resolves.toBeUndefined();
 
     expect(deleteMock).toHaveBeenCalledWith({
       fileId: 'drive-file-1',
       supportsAllDrives: true,
     });
-    expect(updateMock).toHaveBeenCalledWith({
+    expect(getMock).toHaveBeenCalledWith({
       fileId: 'drive-file-1',
-      requestBody: { trashed: true },
       fields: 'id,trashed',
       supportsAllDrives: true,
     });

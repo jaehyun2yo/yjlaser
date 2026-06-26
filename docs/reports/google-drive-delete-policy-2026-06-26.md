@@ -6,7 +6,8 @@
 ## 배경
 
 운영 전 canary에서 Google Drive 서비스 계정은 canary 파일/폴더를 휴지통으로 이동할 수
-있지만 영구삭제 권한은 없는 상태로 확인됐다.
+있지만 영구삭제 권한은 없는 상태로 확인됐다. 이후 영구삭제 권한 승격은 실수 피해
+범위가 크다고 판단해, 앱 정책은 권한 여부와 별개로 명시 승인 기반으로 제한한다.
 
 - 확인된 권한: `canTrash=true`
 - 부족한 권한: `canDelete=false`
@@ -14,24 +15,32 @@
 
 ## 보강 정책
 
-`GoogleDriveStorageProvider.deleteFile()`은 영구삭제가 권한 부족으로 실패하면 동일
-Drive item을 휴지통으로 이동한다. 이 fallback은 active Drive 목록에서 파일을 제거해
-사용자 업무 흐름을 막지 않기 위한 방어다.
+- 일반 파일/폴더 삭제는 항상 휴지통 이동으로 처리한다.
+- `DELETE /trash/:id`, `DELETE /trash` 영구삭제 API는 승인 body가 없으면 400으로 차단한다.
+- Google Drive 영구삭제는 승인된 요청이면서 Drive item이 이미 `trashed=true`일 때만
+  `files.delete`를 호출한다.
+- 권한 부족 시 휴지통 fallback은 제거한다. 영구삭제 실패를 휴지통 이동으로 바꾸면
+  운영자가 실제 삭제 여부를 오판할 수 있기 때문이다.
+- 보관 기간 만료 자동 영구삭제는 비활성화한다. 오래된 휴지통 항목도 목록에 남기고
+  사용자 승인 후에만 삭제한다.
 
 로그는 다음 값만 남긴다.
 
-- fallback 여부
+- 승인 차단 여부
+- Drive item의 휴지통 상태 차단 여부
 - Drive API status
 - errorType
+- storageFileId hash
 
 파일명, 고객 경로, token, credential, raw customer data는 남기지 않는다.
 
 ## 운영 기준
 
-- 휴지통 이동만으로 충분한 운영 정책이면 현재 서비스 계정 권한으로 사용 가능하다.
-- 실제 영구삭제가 필요하면 Shared Drive에서 서비스 계정 권한을 삭제 가능 수준으로
-  승격한 뒤 canary로 `files.delete` 성공을 재검증한다.
-- 권한 승격 전까지 Drive 휴지통에는 canary 또는 삭제된 item이 남을 수 있다.
+- 휴지통 이동은 기본 삭제 정책이며 운영자가 별도 승인하지 않아도 실행 가능하다.
+- 실제 영구삭제가 필요하면 UI 확인 이후 승인 body가 포함된 휴지통 API만 사용한다.
+- Shared Drive 권한이 삭제 가능 수준으로 승격되어도 앱은 active item을 직접
+  영구삭제하지 않는다.
+- Drive 휴지통에는 운영자가 영구삭제 승인하기 전까지 삭제된 item이 남을 수 있다.
 
 ## 검증
 
@@ -40,7 +49,9 @@ cd yjlaser_website/webhard-api
 npm test -- src/storage/__tests__/google-drive-storage.provider.spec.ts --runInBand
 ```
 
-결과:
+기대 결과:
 
-- `GoogleDriveStorageProvider.deleteFile()` 권한 부족 시 trash fallback PASS
+- 승인 없는 `GoogleDriveStorageProvider.deleteFile()` 차단 PASS
+- Drive item이 `trashed=false`이면 영구삭제 차단 PASS
+- 승인된 `trashed=true` item만 `files.delete` 호출 PASS
 - provider identity, batch operation, auth boundary failure 회귀 PASS

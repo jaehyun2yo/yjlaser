@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -372,8 +373,36 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
   }
 
   async deleteFile(input: DeleteFileInput): Promise<void> {
+    const fileHash = this.hashForLog(input.storageFileId);
+    if (input.permanentDeleteApproved !== true) {
+      this.logger.warn(
+        `Google Drive permanent delete blocked: reason=missing_approval, fileHash=${fileHash}`
+      );
+      throw new BadRequestException('Google Drive permanent delete requires explicit approval');
+    }
+
     const { drive } = this.ensureDrive();
     try {
+      const metadata = await this.withRetry(
+        () =>
+          drive.files.get({
+            fileId: input.storageFileId,
+            fields: 'id,trashed',
+            supportsAllDrives: true,
+          }),
+        1,
+        { retryForbidden: false, mapBoundaryUnavailable: false }
+      );
+
+      if (metadata.data.trashed !== true) {
+        this.logger.warn(
+          `Google Drive permanent delete blocked: reason=not_trashed, fileHash=${fileHash}`
+        );
+        throw new BadRequestException(
+          'Google Drive permanent delete is allowed only for trashed files'
+        );
+      }
+
       await this.withRetry(
         () =>
           drive.files.delete({
@@ -383,19 +412,16 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
         1,
         { retryForbidden: false, mapBoundaryUnavailable: false }
       );
+      this.logger.log(`Google Drive permanent delete completed: fileHash=${fileHash}`);
     } catch (error) {
-      if (!this.isPermanentDeleteUnavailable(error)) {
-        throw error;
-      }
-
       const status = this.getStatus(error);
       const errorType = error instanceof Error ? error.constructor.name : typeof error;
       this.logger.warn(
-        `Google Drive permanent delete unavailable; fallback=trash, status=${
+        `Google Drive permanent delete failed: fileHash=${fileHash}, status=${
           status ?? 'unknown'
         }, errorType=${errorType}`
       );
-      await this.trashFile({ storageFileId: input.storageFileId });
+      throw error;
     }
   }
 
@@ -635,11 +661,6 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
     return /Gaxios|invalid_grant|invalid_client|default credentials|keyFile/i.test(message);
   }
 
-  private isPermanentDeleteUnavailable(error: unknown): boolean {
-    const status = this.getStatus(error);
-    return status === 403 || status === 404;
-  }
-
   private toDriveUnavailableException(
     error: unknown,
     context: string
@@ -668,5 +689,9 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
       plain[key] = value;
     });
     return plain;
+  }
+
+  private hashForLog(value: string): string {
+    return crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
   }
 }

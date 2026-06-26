@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/useToast';
 import { emptyTrashBatch, batchPermanentDeleteFiles } from '@/app/actions/webhard-batch-delete';
 import { invalidateStorageUsage } from '@/app/webhard/_lib/cacheHelpers';
 import { TEXT_COLOR, BG_COLOR, BORDER_COLOR } from '@/lib/styles';
+import { PERMANENT_DELETE_APPROVAL } from '@/lib/api/permanent-delete-approval';
 
 interface TrashFile {
   id: string;
@@ -33,7 +34,7 @@ interface TrashFile {
   created_at: string;
   deleted_at: string;
   deleted_by: number | null;
-  days_until_permanent_delete: number;
+  days_until_delete: number;
   company_name: string | null;
 }
 
@@ -118,6 +119,8 @@ export function TrashBin({ isOpen, onClose, userType }: TrashBinProps) {
     mutationFn: async (fileId: string) => {
       const response = await fetch(`/api/webhard/trash/${fileId}/permanent-delete`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(PERMANENT_DELETE_APPROVAL),
       });
       if (!response.ok) throw new Error('Failed to permanently delete file');
       return response.json();
@@ -267,7 +270,7 @@ export function TrashBin({ isOpen, onClose, userType }: TrashBinProps) {
                 <div>
                   <h2 className={`text-lg font-bold ${TEXT_COLOR.primary}`}>휴지통</h2>
                   <p className={`text-xs ${TEXT_COLOR.muted}`}>
-                    삭제된 파일은 30일 후 자동으로 영구 삭제됩니다
+                    영구 삭제는 승인 후 휴지통 항목에만 실행됩니다
                   </p>
                 </div>
               </div>
@@ -383,12 +386,12 @@ export function TrashBin({ isOpen, onClose, userType }: TrashBinProps) {
                           <span className={`${TEXT_COLOR.primary} truncate`}>
                             {file.original_name}
                           </span>
-                          {file.days_until_permanent_delete <= 1 && (
+                          {file.days_until_delete === 0 && (
                             <span
                               className={`flex items-center gap-1 px-2 py-0.5 text-xs ${BG_COLOR.error} ${TEXT_COLOR.error} rounded-full`}
                             >
                               <FaExclamationTriangle />
-                              {file.days_until_permanent_delete === 0 ? '오늘 삭제' : '내일 삭제'}
+                              30일 이상 보관
                             </span>
                           )}
                         </div>
@@ -403,7 +406,7 @@ export function TrashBin({ isOpen, onClose, userType }: TrashBinProps) {
                           </span>
                           <span className="flex items-center gap-1 text-orange-500">
                             <FaClock />
-                            {file.days_until_permanent_delete}일 후 영구 삭제
+                            30일 보관 기준 {file.days_until_delete}일 남음
                           </span>
                         </div>
                       </div>
