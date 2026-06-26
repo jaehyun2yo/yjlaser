@@ -1,6 +1,7 @@
 /** Webhard NestJS server-side client functions. */
 
 import { nestjsFetch } from './core.client';
+import { PERMANENT_DELETE_APPROVAL } from '@/lib/api/permanent-delete-approval';
 // ============ Files API ============
 
 export interface BatchMoveResult {
@@ -413,6 +414,7 @@ export async function serverEmptyTrash(): Promise<{
 }> {
   const response = await nestjsFetch<{ deleted: number }>('/trash', {
     method: 'DELETE',
+    body: PERMANENT_DELETE_APPROVAL,
   });
 
   if (!response.ok) {

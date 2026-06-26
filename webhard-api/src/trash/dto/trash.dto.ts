@@ -1,5 +1,7 @@
-import { IsOptional, IsInt, Min } from 'class-validator';
+import { Equals, IsBoolean, IsOptional, IsInt, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
+
+export const PERMANENT_DELETE_CONFIRMATION = 'PERMANENT_DELETE';
 
 export interface TrashFileDto {
   id: string;
@@ -47,4 +49,14 @@ export class GetTrashQueryDto {
   @IsInt()
   @Min(1)
   limit?: number = 50;
+}
+
+export class PermanentDeleteApprovalDto {
+  @IsBoolean()
+  @Equals(true)
+  confirmPermanentDelete!: boolean;
+
+  @IsString()
+  @Equals(PERMANENT_DELETE_CONFIRMATION)
+  confirmationText!: typeof PERMANENT_DELETE_CONFIRMATION;
 }

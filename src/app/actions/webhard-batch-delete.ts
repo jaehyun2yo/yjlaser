@@ -15,6 +15,7 @@ import { getSessionUser } from '@/lib/auth/session';
 import { logger } from '@/lib/utils/logger';
 import { logActivity } from '@/lib/activity-logger';
 import { chunkArray } from '@/lib/utils/chunk';
+import { PERMANENT_DELETE_APPROVAL } from '@/lib/api/permanent-delete-approval';
 import {
   serverBatchDeleteFiles,
   serverBatchDeleteFolders,
@@ -302,6 +303,7 @@ export async function batchPermanentDeleteFiles(fileIds: string[]): Promise<Batc
     for (const fileId of fileIds) {
       const response = await nestjsFetch<{ success: boolean }>(`/trash/${fileId}`, {
         method: 'DELETE',
+        body: PERMANENT_DELETE_APPROVAL,
       });
 
       if (response.ok) {

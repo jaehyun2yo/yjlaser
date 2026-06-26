@@ -4,11 +4,11 @@
 
 ### 1.1 Base URL
 
-| 환경 | URL | 설명 |
-|------|-----|------|
-| **개발** | `http://localhost:3100/api/webhard` | Next.js 프록시 |
-| **프로덕션** | `https://yjlaser.net/api/webhard` | Next.js 프록시 |
-| **NestJS 직접** | `http://localhost:4000` | 내부 전용 |
+| 환경            | URL                                 | 설명           |
+| --------------- | ----------------------------------- | -------------- |
+| **개발**        | `http://localhost:3100/api/webhard` | Next.js 프록시 |
+| **프로덕션**    | `https://yjlaser.net/api/webhard`   | Next.js 프록시 |
+| **NestJS 직접** | `http://localhost:4000`             | 내부 전용      |
 
 > **중요**: 클라이언트는 항상 Next.js 프록시(`/api/webhard`)를 통해 호출합니다 (CSP 준수).
 
@@ -51,18 +51,18 @@ Cookie: session=<session_token>
 
 ### 2.1 사용자 타입
 
-| 타입 | 권한 | 설명 |
-|------|------|------|
-| `admin` | 전체 접근 | 모든 업체 데이터 조회/수정 |
-| `company` | 제한 접근 | 자신의 업체 데이터만 접근 |
+| 타입      | 권한      | 설명                       |
+| --------- | --------- | -------------------------- |
+| `admin`   | 전체 접근 | 모든 업체 데이터 조회/수정 |
+| `company` | 제한 접근 | 자신의 업체 데이터만 접근  |
 
 ### 2.2 세션 사용자 정보
 
 ```typescript
 interface SessionUser {
-  userId: string;         // 사용자 ID
+  userId: string; // 사용자 ID
   userType: 'admin' | 'company';
-  companyId?: number;     // company 타입일 경우
+  companyId?: number; // company 타입일 경우
   companyName?: string;
 }
 ```
@@ -79,14 +79,14 @@ GET /files
 
 **Query Parameters**
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|----------|------|------|------|
-| `folderId` | string (UUID) | - | 폴더 ID (없으면 루트) |
-| `companyId` | number | - | 업체 ID (admin 전용) |
-| `page` | number | - | 페이지 번호 (기본: 1) |
-| `limit` | number | - | 페이지 크기 (기본: 50, 최대: 100) |
-| `sortBy` | string | - | 정렬 필드 (기본: created_at) |
-| `sortOrder` | 'asc' \| 'desc' | - | 정렬 순서 (기본: desc) |
+| 파라미터    | 타입            | 필수 | 설명                              |
+| ----------- | --------------- | ---- | --------------------------------- |
+| `folderId`  | string (UUID)   | -    | 폴더 ID (없으면 루트)             |
+| `companyId` | number          | -    | 업체 ID (admin 전용)              |
+| `page`      | number          | -    | 페이지 번호 (기본: 1)             |
+| `limit`     | number          | -    | 페이지 크기 (기본: 50, 최대: 100) |
+| `sortBy`    | string          | -    | 정렬 필드 (기본: created_at)      |
+| `sortOrder` | 'asc' \| 'desc' | -    | 정렬 순서 (기본: desc)            |
 
 **Response**
 
@@ -117,13 +117,13 @@ GET /files/new
 
 **Query Parameters**
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|----------|------|------|------|
-| `companyId` | number | - | 업체 ID |
-| `page` | number | - | 페이지 번호 |
-| `limit` | number | - | 페이지 크기 |
-| `sortBy` | string | - | 정렬 필드 |
-| `sortOrder` | 'asc' \| 'desc' | - | 정렬 순서 |
+| 파라미터    | 타입            | 필수 | 설명        |
+| ----------- | --------------- | ---- | ----------- |
+| `companyId` | number          | -    | 업체 ID     |
+| `page`      | number          | -    | 페이지 번호 |
+| `limit`     | number          | -    | 페이지 크기 |
+| `sortBy`    | string          | -    | 정렬 필드   |
+| `sortOrder` | 'asc' \| 'desc' | -    | 정렬 순서   |
 
 **Response**: `FileListResponse`
 
@@ -137,11 +137,11 @@ GET /files/search
 
 **Query Parameters**
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|----------|------|------|------|
-| `query` | string | ✓ | 검색어 |
-| `companyId` | number | - | 업체 ID |
-| `limit` | number | - | 결과 개수 제한 |
+| 파라미터    | 타입   | 필수 | 설명           |
+| ----------- | ------ | ---- | -------------- |
+| `query`     | string | ✓    | 검색어         |
+| `companyId` | number | -    | 업체 ID        |
+| `limit`     | number | -    | 결과 개수 제한 |
 
 **Response**
 
@@ -159,10 +159,10 @@ GET /files/badge-counts
 
 **Query Parameters**
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|----------|------|------|------|
-| `companyId` | number | - | 업체 ID |
-| `includeFolderCounts` | boolean | - | 폴더별 카운트 포함 |
+| 파라미터              | 타입    | 필수 | 설명               |
+| --------------------- | ------- | ---- | ------------------ |
+| `companyId`           | number  | -    | 업체 ID            |
+| `includeFolderCounts` | boolean | -    | 폴더별 카운트 포함 |
 
 **Response**
 
@@ -170,7 +170,7 @@ GET /files/badge-counts
 interface BadgeCountsResponse {
   totalCount: number;
   companyId?: number;
-  folderCounts?: Record<string, number>;  // folderId → count
+  folderCounts?: Record<string, number>; // folderId → count
 }
 ```
 
@@ -197,9 +197,9 @@ POST /files/presigned-url
 
 ```typescript
 interface PresignedUrlResponse {
-  url: string;            // R2 업로드 URL
-  key: string;            // 저장 경로
-  expiresAt: string;      // 만료 시간 (ISO 8601)
+  url: string; // R2 업로드 URL
+  key: string; // 저장 경로
+  expiresAt: string; // 만료 시간 (ISO 8601)
 }
 ```
 
@@ -214,15 +214,15 @@ const { url, key } = await fetch('/api/webhard/files/presigned-url', {
   body: JSON.stringify({
     filename: 'document.pdf',
     contentType: 'application/pdf',
-    folderId: '123e4567-e89b-12d3-a456-426614174000'
-  })
-}).then(r => r.json());
+    folderId: '123e4567-e89b-12d3-a456-426614174000',
+  }),
+}).then((r) => r.json());
 
 // 2. R2에 직접 업로드
 await fetch(url, {
   method: 'PUT',
   headers: { 'Content-Type': 'application/pdf' },
-  body: file
+  body: file,
 });
 
 // 3. 업로드 확인
@@ -236,8 +236,8 @@ await fetch('/api/webhard/files/confirm', {
     originalName: 'document.pdf',
     size: file.size,
     mimeType: 'application/pdf',
-    folderId: '123e4567-e89b-12d3-a456-426614174000'
-  })
+    folderId: '123e4567-e89b-12d3-a456-426614174000',
+  }),
 });
 ```
 
@@ -305,17 +305,17 @@ GET /files/:id/download
 
 **Path Parameters**
 
-| 파라미터 | 타입 | 설명 |
-|----------|------|------|
-| `id` | string (UUID) | 파일 ID |
+| 파라미터 | 타입          | 설명    |
+| -------- | ------------- | ------- |
+| `id`     | string (UUID) | 파일 ID |
 
 **Response**
 
 ```typescript
 interface PresignedUrlResponse {
-  url: string;            // R2 다운로드 URL
-  key: string;            // 저장 경로
-  expiresAt: string;      // 만료 시간
+  url: string; // R2 다운로드 URL
+  key: string; // 저장 경로
+  expiresAt: string; // 만료 시간
 }
 ```
 
@@ -331,7 +331,7 @@ PATCH /files/:id/rename
 
 ```typescript
 {
-  name: string;  // 새 파일명
+  name: string; // 새 파일명
 }
 ```
 
@@ -349,7 +349,7 @@ PATCH /files/:id/move
 
 ```typescript
 {
-  folderId: string | null;  // 대상 폴더 ID (null = 루트)
+  folderId: string | null; // 대상 폴더 ID (null = 루트)
 }
 ```
 
@@ -395,7 +395,9 @@ DELETE /files/:id
 **Response**
 
 ```typescript
-{ success: boolean }
+{
+  success: boolean;
+}
 ```
 
 ---
@@ -455,11 +457,11 @@ GET /folders
 
 **Query Parameters**
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|----------|------|------|------|
-| `parentId` | string (UUID) | - | 상위 폴더 ID |
-| `companyId` | number | - | 업체 ID |
-| `includeFileCounts` | boolean | - | 파일 수 포함 |
+| 파라미터            | 타입          | 필수 | 설명         |
+| ------------------- | ------------- | ---- | ------------ |
+| `parentId`          | string (UUID) | -    | 상위 폴더 ID |
+| `companyId`         | number        | -    | 업체 ID      |
+| `includeFileCounts` | boolean       | -    | 파일 수 포함 |
 
 **Response**
 
@@ -530,7 +532,7 @@ GET /folders/:id/ancestors
 
 ```typescript
 interface FolderAncestorsResponse {
-  ancestors: WebhardFolderDTO[];  // 루트부터 순서대로
+  ancestors: WebhardFolderDTO[]; // 루트부터 순서대로
   current: WebhardFolderDTO;
 }
 ```
@@ -585,7 +587,7 @@ PATCH /folders/:id/move
 
 ```typescript
 {
-  parentId: string | null;  // 대상 상위 폴더 (null = 루트)
+  parentId: string | null; // 대상 상위 폴더 (null = 루트)
 }
 ```
 
@@ -602,7 +604,9 @@ DELETE /folders/:id
 **Response**
 
 ```typescript
-{ success: boolean }
+{
+  success: boolean;
+}
 ```
 
 ---
@@ -653,11 +657,11 @@ GET /trash
 
 **Query Parameters**
 
-| 파라미터 | 타입 | 설명 |
-|----------|------|------|
-| `companyId` | number | 업체 ID |
-| `page` | number | 페이지 번호 |
-| `limit` | number | 페이지 크기 |
+| 파라미터    | 타입   | 설명        |
+| ----------- | ------ | ----------- |
+| `companyId` | number | 업체 ID     |
+| `page`      | number | 페이지 번호 |
+| `limit`     | number | 페이지 크기 |
 
 **Response**
 
@@ -682,7 +686,9 @@ GET /trash/count
 **Response**
 
 ```typescript
-{ count: number }
+{
+  count: number;
+}
 ```
 
 ---
@@ -696,7 +702,9 @@ POST /trash/:id/restore
 **Response**
 
 ```typescript
-{ success: boolean }
+{
+  success: boolean;
+}
 ```
 
 ---
@@ -707,10 +715,23 @@ POST /trash/:id/restore
 DELETE /trash/:id
 ```
 
+**Request Body**
+
+```typescript
+{
+  confirmPermanentDelete: true;
+  confirmationText: 'PERMANENT_DELETE';
+}
+```
+
+승인 body가 없거나 파일이 휴지통 상태가 아니면 영구삭제하지 않는다.
+
 **Response**
 
 ```typescript
-{ success: boolean }
+{
+  success: boolean;
+}
 ```
 
 ---
@@ -721,10 +742,23 @@ DELETE /trash/:id
 DELETE /trash
 ```
 
+**Request Body**
+
+```typescript
+{
+  confirmPermanentDelete: true;
+  confirmationText: 'PERMANENT_DELETE';
+}
+```
+
+휴지통에 있는 파일만 대상으로 하며, 보관 기간 만료 자동 영구삭제는 사용하지 않는다.
+
 **Response**
 
 ```typescript
-{ deleted: number }
+{
+  deleted: number;
+}
 ```
 
 ---
@@ -739,18 +773,18 @@ GET /storage
 
 **Query Parameters**
 
-| 파라미터 | 타입 | 설명 |
-|----------|------|------|
+| 파라미터    | 타입   | 설명    |
+| ----------- | ------ | ------- |
 | `companyId` | number | 업체 ID |
 
 **Response**
 
 ```typescript
 interface StorageUsageResponse {
-  current: number;        // 현재 사용량 (bytes)
-  max: number;            // 최대 용량 (bytes)
+  current: number; // 현재 사용량 (bytes)
+  max: number; // 최대 용량 (bytes)
   companyId?: number;
-  percentage?: number;    // 사용률 (%)
+  percentage?: number; // 사용률 (%)
 }
 ```
 
@@ -767,13 +801,15 @@ GET /storage/breakdown
 ```typescript
 interface StorageBreakdownResponse {
   total: number;
-  byCompany?: {           // admin일 경우
+  byCompany?: {
+    // admin일 경우
     companyId: number;
     companyName: string;
     used: number;
     fileCount: number;
   }[];
-  byFolder?: {            // company일 경우
+  byFolder?: {
+    // company일 경우
     folderId: string;
     folderName: string;
     used: number;
@@ -794,11 +830,11 @@ GET /search
 
 **Query Parameters**
 
-| 파라미터 | 타입 | 필수 | 설명 |
-|----------|------|------|------|
-| `q` | string | ✓ | 검색어 |
-| `companyId` | number | - | 업체 ID |
-| `limit` | number | - | 결과 개수 |
+| 파라미터    | 타입   | 필수 | 설명      |
+| ----------- | ------ | ---- | --------- |
+| `q`         | string | ✓    | 검색어    |
+| `companyId` | number | -    | 업체 ID   |
+| `limit`     | number | -    | 결과 개수 |
 
 **Response**
 
@@ -825,7 +861,7 @@ GET /settings
 ```typescript
 interface WebhardSettingsResponse {
   userId: string;
-  fontSize: string;               // 'small' | 'medium' | 'large'
+  fontSize: string; // 'small' | 'medium' | 'large'
   notificationsEnabled: boolean;
   downloadFolderPath: string | null;
   createdAt: string;
@@ -857,15 +893,15 @@ POST /settings
 
 ## 9. 에러 코드
 
-| HTTP 상태 | 에러 코드 | 설명 |
-|-----------|----------|------|
-| 400 | `BAD_REQUEST` | 잘못된 요청 파라미터 |
-| 401 | `UNAUTHORIZED` | 인증 필요 |
-| 403 | `FORBIDDEN` | 권한 없음 |
-| 404 | `NOT_FOUND` | 리소스 없음 |
-| 409 | `CONFLICT` | 충돌 (중복 이름 등) |
-| 413 | `PAYLOAD_TOO_LARGE` | 파일 크기 초과 |
-| 500 | `INTERNAL_SERVER_ERROR` | 서버 오류 |
+| HTTP 상태 | 에러 코드               | 설명                 |
+| --------- | ----------------------- | -------------------- |
+| 400       | `BAD_REQUEST`           | 잘못된 요청 파라미터 |
+| 401       | `UNAUTHORIZED`          | 인증 필요            |
+| 403       | `FORBIDDEN`             | 권한 없음            |
+| 404       | `NOT_FOUND`             | 리소스 없음          |
+| 409       | `CONFLICT`              | 충돌 (중복 이름 등)  |
+| 413       | `PAYLOAD_TOO_LARGE`     | 파일 크기 초과       |
+| 500       | `INTERNAL_SERVER_ERROR` | 서버 오류            |
 
 ---
 
@@ -1050,18 +1086,18 @@ curl -X GET "https://yjlaser.net/api/webhard/search?q=도면&limit=50" \
 
 ## 12. Rate Limiting
 
-| 엔드포인트 | 제한 | 설명 |
-|-----------|------|------|
-| 업로드 | 100 req/min | Presigned URL 요청 |
-| 다운로드 | 200 req/min | 다운로드 URL 요청 |
-| 일반 | 300 req/min | 기타 모든 요청 |
+| 엔드포인트 | 제한        | 설명               |
+| ---------- | ----------- | ------------------ |
+| 업로드     | 100 req/min | Presigned URL 요청 |
+| 다운로드   | 200 req/min | 다운로드 URL 요청  |
+| 일반       | 300 req/min | 기타 모든 요청     |
 
 ---
 
 ## 13. 버전 이력
 
-| 버전 | 날짜 | 변경 내용 |
-|------|------|----------|
+| 버전  | 날짜       | 변경 내용 |
+| ----- | ---------- | --------- |
 | 1.0.0 | 2026-01-23 | 초기 버전 |
 
 ---

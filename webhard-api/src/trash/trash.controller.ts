@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Delete,
+  Body,
   Param,
   Query,
   UseGuards,
@@ -13,7 +14,7 @@ import { ApiKeyGuard } from '../integration/auth/api-key.guard';
 import { CompanyAccessGuard } from '../auth/guards/company-access.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SessionUser } from '../auth/auth.service';
-import { GetTrashQueryDto } from './dto/trash.dto';
+import { GetTrashQueryDto, PermanentDeleteApprovalDto } from './dto/trash.dto';
 
 @Controller('trash')
 @UseGuards(ApiKeyGuard, CompanyAccessGuard)
@@ -51,9 +52,10 @@ export class TrashController {
   @Delete(':id')
   async permanentlyDeleteFile(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() approval: PermanentDeleteApprovalDto,
     @CurrentUser() user: SessionUser
   ) {
-    await this.trashService.permanentlyDeleteFile(id, user);
+    await this.trashService.permanentlyDeleteFile(id, user, approval);
     return { success: true };
   }
 
@@ -61,7 +63,7 @@ export class TrashController {
    * DELETE /trash - Empty trash (delete all files in trash)
    */
   @Delete()
-  async emptyTrash(@CurrentUser() user: SessionUser) {
-    return this.trashService.emptyTrash(user);
+  async emptyTrash(@Body() approval: PermanentDeleteApprovalDto, @CurrentUser() user: SessionUser) {
+    return this.trashService.emptyTrash(user, approval);
   }
 }

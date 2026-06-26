@@ -8,14 +8,14 @@
 
 ## 1. 최적화 우선순위 요약
 
-| 우선순위 | 항목 | 영향도 | 난이도 | 예상 효과 |
-|---------|------|--------|--------|----------|
-| P1 | 검색 성능 (ILIKE → pg_trgm) | 높음 | 중간 | 검색 10~100x 빨라짐 |
-| P2 | 폴더 이동 중복명 검사 최적화 | 중간 | 낮음 | N+1 → 1 쿼리 |
-| P3 | getAncestors 캐시 통합 | 중간 | 낮음 | 불필요한 전체 조회 제거 |
-| P4 | 검색 경로 구성 최적화 | 중간 | 낮음 | N 라운드 → 1 쿼리 |
-| P5 | WebSocket EventsGateway 인증 | 높음 | 중간 | 보안 강화 |
-| P6 | console.error → Logger 전환 | 낮음 | 낮음 | 컨벤션 준수 |
+| 우선순위 | 항목                         | 영향도 | 난이도 | 예상 효과               |
+| -------- | ---------------------------- | ------ | ------ | ----------------------- |
+| P1       | 검색 성능 (ILIKE → pg_trgm)  | 높음   | 중간   | 검색 10~100x 빨라짐     |
+| P2       | 폴더 이동 중복명 검사 최적화 | 중간   | 낮음   | N+1 → 1 쿼리            |
+| P3       | getAncestors 캐시 통합       | 중간   | 낮음   | 불필요한 전체 조회 제거 |
+| P4       | 검색 경로 구성 최적화        | 중간   | 낮음   | N 라운드 → 1 쿼리       |
+| P5       | WebSocket EventsGateway 인증 | 높음   | 중간   | 보안 강화               |
+| P6       | console.error → Logger 전환  | 낮음   | 낮음   | 컨벤션 준수             |
 
 ---
 
@@ -24,6 +24,7 @@
 ### 2.1 [P1] 검색 성능 — ILIKE → pg_trgm 인덱스
 
 **현재 문제:**
+
 ```typescript
 // files.service.ts, search.service.ts
 { name: { contains: searchQuery, mode: 'insensitive' } }
@@ -72,6 +73,7 @@ CREATE INDEX idx_webhard_files_search ON webhard_files USING GIN (search_vector)
 ### 2.2 [P2] 폴더 이동 중복명 검사 최적화
 
 **현재 문제:**
+
 ```typescript
 // folders.service.ts:552-584
 let newName = folder.name;
@@ -85,6 +87,7 @@ while (existing) {
 ```
 
 **해결 방안:**
+
 ```typescript
 // 같은 이름 패턴의 폴더를 1회 쿼리로 모두 가져오기
 async moveFolder(folderId: string, dto: MoveFolderDto, user: SessionUser) {
@@ -131,6 +134,7 @@ async moveFolder(folderId: string, dto: MoveFolderDto, user: SessionUser) {
 ### 2.3 [P3] getAncestors — allFoldersCache 통합
 
 **현재 문제:**
+
 ```typescript
 // folders.service.ts:887-935 (getAncestors)
 const allFolders = await this.prisma.webhardFolder.findMany({
@@ -142,6 +146,7 @@ const allFolders = await this.prisma.webhardFolder.findMany({
 ```
 
 **해결 방안:**
+
 ```typescript
 // 1. getAllFoldersCached 확장 — company 정보도 포함
 private allFoldersCacheExtended: {
@@ -187,6 +192,7 @@ async getAncestors(folderId: string, user: SessionUser) {
 ### 2.4 [P4] 검색 경로 구성 최적화
 
 **현재 문제:**
+
 ```typescript
 // search.service.ts:136-171 (buildFolderPathMap)
 while (idsToFetch.size > 0) {
@@ -198,6 +204,7 @@ while (idsToFetch.size > 0) {
 ```
 
 **해결 방안:**
+
 ```typescript
 // 전체 폴더를 1회 조회 후 메모리에서 경로 구성
 // (FoldersService.getAllFoldersCached()와 동일 패턴)
@@ -227,7 +234,7 @@ private async buildFolderPathMap(): Promise<Map<string, { name: string; parentId
 export class SearchService {
   constructor(
     private prisma: PrismaService,
-    private foldersService: FoldersService, // 캐시 공유
+    private foldersService: FoldersService // 캐시 공유
   ) {}
 }
 ```
@@ -239,6 +246,7 @@ export class SearchService {
 ### 2.5 [P5] WebSocket EventsGateway 인증 추가
 
 **현재 문제:**
+
 ```typescript
 // events.gateway.ts — 인증 없음
 handleConnection(client: Socket) {
@@ -248,6 +256,7 @@ handleConnection(client: Socket) {
 ```
 
 **해결 방안:**
+
 ```typescript
 // IntegrationGateway의 인증 패턴을 EventsGateway에 적용
 async handleConnection(client: Socket) {
@@ -284,6 +293,7 @@ async handleConnection(client: Socket) {
 ### 2.6 [P6] console.error → Logger 전환
 
 **현재 문제:**
+
 ```typescript
 // storage.service.ts 전체 — console.error 7군데 사용
 console.error('Failed to generate upload presigned URL:', error);
@@ -292,6 +302,7 @@ console.error('Failed to generate download presigned URL:', error);
 ```
 
 **해결 방안:**
+
 ```typescript
 // StorageService에 Logger 추가
 private readonly logger = new Logger(StorageService.name);
@@ -330,6 +341,7 @@ this.logger.error('Failed to generate upload presigned URL', error);
 ```
 
 **장점**:
+
 - 단일 캐시 소스 (Single Source of Truth)
 - 모든 서비스가 공유 → 불필요한 DB 쿼리 제거
 - 캐시 무효화 1곳에서 관리
@@ -337,6 +349,7 @@ this.logger.error('Failed to generate upload presigned URL', error);
 ### 3.2 배치 작업 최대 크기 조정
 
 현재 제한:
+
 - 배치 업로드 presigned URL: 50개
 - 배치 업로드 confirm: 500개
 - 배치 이동/삭제: 100개
@@ -349,13 +362,16 @@ this.logger.error('Failed to generate upload presigned URL', error);
 ### 3.3 Soft Delete된 폴더의 R2 파일 정리
 
 현재 `deleteFolder()` 시:
+
 - 폴더+파일: soft delete만 수행
 - R2 스토리지의 실제 파일은 그대로 유지
-- `trash.cleanupExpiredFiles()`에서만 R2 삭제 (보존기간 3일 경과 후)
+- 영구삭제는 휴지통 UI/API에서 명시 승인 body가 있을 때만 수행
+- `trash.cleanupExpiredFiles()`는 사용자 승인 정책 때문에 no-op
 
 **문제**: 폴더 삭제 후 복원 시 파일은 DB에서 복원 가능하나, 폴더 자체의 복원 API 없음.
 
 **제안**:
+
 - 폴더 복원 API 추가 (`POST /trash/folders/:id/restore`)
 - 또는 폴더 삭제 시 하위 파일도 trash에 표시되도록 정리
 
@@ -364,11 +380,13 @@ this.logger.error('Failed to generate upload presigned URL', error);
 ## 4. 구현 로드맵
 
 ### Phase 1 (즉시 적용 가능, 코드 변경 최소)
+
 - [ ] **P6**: console.error → Logger 전환 — `storage.service.ts` 7개소 (`console.error` 전부)
 - [ ] **P1**: pg_trgm 인덱스 추가 — Prisma migration 파일만 추가 (코드 변경 없음)
 - [ ] **P2**: 폴더 이동 중복명 검사 1회 쿼리화 — `folders.service.ts:552-584`
 
 ### Phase 2 (캐시 아키텍처 개선)
+
 - [ ] **P4**: getAncestors allFoldersCache 통합 — `folders.service.ts:887-935`
   - company relation 포함 캐시 확장 필요 (현재 캐시는 `id, parentId, companyId`만 포함)
 - [ ] **P6 검색**: SearchService 경로 구성 최적화 — `search.service.ts:136-171`
@@ -376,6 +394,7 @@ this.logger.error('Failed to generate upload presigned URL', error);
 - [ ] **3.1**: FolderCacheService 통합 (선택적 — 규모 확대 시 검토)
 
 ### Phase 3 (보안/인프라)
+
 - [ ] **P5**: EventsGateway WebSocket 인증 추가 — `events.gateway.ts`
   - IntegrationGateway 패턴 (`integration.gateway.ts:33-95`) 그대로 적용
   - API Key 인증도 함께 지원 → 외부 동기화 프로그램도 EventsGateway 구독 가능
@@ -385,10 +404,10 @@ this.logger.error('Failed to generate upload presigned URL', error);
 
 ## 5. 성능 영향도 예측
 
-| 최적화 | Before | After | 개선율 |
-|--------|--------|-------|--------|
-| 검색 (pg_trgm) | O(N) scan | O(log N) index | 10~100x |
-| 폴더 이동 중복명 | 1+N 쿼리 | 1 쿼리 | N배 |
-| getAncestors | 1 full query | 캐시 HIT | ~100% |
-| 검색 경로 | N 라운드 쿼리 | 1 쿼리 | N배 |
-| Logger 전환 | - | - | 운영 가시성 향상 |
+| 최적화           | Before        | After          | 개선율           |
+| ---------------- | ------------- | -------------- | ---------------- |
+| 검색 (pg_trgm)   | O(N) scan     | O(log N) index | 10~100x          |
+| 폴더 이동 중복명 | 1+N 쿼리      | 1 쿼리         | N배              |
+| getAncestors     | 1 full query  | 캐시 HIT       | ~100%            |
+| 검색 경로        | N 라운드 쿼리 | 1 쿼리         | N배              |
+| Logger 전환      | -             | -              | 운영 가시성 향상 |
