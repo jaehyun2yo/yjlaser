@@ -4,7 +4,9 @@ import { createHash } from 'crypto';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
-dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
+dotenv.config({
+  path: process.env.OPERATIONAL_E2E_ENV_FILE || path.resolve(__dirname, '../../.env.local'),
+});
 
 const prisma = new PrismaClient();
 

@@ -166,12 +166,22 @@ END $$;
 
 CREATE OR REPLACE FUNCTION public.im_is_admin()
 RETURNS BOOLEAN
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT COALESCE(auth.role(), '') = 'service_role' OR public.im_get_user_role() = 'admin';
+BEGIN
+    IF COALESCE(auth.role(), '') = 'service_role' THEN
+        RETURN TRUE;
+    END IF;
+
+    IF to_regprocedure('public.im_get_user_role()') IS NOT NULL THEN
+        RETURN public.im_get_user_role() = 'admin';
+    END IF;
+
+    RETURN FALSE;
+END;
 $$;
 
 DO $$
@@ -183,9 +193,23 @@ BEGIN
     END IF;
 END $$;
 
-GRANT SELECT ON TABLE public.mobile_unpriced_dxf_view TO authenticated;
-GRANT SELECT ON TABLE public.mobile_worker_status_view TO authenticated;
-GRANT SELECT ON TABLE public.im_mobile_price_update_requests TO authenticated;
-GRANT EXECUTE ON FUNCTION public.im_create_mobile_price_request(BIGINT, INTEGER, TEXT, TEXT) TO authenticated;
+DO $$
+BEGIN
+    IF to_regclass('public.mobile_unpriced_dxf_view') IS NOT NULL THEN
+        GRANT SELECT ON TABLE public.mobile_unpriced_dxf_view TO authenticated;
+    END IF;
+
+    IF to_regclass('public.mobile_worker_status_view') IS NOT NULL THEN
+        GRANT SELECT ON TABLE public.mobile_worker_status_view TO authenticated;
+    END IF;
+
+    IF to_regclass('public.im_mobile_price_update_requests') IS NOT NULL THEN
+        GRANT SELECT ON TABLE public.im_mobile_price_update_requests TO authenticated;
+    END IF;
+
+    IF to_regprocedure('public.im_create_mobile_price_request(bigint,integer,text,text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION public.im_create_mobile_price_request(BIGINT, INTEGER, TEXT, TEXT) TO authenticated;
+    END IF;
+END $$;
 
 COMMIT;

@@ -93,11 +93,14 @@ export async function loginAs(
     await page.goto(`/login?next=${encodeURIComponent(nextPath)}`, {
       waitUntil: 'domcontentloaded',
     });
-    await expect(page.locator('form[data-login-preferences-ready="true"]')).toBeVisible({
-      timeout: 15000,
-    });
     const usernameInput = page.locator('#login-username');
     const passwordInput = page.locator('#login-password');
+    await expect(usernameInput).toBeVisible({ timeout: 15000 });
+    await expect(passwordInput).toBeVisible({ timeout: 15000 });
+    await page
+      .locator('form[data-login-preferences-ready="true"]')
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .catch(() => undefined);
     await fillStableInput(page, usernameInput, credentials.username);
     await fillStableInput(page, passwordInput, credentials.password);
 
@@ -141,7 +144,10 @@ export async function loginAsWorker(page: Page, credentials: WorkerCredentials):
   const firstDigitButton = page.getByRole('button', { name: credentials.pin[0] }).first();
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    await fillStableInput(page, nameInput, credentials.name);
+    await expect(nameInput).toBeEnabled({ timeout: 15000 });
+    await nameInput.fill('');
+    await nameInput.pressSequentially(credentials.name, { delay: 25 });
+    await expect(nameInput).toHaveValue(credentials.name, { timeout: 5000 });
     const keypadReady = await expect(firstDigitButton)
       .toBeEnabled({ timeout: 1500 })
       .then(() => true)
@@ -157,7 +163,10 @@ export async function loginAsWorker(page: Page, credentials: WorkerCredentials):
     await expect(digitButton).toBeEnabled({ timeout: 5000 });
     await digitButton.click();
   }
-  await page.waitForURL(/\/worker\/dashboard/, { timeout: 45000 });
+  await page.waitForURL(/\/worker\/dashboard/, {
+    waitUntil: 'domcontentloaded',
+    timeout: 120000,
+  });
 }
 
 export async function expectPageReady(

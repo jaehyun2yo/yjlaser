@@ -26,11 +26,13 @@ import * as http from 'http';
 import * as https from 'https';
 import * as crypto from 'crypto';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Readable } from 'stream';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageProvider } from '@prisma/client';
 import { SessionUser } from '../auth/auth.service';
 import { extractR2Key } from '../common/r2-key.util';
 import { redactErrorMessage } from '../common/logging/request-redaction';
+import { isOperationalE2eMockStorageEnabled } from '../common/operational-e2e-env.util';
 import { GoogleDriveStorageProvider } from './google-drive-storage.provider';
 import {
   BatchMoveFileInput,
@@ -167,6 +169,7 @@ const DRIVE_UPLOAD_PROOF_TTL_MS = 15 * 60 * 1000;
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
+  private readonly mockStorage: boolean;
   private readonly s3Client: S3Client;
   private readonly bucketName: string;
   private readonly publicBaseUrl: string;
@@ -178,26 +181,39 @@ export class StorageService {
     @Optional() private readonly googleDriveStorageProvider?: GoogleDriveStorageProvider,
     @Optional() private readonly storageRepairService?: StorageRepairService
   ) {
+    this.mockStorage = isOperationalE2eMockStorageEnabled({
+      NODE_ENV: this.configService.get<string>('NODE_ENV'),
+      VERCEL_ENV: this.configService.get<string>('VERCEL_ENV'),
+      RAILWAY_ENVIRONMENT: this.configService.get<string>('RAILWAY_ENVIRONMENT'),
+      OPERATIONAL_E2E_MOCK_STORAGE: this.configService.get<string>('OPERATIONAL_E2E_MOCK_STORAGE'),
+    });
     const accountId = this.configService.get<string>('R2_ACCOUNT_ID');
     const accessKeyId = this.configService.get<string>('R2_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>('R2_SECRET_ACCESS_KEY');
-    this.bucketName = this.configService.get<string>('R2_BUCKET_NAME', 'yjlaser');
-    this.publicBaseUrl = this.configService.get<string>(
-      'R2_PUBLIC_BASE_URL',
-      'https://yjlaser.net'
+    this.bucketName = this.configService.get<string>(
+      'R2_BUCKET_NAME',
+      this.mockStorage ? 'yjlaser-operational-e2e' : 'yjlaser'
     );
+    this.publicBaseUrl = this.mockStorage
+      ? this.configService.get<string>(
+          'OPERATIONAL_E2E_MOCK_STORAGE_PUBLIC_BASE_URL',
+          'http://127.0.0.1:4000/mock-r2'
+        )
+      : this.configService.get<string>('R2_PUBLIC_BASE_URL', 'https://yjlaser.net');
 
-    if (!accountId || !accessKeyId || !secretAccessKey) {
+    if (!this.mockStorage && (!accountId || !accessKeyId || !secretAccessKey)) {
       throw new Error('R2 configuration is incomplete');
     }
 
     this.s3Client = new S3Client({
       region: 'auto',
-      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      endpoint: this.mockStorage
+        ? 'http://127.0.0.1:4000'
+        : `https://${accountId}.r2.cloudflarestorage.com`,
       forcePathStyle: true,
       credentials: {
-        accessKeyId,
-        secretAccessKey,
+        accessKeyId: accessKeyId ?? 'operational-e2e-mock-access-key',
+        secretAccessKey: secretAccessKey ?? 'operational-e2e-mock-secret-key',
       },
       requestChecksumCalculation: 'WHEN_REQUIRED',
       responseChecksumValidation: 'WHEN_REQUIRED',
@@ -215,6 +231,10 @@ export class StorageService {
       throw new InternalServerErrorException('Google Drive storage provider is not configured');
     }
     return this.googleDriveStorageProvider;
+  }
+
+  private createMockStorageId(prefix: string): string {
+    return `mock-${prefix}-${crypto.randomUUID()}`;
   }
 
   createDriveUploadProof(input: CreateDriveUploadProofInput): string {
@@ -382,6 +402,10 @@ export class StorageService {
    * Check if file exists
    */
   async fileExists(key: string): Promise<boolean> {
+    if (this.mockStorage) {
+      return true;
+    }
+
     try {
       const command = new HeadObjectCommand({
         Bucket: this.bucketName,
@@ -398,6 +422,10 @@ export class StorageService {
    * Delete a single file
    */
   async deleteFile(key: string): Promise<boolean> {
+    if (this.mockStorage) {
+      return true;
+    }
+
     try {
       const command = new DeleteObjectCommand({
         Bucket: this.bucketName,
@@ -417,6 +445,9 @@ export class StorageService {
   async deleteFiles(keys: string[]): Promise<DeleteResult> {
     if (keys.length === 0) {
       return { success: true, deleted: [], errors: [] };
+    }
+    if (this.mockStorage) {
+      return { success: true, deleted: keys, errors: [] };
     }
 
     const deleted: string[] = [];
@@ -984,6 +1015,10 @@ export class StorageService {
     key: string,
     contentType: string
   ): Promise<{ uploadId: string; key: string }> {
+    if (this.mockStorage) {
+      return { uploadId: this.createMockStorageId('multipart'), key };
+    }
+
     try {
       const command = new CreateMultipartUploadCommand({
         Bucket: this.bucketName,
@@ -1029,6 +1064,10 @@ export class StorageService {
     uploadId: string,
     parts: { PartNumber: number; ETag: string }[]
   ): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
+
     try {
       const command = new CompleteMultipartUploadCommand({
         Bucket: this.bucketName,
@@ -1047,6 +1086,10 @@ export class StorageService {
    * Abort multipart upload
    */
   async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
+
     try {
       const command = new AbortMultipartUploadCommand({
         Bucket: this.bucketName,
@@ -1063,6 +1106,10 @@ export class StorageService {
    * Get file content as Buffer from R2
    */
   async getFileBuffer(key: string): Promise<Buffer> {
+    if (this.mockStorage) {
+      return Buffer.alloc(0);
+    }
+
     try {
       const command = new GetObjectCommand({
         Bucket: this.bucketName,
@@ -1086,68 +1133,137 @@ export class StorageService {
   }
 
   async generateDriveIds(count: number): Promise<string[]> {
+    if (this.mockStorage) {
+      return Array.from({ length: count }, () => this.createMockStorageId('drive'));
+    }
     return this.getGoogleDriveStorageProvider().generateIds(count);
   }
 
   async createDriveFolder(input: CreateFolderInput): Promise<{ storageFolderId: string }> {
+    if (this.mockStorage) {
+      return { storageFolderId: input.storageFolderId ?? this.createMockStorageId('folder') };
+    }
     return this.getGoogleDriveStorageProvider().createFolder(input);
   }
 
   async renameDriveFolder(input: RenameFolderInput): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
     return this.getGoogleDriveStorageProvider().renameFolder(input);
   }
 
   async moveDriveFolder(input: MoveFolderInput): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
     return this.getGoogleDriveStorageProvider().moveFolder(input);
   }
 
   async trashDriveFolder(input: DeleteFolderInput): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
     return this.getGoogleDriveStorageProvider().deleteFolder(input);
   }
 
   async restoreDriveFolder(input: DeleteFolderInput): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
     return this.getGoogleDriveStorageProvider().restoreFile({
       storageFileId: input.storageFolderId,
     });
   }
 
   async createDriveUploadSession(input: CreateUploadSessionInput): Promise<UploadSessionResult> {
+    if (this.mockStorage) {
+      const storageFileId = input.storageFileId ?? this.createMockStorageId('file');
+      return {
+        provider: StorageProvider.GOOGLE_DRIVE,
+        storageFileId,
+        uploadUrl: `http://127.0.0.1:4000/mock-drive-upload/${storageFileId}`,
+        expiresAt: new Date(Date.now() + PRESIGNED_EXPIRES.UPLOAD * 1000),
+        headers: {},
+      };
+    }
     return this.getGoogleDriveStorageProvider().createUploadSession(input);
   }
 
   async confirmDriveUploadedFile(input: ConfirmUploadedFileInput): Promise<StorageFileMetadata> {
+    if (this.mockStorage) {
+      return {
+        provider: StorageProvider.GOOGLE_DRIVE,
+        storageFileId: input.storageFileId,
+        name: 'mock-upload',
+        mimeType: 'application/octet-stream',
+        size: 0,
+        parentStorageFolderIds: [input.expectedParentStorageFolderId],
+      };
+    }
     return this.getGoogleDriveStorageProvider().confirmUploadedFile(input);
   }
 
   async uploadDriveBuffer(input: UploadBufferInput): Promise<UploadBufferResult> {
+    if (this.mockStorage) {
+      return {
+        provider: StorageProvider.GOOGLE_DRIVE,
+        storageFileId: input.storageFileId ?? this.createMockStorageId('file'),
+        name: input.fileName,
+        mimeType: input.mimeType,
+        size: input.buffer.length,
+        parentStorageFolderIds: [input.parentStorageFolderId],
+      };
+    }
     return this.getGoogleDriveStorageProvider().uploadBuffer(input);
   }
 
   async renameDriveFile(input: RenameFileInput): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
     return this.getGoogleDriveStorageProvider().renameFile(input);
   }
 
   async moveDriveFile(input: MoveFileInput): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
     return this.getGoogleDriveStorageProvider().moveFile(input);
   }
 
   async moveDriveFiles(inputs: BatchMoveFileInput[]): Promise<BatchStorageFileOperationResult[]> {
+    if (this.mockStorage) {
+      return inputs.map((input) => ({ storageFileId: input.storageFileId, success: true }));
+    }
     return this.getGoogleDriveStorageProvider().moveFiles(inputs);
   }
 
   async trashDriveFile(input: TrashFileInput): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
     return this.getGoogleDriveStorageProvider().trashFile(input);
   }
 
   async trashDriveFiles(inputs: BatchTrashFileInput[]): Promise<BatchStorageFileOperationResult[]> {
+    if (this.mockStorage) {
+      return inputs.map((input) => ({ storageFileId: input.storageFileId, success: true }));
+    }
     return this.getGoogleDriveStorageProvider().trashFiles(inputs);
   }
 
   async restoreDriveFile(input: RestoreFileInput): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
     return this.getGoogleDriveStorageProvider().restoreFile(input);
   }
 
   async deleteDriveFile(input: DeleteFileInput): Promise<void> {
+    if (this.mockStorage) {
+      return;
+    }
     return this.getGoogleDriveStorageProvider().deleteFile(input);
   }
 
@@ -1157,6 +1273,13 @@ export class StorageService {
     path: string;
   }): Promise<DownloadFileResult | PresignedUrlResult> {
     if (file.storageProvider === StorageProvider.GOOGLE_DRIVE) {
+      if (this.mockStorage) {
+        return {
+          stream: Readable.from(Buffer.alloc(0)),
+          mimeType: 'application/octet-stream',
+          size: 0,
+        };
+      }
       if (!file.driveFileId) {
         throw new InternalServerErrorException('Drive file id is missing');
       }

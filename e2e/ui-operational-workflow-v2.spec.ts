@@ -10,6 +10,13 @@ const DEFAULT_SESSION_SECRET_SENTINEL = 'change-this-in-production';
 const DEV_ONLY_SESSION_SECRET = 'change-this-in-production-dev-only';
 const E2E_SESSION_MAX_AGE_SECONDS = 60 * 60 * 4;
 const authFile = path.join(__dirname, '..', '.auth', 'user.json');
+const PRODUCTION_RESOURCE_PATTERNS = [
+  'ibsbcuumkdhwesrpaqeb',
+  'webhard-api-production',
+  'yjlaser.net',
+  'vercel.app',
+  'production',
+];
 
 type CompanyOption = {
   id: number;
@@ -23,6 +30,7 @@ type CreatedApiKey = {
 
 type ContactRecord = {
   id: string;
+  status?: string | null;
   company_id?: number | null;
   companyId?: number | null;
   company_name?: string | null;
@@ -69,18 +77,104 @@ function isLoopbackUrl(url: string): boolean {
   return ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(hostname);
 }
 
+function isProductionLikeUrl(url: string): boolean {
+  const normalized = url.toLowerCase();
+  return PRODUCTION_RESOURCE_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function extractSupabaseRefs(value: string): string[] {
+  const refs = new Set<string>();
+  const patterns = [
+    /https?:\/\/([a-z0-9]{20})\.supabase\.co/gi,
+    /(?:^|[.@:/])([a-z0-9]{20})\.supabase\.co/gi,
+    /(?:^|[.@:/])db\.([a-z0-9]{20})\.supabase\.co/gi,
+    /postgres(?:ql)?:\/\/[^:@/\s]*[.:]([a-z0-9]{20})(?=[:@])/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of value.matchAll(pattern)) {
+      refs.add(match[1].toLowerCase());
+    }
+  }
+  return [...refs];
+}
+
 function assertLocalOperationalE2ERuntime(): void {
   const strictRuntime =
     process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
   expect(strictRuntime, 'ODATA2 operational E2E must not run in production-like runtime').toBe(
     false
   );
-  if (allowRemoteOperationalE2E) return;
-
   expect(
-    isLoopbackUrl(apiBaseUrl) && isLoopbackUrl(appBaseUrl),
-    `ODATA2 operational E2E mutates test data and is local-only by default. api=${apiBaseUrl}, app=${appBaseUrl}`
-  ).toBe(true);
+    isProductionLikeUrl(apiBaseUrl) || isProductionLikeUrl(appBaseUrl),
+    `ODATA2 operational E2E must not target production API/Web URLs. api=${apiBaseUrl}, app=${appBaseUrl}`
+  ).toBe(false);
+
+  const hasNonLoopbackRuntimeUrl = !isLoopbackUrl(apiBaseUrl) || !isLoopbackUrl(appBaseUrl);
+  if (allowRemoteOperationalE2E) {
+    if (hasNonLoopbackRuntimeUrl) {
+      expect(
+        process.env.OPERATIONAL_E2E_EXPECTED_SUPABASE_REF || '',
+        'Remote operational E2E requires OPERATIONAL_E2E_EXPECTED_SUPABASE_REF'
+      ).not.toBe('');
+      const expectedRef = process.env.OPERATIONAL_E2E_EXPECTED_SUPABASE_REF?.trim() ?? '';
+      expect(
+        /^[a-z0-9]{20}$/.test(expectedRef),
+        'OPERATIONAL_E2E_EXPECTED_SUPABASE_REF must be a 20-character Supabase ref'
+      ).toBe(true);
+      const runtimeRefs = [apiBaseUrl, appBaseUrl].flatMap(extractSupabaseRefs);
+      expect(
+        runtimeRefs.every((ref) => ref === expectedRef),
+        'Remote operational E2E API/Web Supabase refs must match OPERATIONAL_E2E_EXPECTED_SUPABASE_REF'
+      ).toBe(true);
+    }
+  }
+
+  if (!allowRemoteOperationalE2E) {
+    expect(
+      !hasNonLoopbackRuntimeUrl,
+      `ODATA2 operational E2E mutates test data and is local-only by default. api=${apiBaseUrl}, app=${appBaseUrl}`
+    ).toBe(true);
+  }
+
+  const missingMocks = [
+    'OPERATIONAL_E2E_MOCK_LGUPLUS',
+    'OPERATIONAL_E2E_MOCK_POPBILL',
+    'OPERATIONAL_E2E_MOCK_STORAGE',
+  ].filter((name) => process.env[name] !== 'true');
+  expect(missingMocks, 'ODATA2 operational E2E requires external boundary mock flags').toEqual([]);
+
+  const externalCredentialNames = Object.keys(process.env).filter(
+    (name) =>
+      process.env[name] &&
+      /^(POPBILL|LGUPLUS|GOOGLE_DRIVE|GOOGLE_APPLICATION_CREDENTIALS|R2_|AWS_)/i.test(name)
+  );
+  expect(
+    externalCredentialNames,
+    'ODATA2 operational E2E refuses external service credential env vars'
+  ).toEqual([]);
+
+  const dbEntries = ['DATABASE_URL', 'DIRECT_URL', 'SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL']
+    .map((name) => [name, process.env[name]] as const)
+    .filter(([, value]) => Boolean(value));
+  const dbRefs = dbEntries.flatMap(([name, value]) =>
+    extractSupabaseRefs(String(value)).map((ref) => ({ name, ref }))
+  );
+  expect(
+    dbEntries.some(([, value]) => String(value).toLowerCase().includes('supabase')) &&
+      dbRefs.length === 0,
+    'Supabase DB URL must contain a parseable project ref'
+  ).toBe(false);
+  if (dbRefs.length > 0) {
+    const expectedRef = process.env.OPERATIONAL_E2E_EXPECTED_SUPABASE_REF?.trim() ?? '';
+    expect(
+      /^[a-z0-9]{20}$/.test(expectedRef),
+      'Supabase DB URL requires OPERATIONAL_E2E_EXPECTED_SUPABASE_REF'
+    ).toBe(true);
+    expect(
+      dbRefs.every((entry) => entry.ref === expectedRef),
+      'Operational E2E DB Supabase refs must match OPERATIONAL_E2E_EXPECTED_SUPABASE_REF'
+    ).toBe(true);
+  }
 }
 
 async function expectApiOk(response: APIResponse, description: string): Promise<void> {
@@ -317,6 +411,22 @@ async function expectCompanyDashboardContains(
   expect(ids).toContain(contactId);
 }
 
+async function startDelivery(request: APIRequestContext, contactId: string): Promise<void> {
+  const response = await request.post(`${apiBaseUrl}/api/v1/contacts/batch-start-delivery`, {
+    headers: adminHeaders(),
+    data: {
+      contactIds: [contactId],
+      actorType: 'admin',
+      actorName: 'ODATA2 E2E admin',
+    },
+  });
+  await expectApiOk(response, 'batch start delivery');
+  const body = (await response.json()) as {
+    results?: Array<{ contactId: string; success: boolean; error?: string }>;
+  };
+  expect(body.results).toContainEqual({ contactId, success: true });
+}
+
 async function findOrCreateFolder(
   request: APIRequestContext,
   name: string,
@@ -448,7 +558,7 @@ test.describe.serial('ODATA2-007 운영 워크프로세스 E2E', () => {
     expect(source).toContain('/api/v1/files/confirm');
   });
 
-  test('개발 워크프로세스: 문의 생성 → 현장 전 단계 → 레이저 → 칼작업 → 업체 대시보드', async ({
+  test('개발 워크프로세스: 문의 생성 → 현장 전 단계 → 레이저 → 칼작업 → 납품완료 → 업체 대시보드', async ({
     request,
   }) => {
     const contact = await createContact(request, {
@@ -501,8 +611,14 @@ test.describe.serial('ODATA2-007 운영 워크프로세스 E2E', () => {
     );
     expect(cutting.process_stage).toBe('cutting');
 
+    const delivery = await updateStageAsAdmin(request, contact.id, 'delivery');
+    expect(delivery.process_stage).toBe('delivery');
+
+    await startDelivery(request, contact.id);
+
     const finalContact = await getContact(request, managementKey.key, contact.id);
-    expect(finalContact.process_stage ?? finalContact.processStage).toBe('cutting');
+    expect(finalContact.process_stage ?? finalContact.processStage ?? null).toBeNull();
+    expect(finalContact.status).toBe('delivered');
     expect(finalContact.company_id ?? finalContact.companyId).toBe(targetCompany.id);
 
     await expectCompanyDashboardContains(request, targetCompany.id, contact.id);

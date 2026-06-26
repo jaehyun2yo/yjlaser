@@ -13,6 +13,12 @@ function getR2Host() {
 
 const r2Host = getR2Host();
 const nestjsUrl = process.env.NEXT_PUBLIC_WEBHARD_API_URL || '';
+const isProductionRuntime =
+  process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+const allowsDevelopmentCsp =
+  !isProductionRuntime &&
+  (process.env.NODE_ENV === 'development' ||
+    process.env.OPERATIONAL_E2E_STRICT_ENV_FILE_CHECK === 'true');
 const staticRemotePatterns: Array<{ protocol: 'https' | 'http'; hostname: string }> = [
   { protocol: 'https', hostname: 'yjlaser.net' },
   { protocol: 'http', hostname: 'yjlaser.net' },
@@ -153,15 +159,15 @@ const nextConfig: NextConfig = {
               // 기본 정책: 동일 출처만 허용
               "default-src 'self'",
               // 스크립트: 동일 출처 + 인라인 (Next.js 필요) + unsafe-eval (개발 모드) + unpkg (react-grab) + 카카오맵 SDK + daumcdn 서브스크립트
-              `script-src 'self' 'unsafe-inline' https://dapi.kakao.com https://*.daumcdn.net ${process.env.NODE_ENV === 'development' ? "'unsafe-eval' http://*.daumcdn.net https://unpkg.com" : ''}`,
+              `script-src 'self' 'unsafe-inline' https://dapi.kakao.com https://*.daumcdn.net ${allowsDevelopmentCsp ? "'unsafe-eval' http://*.daumcdn.net https://unpkg.com" : ''}`,
               // 스타일: 동일 출처 + 인라인 (Tailwind 필요) + Google Fonts
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               // 이미지: 동일 출처 + R2 스토리지 (Signed URL 포함) + data URL (base64) + 카카오맵 타일
-              `img-src 'self' data: blob: ${r2Host ? `https://${r2Host}` : ''} https://*.r2.cloudflarestorage.com https://images.unsplash.com https://yjlaser.net https://*.daumcdn.net https://*.kakao.com ${process.env.NODE_ENV === 'development' ? 'http://*.daumcdn.net http://*.kakao.com' : ''}`,
+              `img-src 'self' data: blob: ${r2Host ? `https://${r2Host}` : ''} https://*.r2.cloudflarestorage.com https://images.unsplash.com https://yjlaser.net https://*.daumcdn.net https://*.kakao.com ${allowsDevelopmentCsp ? 'http://*.daumcdn.net http://*.kakao.com' : ''}`,
               // 폰트: 동일 출처 + Google Fonts
               "font-src 'self' https://fonts.gstatic.com",
               // 연결: 동일 출처 + R2/Google Drive 업로드 + NestJS API + Sentry + react-grab (개발) + 카카오맵 API
-              `connect-src 'self' https://dapi.kakao.com https://www.googleapis.com ${r2Host ? `https://${r2Host}` : ''} https://*.r2.cloudflarestorage.com https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io ${nestjsUrl ? `${nestjsUrl} ${nestjsUrl.replace('http', 'ws')}` : ''} ${process.env.NODE_ENV === 'development' ? 'ws://localhost:4567 http://localhost:4567 http://localhost:4000 ws://localhost:4000 ws://localhost:4722 https://www.react-grab.com' : ''}`,
+              `connect-src 'self' https://dapi.kakao.com https://www.googleapis.com ${r2Host ? `https://${r2Host}` : ''} https://*.r2.cloudflarestorage.com https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io ${nestjsUrl ? `${nestjsUrl} ${nestjsUrl.replace('http', 'ws')}` : ''} ${allowsDevelopmentCsp ? 'ws://localhost:4567 http://localhost:4567 http://localhost:4000 ws://localhost:4000 ws://localhost:4722 https://www.react-grab.com' : ''}`,
               // 객체/플러그인: 없음
               "object-src 'none'",
               // base-uri: 동일 출처만

@@ -3,9 +3,13 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 
 // 루트 .env.local → 루트 .env → 로컬 .env 순서로 로드
-dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+if (process.env.OPERATIONAL_E2E_ENV_FILE) {
+  dotenv.config({ path: process.env.OPERATIONAL_E2E_ENV_FILE });
+} else {
+  dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../.env') });
+}
 
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';

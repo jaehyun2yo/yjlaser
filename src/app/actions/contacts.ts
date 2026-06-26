@@ -1133,7 +1133,6 @@ export async function submitContact(formData: FormData) {
               'X-API-Key': apiKey,
             },
             body: JSON.stringify({
-              contactId: contactId,
               inquiryNumber: inquiryNumber,
               companyName: company_name,
               customerName: name,

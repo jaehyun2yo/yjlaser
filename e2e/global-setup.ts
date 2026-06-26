@@ -8,6 +8,13 @@ const MIN_AUTH_REUSE_SECONDS = 60 * 60;
 const E2E_SESSION_MAX_AGE_SECONDS = 60 * 60 * 4;
 const DEFAULT_SESSION_SECRET_SENTINEL = 'change-this-in-production';
 const DEV_ONLY_SESSION_SECRET = 'change-this-in-production-dev-only';
+const PRODUCTION_RESOURCE_PATTERNS = [
+  'ibsbcuumkdhwesrpaqeb',
+  'webhard-api-production',
+  'yjlaser.net',
+  'vercel.app',
+  'production',
+];
 
 interface StoredCookie {
   name: string;
@@ -102,6 +109,175 @@ function createAdminStorageState(baseURL: string, authFile: string): boolean {
   return true;
 }
 
+function isLoopbackUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isProductionLikeValue(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return PRODUCTION_RESOURCE_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function extractSupabaseRefs(value: string): string[] {
+  const refs = new Set<string>();
+  const patterns = [
+    /https?:\/\/([a-z0-9]{20})\.supabase\.co/gi,
+    /(?:^|[.@:/])([a-z0-9]{20})\.supabase\.co/gi,
+    /(?:^|[.@:/])db\.([a-z0-9]{20})\.supabase\.co/gi,
+    /postgres(?:ql)?:\/\/[^:@/\s]*[.:]([a-z0-9]{20})(?=[:@])/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of value.matchAll(pattern)) {
+      refs.add(match[1].toLowerCase());
+    }
+  }
+  return [...refs];
+}
+
+function supabaseRefEntries(entries: Array<readonly [string, string | undefined]>): Array<{
+  name: string;
+  ref: string;
+}> {
+  const refs: Array<{ name: string; ref: string }> = [];
+  for (const [name, value] of entries) {
+    if (!value) continue;
+    for (const ref of extractSupabaseRefs(String(value))) {
+      refs.push({ name, ref });
+    }
+  }
+  return refs;
+}
+
+function isOperationalE2ERun(): boolean {
+  return (
+    process.env.OPERATIONAL_E2E_STRICT_ENV_FILE_CHECK === 'true' ||
+    process.argv.some(
+      (arg) =>
+        arg.includes('ui-operational-workflow-v2.spec.ts') ||
+        arg.includes('ui-operational-workflow-user.spec.ts')
+    )
+  );
+}
+
+function displayAuthFile(authFile: string): string {
+  return isOperationalE2ERun() ? '<authFile>' : authFile;
+}
+
+function assertE2ESafetyBeforeSeed(baseURL: string): void {
+  const strictRuntime =
+    process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+  if (strictRuntime) {
+    throw new Error('Playwright E2E seed is blocked in production-like runtime');
+  }
+
+  const apiURL = process.env.NEXT_PUBLIC_WEBHARD_API_URL || 'http://localhost:4000';
+  const runtimeUrlEntries = [
+    ['baseURL', baseURL],
+    ['NEXT_PUBLIC_WEBHARD_API_URL', apiURL],
+  ] as Array<readonly [string, string]>;
+  const unsafeRuntimeUrls = runtimeUrlEntries.filter(([, value]) => isProductionLikeValue(value));
+  if (unsafeRuntimeUrls.length > 0) {
+    throw new Error(
+      `Playwright E2E seed blocked by production API/Web URL denylist: ${unsafeRuntimeUrls
+        .map(([name]) => name)
+        .join(', ')}`
+    );
+  }
+
+  const allowRemote = process.env.ALLOW_REMOTE_OPERATIONAL_E2E === 'true';
+  const hasNonLoopbackRuntimeUrl = !isLoopbackUrl(baseURL) || !isLoopbackUrl(apiURL);
+  if (!allowRemote && hasNonLoopbackRuntimeUrl) {
+    throw new Error('Playwright E2E seed is local-only by default');
+  }
+  if (
+    allowRemote &&
+    hasNonLoopbackRuntimeUrl &&
+    !process.env.OPERATIONAL_E2E_EXPECTED_SUPABASE_REF?.trim()
+  ) {
+    throw new Error('Remote Playwright E2E seed requires OPERATIONAL_E2E_EXPECTED_SUPABASE_REF');
+  }
+  if (allowRemote && hasNonLoopbackRuntimeUrl) {
+    const expectedRef = process.env.OPERATIONAL_E2E_EXPECTED_SUPABASE_REF?.trim() ?? '';
+    if (!/^[a-z0-9]{20}$/.test(expectedRef)) {
+      throw new Error('OPERATIONAL_E2E_EXPECTED_SUPABASE_REF must be a 20-character Supabase ref');
+    }
+    const mismatches = supabaseRefEntries(runtimeUrlEntries).filter(
+      (entry) => entry.ref !== expectedRef
+    );
+    if (mismatches.length > 0) {
+      throw new Error(
+        `Remote Playwright E2E seed blocked by Supabase ref mismatch: ${mismatches
+          .map((entry) => entry.name)
+          .join(', ')}`
+      );
+    }
+  }
+
+  const dbEntries = ['DATABASE_URL', 'DIRECT_URL', 'SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL']
+    .map((name) => [name, process.env[name]] as const)
+    .filter(([, value]) => Boolean(value));
+  const unsafeDb = dbEntries.filter(([, value]) => isProductionLikeValue(String(value)));
+  if (unsafeDb.length > 0) {
+    throw new Error(
+      `Playwright E2E seed blocked by production DB/resource denylist: ${unsafeDb
+        .map(([name]) => name)
+        .join(', ')}`
+    );
+  }
+  const dbRefs = supabaseRefEntries(dbEntries);
+  if (
+    dbEntries.some(([, value]) => String(value).toLowerCase().includes('supabase')) &&
+    dbRefs.length === 0
+  ) {
+    throw new Error('Playwright E2E seed requires parseable Supabase DB ref');
+  }
+  if (dbRefs.length > 0) {
+    const expectedRef = process.env.OPERATIONAL_E2E_EXPECTED_SUPABASE_REF?.trim() ?? '';
+    const dbRefMismatches = dbRefs.filter((entry) => entry.ref !== expectedRef);
+    if (!/^[a-z0-9]{20}$/.test(expectedRef)) {
+      throw new Error('Supabase DB URL requires OPERATIONAL_E2E_EXPECTED_SUPABASE_REF');
+    }
+    if (dbRefMismatches.length > 0) {
+      throw new Error(
+        `Playwright E2E seed blocked by DB Supabase ref mismatch: ${dbRefMismatches
+          .map((entry) => entry.name)
+          .join(', ')}`
+      );
+    }
+  }
+
+  if (isOperationalE2ERun()) {
+    const mockFlags = [
+      'OPERATIONAL_E2E_MOCK_LGUPLUS',
+      'OPERATIONAL_E2E_MOCK_POPBILL',
+      'OPERATIONAL_E2E_MOCK_STORAGE',
+    ];
+    const missingMocks = mockFlags.filter((name) => process.env[name] !== 'true');
+    if (missingMocks.length > 0) {
+      throw new Error(`Operational Playwright E2E requires mock flags: ${missingMocks.join(', ')}`);
+    }
+    const externalCredentialNames = Object.keys(process.env).filter(
+      (name) =>
+        process.env[name] &&
+        /^(POPBILL|LGUPLUS|GOOGLE_DRIVE|GOOGLE_APPLICATION_CREDENTIALS|R2_|AWS_)/i.test(name)
+    );
+    if (externalCredentialNames.length > 0) {
+      throw new Error(
+        `Operational Playwright E2E refuses external credential env vars: ${externalCredentialNames.join(', ')}`
+      );
+    }
+  }
+
+  if (process.env.SKIP_E2E_DB_SEED !== 'true' && dbEntries.length === 0) {
+    throw new Error('Playwright E2E seed requires explicit dev/test DATABASE_URL or Supabase URL');
+  }
+}
+
 function seedE2EDatabase(): void {
   if (process.env.SKIP_E2E_DB_SEED === 'true') {
     console.log('⚠️ SKIP_E2E_DB_SEED=true - E2E DB seed를 건너뜁니다.');
@@ -164,6 +340,7 @@ async function globalSetup(config: FullConfig) {
   const baseURL = config.projects[0]?.use?.baseURL || 'http://localhost:3000';
   const authFile = path.join(__dirname, '..', '.auth', 'user.json');
 
+  assertE2ESafetyBeforeSeed(baseURL);
   seedE2EDatabase();
 
   // .auth 디렉토리 생성
@@ -181,7 +358,7 @@ async function globalSetup(config: FullConfig) {
 
     if (ageInHours < 24 && remainingSeconds !== null && remainingSeconds > MIN_AUTH_REUSE_SECONDS) {
       console.log('✅ 기존 인증 상태 재사용 (세션 만료까지 60분 이상 남음)');
-      console.log(`   파일: ${authFile}`);
+      console.log(`   파일: ${displayAuthFile(authFile)}`);
       console.log(`   생성: ${Math.round(ageInHours * 60)}분 전`);
       console.log(`   남은 세션: ${Math.round(remainingSeconds / 60)}분`);
 
@@ -204,7 +381,7 @@ async function globalSetup(config: FullConfig) {
   const didCreateAdminSession = createAdminStorageState(baseURL, authFile);
 
   if (didCreateAdminSession && (await isStoredAuthStateValid(baseURL, authFile))) {
-    console.log(`✅ 인증 상태 저장 완료: ${authFile}`);
+    console.log(`✅ 인증 상태 저장 완료: ${displayAuthFile(authFile)}`);
     console.log('✅ Global Setup 완료 - 이제 모든 테스트가 이 세션을 재사용합니다.');
     return;
   }
@@ -249,7 +426,7 @@ async function globalSetup(config: FullConfig) {
     // 인증 상태 저장
     await context.storageState({ path: authFile });
 
-    console.log(`✅ 인증 상태 저장 완료: ${authFile}`);
+    console.log(`✅ 인증 상태 저장 완료: ${displayAuthFile(authFile)}`);
     console.log('✅ Global Setup 완료 - 이제 모든 테스트가 이 세션을 재사용합니다.');
   } catch (error) {
     console.error('❌ Global Setup 실패:', error);

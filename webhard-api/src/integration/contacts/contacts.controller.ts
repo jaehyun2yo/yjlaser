@@ -18,6 +18,7 @@ import { IntegrationUpdateContactStageDto } from './dto/update-contact-stage.dto
 const INTEGRATION_API_KEY_REQUIRED_CODE = 'INTEGRATION_API_KEY_REQUIRED';
 const INTEGRATION_PROGRAM_NOT_ALLOWED_CODE = 'INTEGRATION_PROGRAM_NOT_ALLOWED';
 const INTEGRATION_STAGE_TRANSITION_NOT_ALLOWED_CODE = 'INTEGRATION_STAGE_TRANSITION_NOT_ALLOWED';
+const INTEGRATION_ACTOR_MISMATCH_CODE = 'INTEGRATION_ACTOR_MISMATCH';
 
 const PROGRAM_STAGE_TRANSITIONS: Record<
   string,
@@ -54,7 +55,15 @@ export class IntegrationContactsController {
       });
     }
 
-    const actorName = dto.actorName?.trim() || user.programType || 'integration_program';
+    const requestedActorName = dto.actorName?.trim();
+    if (requestedActorName && requestedActorName !== user.programType) {
+      throw new ForbiddenException({
+        code: INTEGRATION_ACTOR_MISMATCH_CODE,
+        message: 'actorName must match integration programType',
+      });
+    }
+
+    const actorName = user.programType || 'integration_program';
     const expectedCurrentStage = await this.assertAllowedProgramTransition(
       id,
       user.programType,

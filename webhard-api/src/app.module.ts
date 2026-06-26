@@ -36,7 +36,9 @@ import { RequestLoggingInterceptor } from './common/interceptors/request-logging
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['../.env.local', '../.env', '.env.local', '.env'],
+      envFilePath: process.env.OPERATIONAL_E2E_ENV_FILE
+        ? [process.env.OPERATIONAL_E2E_ENV_FILE]
+        : ['../.env.local', '../.env', '.env.local', '.env'],
     }),
     ScheduleModule.forRoot(),
     CacheModule.register({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { updateProcessStage } from '@/app/actions/contacts';
@@ -28,9 +28,14 @@ export function UpdateProcessStageButton({
   const queryClient = useQueryClient();
   const [stage, setStage] = useState<ProcessStage>(currentStage);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   const handleStageChange = async (newStage: ProcessStage) => {
-    if (isUpdating) return;
+    if (!isHydrated || isUpdating) return;
 
     setIsUpdating(true);
     try {
@@ -73,9 +78,12 @@ export function UpdateProcessStageButton({
     <div className="space-y-2">
       <label className={`block text-sm font-medium ${TEXT_COLOR.secondary}`}>공정 단계</label>
       <NativeSelect
+        data-testid="admin-process-stage-select"
+        data-hydrated={isHydrated ? 'true' : 'false'}
+        data-updating={isUpdating ? 'true' : 'false'}
         value={stage || ''}
         onChange={(e) => handleStageChange((e.target.value as ProcessStage) || null)}
-        disabled={isUpdating}
+        disabled={!isHydrated || isUpdating}
         className="w-full"
       >
         <option value="">공정 시작 전</option>

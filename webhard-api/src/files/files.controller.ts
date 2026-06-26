@@ -47,6 +47,7 @@ import {
 import { GetBadgeCountsQueryDto } from './dto/badge-counts.dto';
 import { GetNewFilesQueryDto } from './dto/new-files.dto';
 import { MarkDownloadedDto } from './dto/mark-downloaded.dto';
+import { isOperationalE2eMockStorageEnabled } from '../common/operational-e2e-env.util';
 
 const GOOGLE_DRIVE_UPLOAD_HOST = 'www.googleapis.com';
 const GOOGLE_DRIVE_UPLOAD_PATH = '/upload/drive/v3/files';
@@ -160,6 +161,22 @@ export class FilesController {
   ) {
     if (!uploadUrl || !this.isGoogleDriveUploadUrl(uploadUrl)) {
       throw new BadRequestException('Invalid Google Drive upload URL');
+    }
+
+    if (this.isMockGoogleDriveUploadUrl(uploadUrl)) {
+      const storageFileId = this.extractMockGoogleDriveStorageFileId(uploadUrl);
+      const size = Number(contentLength ?? 0);
+      const metadata = {
+        id: storageFileId,
+        name: storageFileId,
+        mimeType: contentType || 'application/octet-stream',
+        size: Number.isFinite(size) && size >= 0 ? size : 0,
+        parents: ['operational-e2e-mock-parent'],
+        uploadProof: 'operational-e2e-mock-upload-proof',
+      };
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.status(200).send(JSON.stringify(metadata));
+      return;
     }
 
     const headers = new globalThis.Headers();
@@ -405,6 +422,10 @@ export class FilesController {
   }
 
   private isGoogleDriveUploadUrl(value: string): boolean {
+    if (this.isMockGoogleDriveUploadUrl(value)) {
+      return true;
+    }
+
     try {
       const url = new URL(value);
       return (
@@ -415,6 +436,31 @@ export class FilesController {
       );
     } catch {
       return false;
+    }
+  }
+
+  private isMockGoogleDriveUploadUrl(value: string): boolean {
+    if (!isOperationalE2eMockStorageEnabled()) {
+      return false;
+    }
+
+    try {
+      const url = new URL(value);
+      return (
+        (url.hostname === '127.0.0.1' || url.hostname === 'localhost') &&
+        url.pathname.startsWith('/mock-drive-upload/')
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private extractMockGoogleDriveStorageFileId(value: string): string {
+    try {
+      const url = new URL(value);
+      return url.pathname.split('/').filter(Boolean).pop() || 'operational-e2e-mock-file';
+    } catch {
+      return 'operational-e2e-mock-file';
     }
   }
 
