@@ -45,6 +45,11 @@ type DriveBatchRequest = {
   body: Record<string, unknown>;
 };
 
+type DriveRetryOptions = {
+  retryForbidden?: boolean;
+  mapBoundaryUnavailable?: boolean;
+};
+
 @Injectable()
 export class GoogleDriveStorageProvider implements StorageProviderClient {
   readonly provider = StorageProvider.GOOGLE_DRIVE;
@@ -368,12 +373,30 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
 
   async deleteFile(input: DeleteFileInput): Promise<void> {
     const { drive } = this.ensureDrive();
-    await this.withRetry(() =>
-      drive.files.delete({
-        fileId: input.storageFileId,
-        supportsAllDrives: true,
-      })
-    );
+    try {
+      await this.withRetry(
+        () =>
+          drive.files.delete({
+            fileId: input.storageFileId,
+            supportsAllDrives: true,
+          }),
+        1,
+        { retryForbidden: false, mapBoundaryUnavailable: false }
+      );
+    } catch (error) {
+      if (!this.isPermanentDeleteUnavailable(error)) {
+        throw error;
+      }
+
+      const status = this.getStatus(error);
+      const errorType = error instanceof Error ? error.constructor.name : typeof error;
+      this.logger.warn(
+        `Google Drive permanent delete unavailable; fallback=trash, status=${
+          status ?? 'unknown'
+        }, errorType=${errorType}`
+      );
+      await this.trashFile({ storageFileId: input.storageFileId });
+    }
   }
 
   private async moveDriveItem(
@@ -550,16 +573,22 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
     return 'Drive batch item failed';
   }
 
-  private async withRetry<T>(operation: () => Promise<T>, attempt = 1): Promise<T> {
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    attempt = 1,
+    options: DriveRetryOptions = {}
+  ): Promise<T> {
     try {
       return await operation();
     } catch (error: unknown) {
       const status = this.getStatus(error);
-      if ((status === 403 || status === 429) && attempt < 4) {
+      const retryForbidden = options.retryForbidden ?? true;
+      const mapBoundaryUnavailable = options.mapBoundaryUnavailable ?? true;
+      if ((status === 429 || (status === 403 && retryForbidden)) && attempt < 4) {
         await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)));
-        return this.withRetry(operation, attempt + 1);
+        return this.withRetry(operation, attempt + 1, options);
       }
-      if (this.isDriveBoundaryUnavailable(error, status)) {
+      if (mapBoundaryUnavailable && this.isDriveBoundaryUnavailable(error, status)) {
         throw this.toDriveUnavailableException(error, 'drive_api');
       }
       throw error;
@@ -604,6 +633,11 @@ export class GoogleDriveStorageProvider implements StorageProviderClient {
     }
     const message = error instanceof Error ? error.message : '';
     return /Gaxios|invalid_grant|invalid_client|default credentials|keyFile/i.test(message);
+  }
+
+  private isPermanentDeleteUnavailable(error: unknown): boolean {
+    const status = this.getStatus(error);
+    return status === 403 || status === 404;
   }
 
   private toDriveUnavailableException(

@@ -96,6 +96,35 @@ describe('GoogleDriveStorageProvider batch file operations', () => {
     expect(makeProvider().provider).toBe(StorageProvider.GOOGLE_DRIVE);
   });
 
+  it('falls back to Drive trash when permanent delete is not permitted', async () => {
+    const provider = makeProvider();
+    const deleteError = Object.assign(new Error('insufficient file permissions'), { code: 403 });
+    const deleteMock = jest.fn().mockRejectedValue(deleteError);
+    const updateMock = jest.fn().mockResolvedValue({ data: { id: 'drive-file-1', trashed: true } });
+    const state = provider as unknown as {
+      drive: { files: { delete: jest.Mock; update: jest.Mock } };
+    };
+    state.drive = {
+      files: {
+        delete: deleteMock,
+        update: updateMock,
+      },
+    };
+
+    await expect(provider.deleteFile({ storageFileId: 'drive-file-1' })).resolves.toBeUndefined();
+
+    expect(deleteMock).toHaveBeenCalledWith({
+      fileId: 'drive-file-1',
+      supportsAllDrives: true,
+    });
+    expect(updateMock).toHaveBeenCalledWith({
+      fileId: 'drive-file-1',
+      requestBody: { trashed: true },
+      fields: 'id,trashed',
+      supportsAllDrives: true,
+    });
+  });
+
   it('maps Drive auth boundary failures to a retryable service-unavailable error', async () => {
     const provider = makeProvider();
     const state = provider as unknown as {
