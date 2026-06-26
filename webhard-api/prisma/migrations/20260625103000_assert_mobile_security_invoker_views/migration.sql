@@ -1,5 +1,3 @@
-BEGIN;
-
 DO $$
 DECLARE
     expected_tables TEXT[] := ARRAY[
@@ -33,8 +31,9 @@ BEGIN
         RAISE EXCEPTION 'Mobile security schema is partial; missing tables: %', missing_tables;
     END IF;
 
-    IF to_regprocedure('public.digest(text,text)') IS NULL THEN
-        RAISE EXCEPTION 'Mobile security view assertion requires public.digest(text,text)';
+    IF to_regprocedure('public.digest(text,text)') IS NULL
+        AND to_regprocedure('extensions.digest(text,text)') IS NULL THEN
+        RAISE EXCEPTION 'Mobile security view assertion requires digest(text,text)';
     END IF;
 
     IF to_regclass('public.mobile_unpriced_dxf_view') IS NULL THEN
@@ -93,5 +92,3 @@ BEGIN
         RAISE EXCEPTION 'Mobile security policies are incomplete; found % policies', policy_count;
     END IF;
 END $$;
-
-COMMIT;
