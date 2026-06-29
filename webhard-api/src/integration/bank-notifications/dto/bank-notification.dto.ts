@@ -69,6 +69,13 @@ export class ListBankNotificationsQueryDto {
   @Min(1)
   @Max(200)
   limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1000000)
+  offset?: number;
 }
 
 export class MarkProcessedDto {

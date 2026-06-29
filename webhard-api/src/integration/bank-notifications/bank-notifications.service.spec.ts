@@ -113,7 +113,7 @@ describe('BankNotificationsService', () => {
     prisma.bankNotificationEvent.updateMany.mockResolvedValue({ count: 1 });
     const service = new BankNotificationsService(prisma as never);
 
-    const result = await service.list({ status: 'new', limit: 50 });
+    const result = await service.list({ status: 'new', limit: 50, offset: 100 });
 
     expect(result).toEqual({
       count: 2,
@@ -125,6 +125,12 @@ describe('BankNotificationsService', () => {
     expect(prisma.bankNotificationEvent.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['new-id'] }, status: 'new' },
       data: { status: 'fetched', fetchedAt: expect.any(Date) },
+    });
+    expect(prisma.bankNotificationEvent.findMany).toHaveBeenCalledWith({
+      where: { deletedAt: null, status: 'new' },
+      orderBy: { postedAt: 'asc' },
+      take: 50,
+      skip: 100,
     });
   });
 

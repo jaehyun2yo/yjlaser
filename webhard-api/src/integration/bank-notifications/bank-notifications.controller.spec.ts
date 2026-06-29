@@ -131,11 +131,12 @@ describe('BankNotificationsController', () => {
   it('accepts management key on read endpoint', async () => {
     const response = await request(app.getHttpServer())
       .get('/integration/bank-notifications')
+      .query({ limit: 50, offset: 200 })
       .set('X-API-Key', MANAGEMENT_KEY)
       .expect(200);
 
     expect(response.body).toEqual({ count: 0, events: [] });
-    expect(service.list).toHaveBeenCalledWith({});
+    expect(service.list).toHaveBeenCalledWith({ limit: 50, offset: 200 });
   });
 
   it('rejects collector key on manage endpoints', async () => {

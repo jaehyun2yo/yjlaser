@@ -132,6 +132,7 @@ export class BankNotificationsService {
       where,
       orderBy: { postedAt: 'asc' },
       take: query.limit ?? 100,
+      skip: query.offset ?? 0,
     });
 
     const newIds = events.filter((event) => event.status === 'new').map((event) => event.id);
