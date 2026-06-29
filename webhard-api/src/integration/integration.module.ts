@@ -19,6 +19,7 @@ import { ApiKeyController } from './auth/api-key.controller';
 import { FileTransferController } from './file-transfer/file-transfer.controller';
 import { LogEventsModule } from './log-events/log-events.module';
 import { IntegrationContactsModule } from './contacts/contacts.module';
+import { BankNotificationsModule } from './bank-notifications/bank-notifications.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { IntegrationContactsModule } from './contacts/contacts.module';
     OperationsModule,
     LogEventsModule,
     IntegrationContactsModule,
+    BankNotificationsModule,
   ],
   controllers: [ApiKeyController, FileTransferController],
   exports: [
@@ -59,6 +61,7 @@ import { IntegrationContactsModule } from './contacts/contacts.module';
     OperationsModule,
     LogEventsModule,
     IntegrationContactsModule,
+    BankNotificationsModule,
   ],
 })
 export class IntegrationModule {}

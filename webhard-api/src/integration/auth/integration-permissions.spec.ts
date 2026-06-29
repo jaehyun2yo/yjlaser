@@ -15,6 +15,9 @@ describe('integration permissions', () => {
       'file/register',
       'job/read',
       'operation/read',
+      'bank-notification/write',
+      'bank-notification/read',
+      'bank-notification/manage',
     ]);
   });
 
@@ -26,14 +29,22 @@ describe('integration permissions', () => {
       'nesting_program',
       'manual_worker',
       'admin_dashboard',
+      'bank_notification_collector',
     ]);
     expect(DEFAULT_INTEGRATION_WORKER_PERMISSIONS).toEqual({
       external_webhard_sync: ['file/register', 'event/write'],
       website_worker: ['event/write'],
-      management_program: ['event/write', 'job/read', 'contact/process-stage:write'],
+      management_program: [
+        'event/write',
+        'job/read',
+        'contact/process-stage:write',
+        'bank-notification/read',
+        'bank-notification/manage',
+      ],
       nesting_program: ['event/write', 'job/read', 'contact/process-stage:write'],
       manual_worker: ['event/write', 'job/read'],
       admin_dashboard: ['operation/read', 'job/read'],
+      bank_notification_collector: ['bank-notification/write'],
     });
   });
 
@@ -59,5 +70,28 @@ describe('integration permissions', () => {
   it('legacy all 권한은 서버-서버 키의 wildcard 로 동작한다', () => {
     expect(hasIntegrationPermission(['all'], 'job/read')).toBe(true);
     expect(hasIntegrationPermission(['event/write'], 'job/read')).toBe(false);
+  });
+
+  it('은행 알림 수집/관리 권한 계약을 고정한다', () => {
+    expect(INTEGRATION_PERMISSIONS).toEqual(
+      expect.arrayContaining([
+        'bank-notification/write',
+        'bank-notification/read',
+        'bank-notification/manage',
+      ])
+    );
+    expect(INTEGRATION_WORKER_TYPES).toContain('bank_notification_collector');
+    expect(getDefaultIntegrationPermissions('bank_notification_collector')).toEqual([
+      'bank-notification/write',
+    ]);
+    expect(getDefaultIntegrationPermissions('management_program')).toEqual(
+      expect.arrayContaining(['bank-notification/read', 'bank-notification/manage'])
+    );
+    expect(
+      hasIntegrationPermission(['bank-notification/read'], 'bank-notification/read' as never)
+    ).toBe(true);
+    expect(
+      hasIntegrationPermission(['bank-notification/write'], 'bank-notification/manage' as never)
+    ).toBe(false);
   });
 });
