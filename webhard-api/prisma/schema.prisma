@@ -672,6 +672,52 @@ model LogEvent {
   @@map("log_events")
 }
 
+model BankNotificationEvent {
+  id                  String    @id @default(uuid()) @db.Uuid
+  eventId             String    @unique @map("event_id") @db.VarChar(120)
+  deviceIdHash        String    @map("device_id_hash") @db.VarChar(128)
+  sourcePackage       String    @map("source_package") @db.VarChar(120)
+  notificationKeyHash String    @map("notification_key_hash") @db.VarChar(128)
+  postedAt            DateTime  @map("posted_at")
+  receivedAt          DateTime  @default(now()) @map("received_at")
+  rawTitle            String    @map("raw_title")
+  rawText             String    @map("raw_text")
+  rawBigText          String?   @map("raw_big_text")
+  rawPayload          Json      @map("raw_payload")
+  payloadHash         String    @map("payload_hash") @db.VarChar(64)
+  status              String    @default("new") @db.VarChar(30)
+  fetchedAt           DateTime? @map("fetched_at")
+  processedAt         DateTime? @map("processed_at")
+  backupBatchId       String?   @map("backup_batch_id") @db.Uuid
+  deletedAt           DateTime? @map("deleted_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  backupBatch BankNotificationBackupBatch? @relation(fields: [backupBatchId], references: [id])
+
+  @@index([status, postedAt], map: "idx_bank_notification_events_status_posted")
+  @@index([postedAt], map: "idx_bank_notification_events_posted_at")
+  @@index([backupBatchId], map: "idx_bank_notification_events_backup_batch")
+  @@map("bank_notification_events")
+}
+
+model BankNotificationBackupBatch {
+  id         String   @id @default(uuid()) @db.Uuid
+  year       Int
+  fileName   String   @map("file_name") @db.VarChar(180)
+  sha256     String   @db.VarChar(64)
+  eventCount Int      @map("event_count")
+  postedFrom DateTime @map("posted_from")
+  postedTo   DateTime @map("posted_to")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  events BankNotificationEvent[]
+
+  @@unique([year, fileName], map: "uq_bank_notification_backup_year_file")
+  @@index([createdAt], map: "idx_bank_notification_backup_created_at")
+  @@map("bank_notification_backup_batches")
+}
+
 // ============================================================================
 // Supabase 전용 테이블 → Prisma 모델 등록 (15개)
 // ============================================================================
