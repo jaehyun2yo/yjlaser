@@ -114,7 +114,12 @@ async function createSyncKey() {
   if (existing) {
     await prisma.apiKey.update({
       where: { id: 'sync-production' },
-      data: { keyHash, isActive: true },
+      data: {
+        keyHash,
+        programType: 'external_webhard_sync',
+        permissions: ['file/register', 'event/write'],
+        isActive: true,
+      },
     });
     console.log(`\n  ✅ 기존 sync-production 키 갱신 완료`);
   } else {
@@ -123,8 +128,8 @@ async function createSyncKey() {
         id: 'sync-production',
         name: 'sync-production',
         keyHash,
-        programType: 'sync',
-        permissions: ['read', 'write', 'sync'],
+        programType: 'external_webhard_sync',
+        permissions: ['file/register', 'event/write'],
         isActive: true,
       },
     });

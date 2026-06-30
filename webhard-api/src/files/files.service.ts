@@ -46,6 +46,7 @@ import { extractR2Key } from '../common/r2-key.util';
 import { lookupCompanyByFolderName } from '../companies/_lib/lookup-company-by-folder-name.util';
 import { WorkerContactAccessService } from '../worker-access/worker-contact-access.service';
 import { DownloadFileResult, StorageFileMetadata } from '../storage/storage-provider.interface';
+import { hasIntegrationPermission } from '../integration/auth/integration-permissions';
 
 /**
  * batchConfirmUpload 의 단일 폴더 fetch 결과 — access 검증, companyId 상속,
@@ -667,6 +668,7 @@ export class FilesService {
     dto: CreatePresignedUrlDto,
     user: SessionUser
   ): Promise<PresignedUrlResponseDto> {
+    this.assertFileRegistrationPermission(user);
     const destination = await this.prepareUploadDestination(dto, user);
     return this.buildUploadPresignedUrl(dto, destination);
   }
@@ -685,7 +687,7 @@ export class FilesService {
     context?: UploadPresignBatchContext
   ): Promise<{ id: string; companyId: number | null }> {
     if (!context) {
-      return this.verifyFolderAccess(folderId, user);
+      return this.verifyFolderAccessForFileRegistration(folderId, user);
     }
 
     const cached = context.folderAccessCache.get(folderId);
@@ -693,7 +695,7 @@ export class FilesService {
       return cached;
     }
 
-    const pending = this.verifyFolderAccess(folderId, user);
+    const pending = this.verifyFolderAccessForFileRegistration(folderId, user);
     context.folderAccessCache.set(folderId, pending);
     return pending;
   }
@@ -1056,6 +1058,7 @@ export class FilesService {
     files: CreatePresignedUrlDto[],
     user: SessionUser
   ): Promise<PresignedUrlResponseDto[]> {
+    this.assertFileRegistrationPermission(user);
     const context = this.createUploadPresignBatchContext();
     const prepareStartedAt = Date.now();
     const destinations = await mapWithConcurrency(files, DRIVE_UPLOAD_SESSION_CONCURRENCY, (file) =>
@@ -1097,6 +1100,7 @@ export class FilesService {
    * 으로 흡수 — confirm 자체는 절대 막지 않는다 (R2 orphan 방지).
    */
   async confirmUpload(dto: ConfirmUploadDto, user: SessionUser): Promise<FileResponseDto> {
+    this.assertFileRegistrationPermission(user);
     assertUploadAllowed({
       filename: dto.name,
       originalName: dto.originalName,
@@ -1107,7 +1111,7 @@ export class FilesService {
     // 에서도 재활용한다.
     let folder: { id: string; companyId: number | null } | null = null;
     if (dto.folderId) {
-      folder = await this.verifyFolderAccess(dto.folderId, user);
+      folder = await this.verifyFolderAccessForFileRegistration(dto.folderId, user);
     }
 
     // task 28: 외부웹하드 경로 routing 시도 (presigned-url 와 동일 흐름).
@@ -1172,7 +1176,7 @@ export class FilesService {
       );
     }
 
-    // uploaded_by: admin(세션/API Key 모두) → 'admin', company → userId 문자열
+    // uploaded_by: admin → 'admin', company/integration → userId 문자열
     const uploadedBy = user.userType === 'admin' ? 'admin' : String(user.userId);
 
     const requestedDriveUpload =
@@ -1411,8 +1415,9 @@ export class FilesService {
     dto: BatchConfirmUploadDto,
     user: SessionUser
   ): Promise<BatchConfirmUploadResult> {
+    this.assertFileRegistrationPermission(user);
     const effectiveCompanyId = user.userType === 'company' ? user.companyId : null;
-    // admin(세션/API Key 모두) → 'admin', company → userId 문자열
+    // admin → 'admin', company/integration → userId 문자열
     const uploadedBy = user.userType === 'admin' ? 'admin' : String(user.userId);
     const errors: string[] = [];
     const results: BatchConfirmUploadFileResult[] = [];
@@ -1446,7 +1451,7 @@ export class FilesService {
       for (const folder of folders) {
         folderInfoMap.set(folder.id, folder);
         const allowed =
-          user.userType === 'admin'
+          user.userType === 'admin' || user.userType === 'integration'
             ? true
             : folder.companyId === null || folder.companyId === user.companyId;
         folderAllowedMap.set(folder.id, allowed);
@@ -1521,13 +1526,15 @@ export class FilesService {
     };
 
     // 항목별 companyId 결정 (Bug 1, task 25 + task 28 Phase B):
-    //   1) company user        → effectiveCompanyId
-    //   2) admin + redirected  → routed.companyId  (precedence #2 — dto.companyId 보다 우선)
-    //   3) admin + dto.companyId 명시 → 그 값
-    //   4) admin + folder 있음 → folderInfoMap[folderId].companyId 상속
-    //   5) admin + folder 없음 → null
+    //   1) company user              → effectiveCompanyId
+    //   2) admin/integration + routed → routed.companyId  (dto.companyId 보다 우선)
+    //   3) admin/integration + dto.companyId 명시 → 그 값
+    //   4) admin/integration + folder 있음 → folderInfoMap[folderId].companyId 상속
+    //   5) admin/integration + folder 없음 → null
     const resolveItemCompanyId = (f: ConfirmUploadDto): number | null => {
-      if (user.userType !== 'admin') return effectiveCompanyId;
+      if (user.userType !== 'admin' && user.userType !== 'integration') {
+        return effectiveCompanyId;
+      }
       if (f.folderId) {
         const routed = routingCache.get(f.folderId);
         if (routed) return routed.companyId;
@@ -2621,6 +2628,44 @@ export class FilesService {
     }
 
     return { id: folder.id, companyId: folder.companyId };
+  }
+
+  private async verifyFolderAccessForFileRegistration(
+    folderId: string,
+    user: SessionUser
+  ): Promise<{ id: string; companyId: number | null }> {
+    this.assertFileRegistrationPermission(user);
+
+    const folder = await this.prisma.executeWithRetry(
+      () => this.prisma.webhardFolder.findUnique({ where: { id: folderId } }),
+      { operationName: 'verifyFolderAccessForFileRegistration' }
+    );
+
+    if (!folder || folder.deletedAt) {
+      throw new NotFoundException('Folder not found');
+    }
+
+    if (user.userType === 'admin' || user.userType === 'integration') {
+      return { id: folder.id, companyId: folder.companyId };
+    }
+
+    if (user.userType === 'company' && folder.companyId === user.companyId) {
+      return { id: folder.id, companyId: folder.companyId };
+    }
+
+    throw new ForbiddenException('Access denied to this folder');
+  }
+
+  private assertFileRegistrationPermission(user: SessionUser): void {
+    if (user.userType !== 'integration') {
+      return;
+    }
+
+    if (hasIntegrationPermission(user.permissions ?? [], 'file/register')) {
+      return;
+    }
+
+    throw new ForbiddenException('Integration permission required');
   }
 
   /**

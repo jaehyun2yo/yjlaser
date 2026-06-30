@@ -26,6 +26,7 @@ import { ZipService } from './zip.service';
 import { ApiKeyGuard } from '../integration/auth/api-key.guard';
 import { AllowWorkerSession } from '../integration/auth/allow-worker-session.decorator';
 import { AllowIntegrationPrincipal } from '../integration/auth/allow-integration-principal.decorator';
+import { RequireIntegrationPermission } from '../integration/auth/require-integration-permission.decorator';
 import { CompanyAccessGuard } from '../auth/guards/company-access.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SessionUser } from '../auth/auth.service';
@@ -110,6 +111,7 @@ export class FilesController {
    */
   @Post('presigned-url')
   @AllowIntegrationPrincipal()
+  @RequireIntegrationPermission('file/register')
   async getPresignedUrl(@Body() dto: CreatePresignedUrlDto, @CurrentUser() user: SessionUser) {
     return this.filesService.getUploadPresignedUrl(dto, user);
   }
@@ -119,6 +121,7 @@ export class FilesController {
    */
   @Post('batch/upload')
   @AllowIntegrationPrincipal()
+  @RequireIntegrationPermission('file/register')
   async getBatchPresignedUrls(@Body() dto: BatchUploadDto, @CurrentUser() user: SessionUser) {
     const urls = await this.filesService.getBatchUploadPresignedUrls(dto.files, user);
     return { urls };
@@ -129,6 +132,7 @@ export class FilesController {
    */
   @Post('confirm')
   @AllowIntegrationPrincipal()
+  @RequireIntegrationPermission('file/register')
   async confirmUpload(@Body() dto: ConfirmUploadDto, @CurrentUser() user: SessionUser) {
     return this.filesService.confirmUpload(dto, user);
   }
@@ -139,6 +143,7 @@ export class FilesController {
    */
   @Post('batch/confirm')
   @AllowIntegrationPrincipal()
+  @RequireIntegrationPermission('file/register')
   async batchConfirmUpload(@Body() dto: BatchConfirmUploadDto, @CurrentUser() user: SessionUser) {
     return this.filesService.batchConfirmUpload(dto, user);
   }

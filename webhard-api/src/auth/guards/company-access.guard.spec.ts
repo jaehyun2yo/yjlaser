@@ -5,6 +5,7 @@ import { SessionUser } from '../auth.service';
 import { FilesController } from '../../files/files.controller';
 import { FoldersController } from '../../folders/folders.controller';
 import { AdminGuard } from './admin.guard';
+import { INTEGRATION_PERMISSION_KEY } from '../../integration/auth/require-integration-permission.decorator';
 
 const ALLOW_INTEGRATION_PRINCIPAL_KEY = 'allowIntegrationPrincipal';
 
@@ -107,6 +108,20 @@ describe('CompanyAccessGuard', () => {
     expect(Reflect.getMetadata(ALLOW_INTEGRATION_PRINCIPAL_KEY, filesPrototype.getFiles)).toBe(
       undefined
     );
+  });
+
+  it('requires file/register permission on external sync upload endpoints', () => {
+    const filesPrototype = FilesController.prototype;
+    const uploadMethods = [
+      filesPrototype.getPresignedUrl,
+      filesPrototype.getBatchPresignedUrls,
+      filesPrototype.confirmUpload,
+      filesPrototype.batchConfirmUpload,
+    ];
+
+    for (const method of uploadMethods) {
+      expect(Reflect.getMetadata(INTEGRATION_PERMISSION_KEY, method)).toBe('file/register');
+    }
   });
 
   it('marks folder initialization but not generic folder listing as an integration endpoint', () => {

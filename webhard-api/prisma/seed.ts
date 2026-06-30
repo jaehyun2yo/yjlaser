@@ -1088,8 +1088,8 @@ async function seedApiKeys() {
       id: API_KEY_IDS.sync,
       name: 'sync-dev',
       keyHash: hashKey('yjl_dev_sync_test_key_1234567890'),
-      programType: 'sync',
-      permissions: ['read', 'write', 'sync'],
+      programType: 'external_webhard_sync',
+      permissions: ['file/register', 'event/write'],
       isActive: true,
     },
     {
