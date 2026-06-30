@@ -238,7 +238,7 @@ POST /files/multipart/initiate
 
 단건 업로드용 Presigned URL 생성.
 
-**Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용.
+**Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용 + `file/register` 권한 필요.
 
 **사용 프로그램:** 외부웹하드동기화프로그램
 
@@ -266,6 +266,8 @@ POST /files/multipart/initiate
 
 **task 26 — 외부웹하드 routing**: 요청 `folderId` 가 `/외부웹하드/{X}/...` 하위이고 `X` 가 가입 업체와 매칭되면 응답 `folderId` 를 업체 폴더 id 로 교체 (`redirected: true`). 매칭 실패 또는 비외부 folderId → `redirected: false`, 요청 `folderId` echo. Electron client 가 응답 `folderId` 를 `confirm` 호출에 그대로 사용하면 R2 PUT 자체가 처음부터 업체 경로로 박힌다. `folderId` / `redirected` 는 옵셔널 필드 — 구버전 client 호환.
 
+**2026-06-30 — integration confirm consistency**: 외부웹하드 동기화 API key는 `file/register` 권한이 있을 때만 upload endpoint를 호출할 수 있다. route guard와 `FilesService` entrypoint 모두 이 권한을 확인한다. `presigned-url`에서 `redirected: true`로 반환된 업체 Google Drive 폴더 `folderId`는 같은 integration principal의 `confirm`에서도 유효하다. 일반 company session은 계속 자기 `companyId` 폴더만 confirm할 수 있다.
+
 **AUDIT-20 — routing trace**: routing 예외가 발생하면 업로드 자체는 기존 fallback 정책을 유지하되 `sync_logs.metadata.auditKind='webhard_pipeline'` 이벤트를 남긴다. trace에는 `stage`, `status`, `reasonCode`, `folderId`, sanitized `context`만 포함하며 R2 presigned URL, token, raw API key, secret은 저장하지 않는다. 관리자 조회 계약은 `GET /api/v1/integration/sync-logs/pipeline-backlog`에 정의한다.
 
 ---
@@ -274,7 +276,7 @@ POST /files/multipart/initiate
 
 업로드 완료 확인 및 메타데이터 저장.
 
-**Guard:** ApiKeyGuard + CompanyAccessGuard
+**Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용 + `file/register` 권한 필요.
 
 **사용 프로그램:** 외부웹하드동기화프로그램
 
@@ -302,7 +304,7 @@ POST /files/multipart/initiate
 
 배치 Presigned URL 생성 (최대 50개).
 
-**Guard:** ApiKeyGuard + CompanyAccessGuard
+**Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용 + `file/register` 권한 필요.
 
 **사용 프로그램:** 외부웹하드동기화프로그램
 
@@ -332,7 +334,7 @@ POST /files/multipart/initiate
 
 배치 업로드 확인 (최대 500개).
 
-**Guard:** ApiKeyGuard + CompanyAccessGuard
+**Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용 + `file/register` 권한 필요.
 
 **사용 프로그램:** 외부웹하드동기화프로그램
 

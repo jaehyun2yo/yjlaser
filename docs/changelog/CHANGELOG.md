@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### 2026-06-30 — external-webhard-service-permission-defense
+
+**Scope**: 외부웹하드 동기화 업로드 endpoint의 integration 권한 방어 보강.
+
+**수정**:
+
+- route guard뿐 아니라 `FilesService`의 presigned-url, batch upload, confirm, batch confirm entrypoint에서도 integration principal의 `file/register` 권한을 확인한다.
+- 권한 없는 integration principal은 service 직접 호출에서도 업로드 URL 발급과 파일 metadata 등록이 모두 403으로 차단된다.
+- `file/register` 권한이 있는 integration batch confirm도 단건 confirm과 동일하게 폴더 `companyId`를 상속한다.
+- 기존 admin/company 정책, company 사용자의 타 업체 폴더 차단, Google Drive folder readiness / `driveFileId` 검증은 유지했다.
+
+**검증**:
+
+- `webhard-api: pnpm test -- src/files/__tests__/files.service.spec.ts --runInBand -t "upload registration integration permissions"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 4 tests.
+- `webhard-api: pnpm test -- src/files/__tests__/files.service.spec.ts src/auth/guards/company-access.guard.spec.ts --runInBand -t "upload registration integration permissions|C6|C7|C8|requires file/register"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 8 tests.
+- `webhard-api: pnpm test -- src/files/__tests__/files.service.spec.ts src/files/__tests__/files.controller.spec.ts src/auth/guards/company-access.guard.spec.ts src/integration/auth/api-key.guard.spec.ts src/integration/auth/api-key.scope.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 5 suites / 122 tests.
+- `webhard-api: npx tsc --noEmit --pretty false` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과.
+- `git diff --check` 통과.
+
+### 2026-06-29 — external-webhard-confirm-integration-access
+
+**Scope**: 외부웹하드 동기화 프로그램의 Google Drive 업로드 confirm 403 수정.
+
+**수정**:
+
+- `/files/presigned-url`, `/files/batch/upload`, `/files/confirm`, `/files/batch/confirm`에 integration `file/register` 권한 요구를 명시했다.
+- upload/register 전용 폴더 접근 검증에서 integration principal을 허용해, presigned-url routing으로 반환된 업체 Google Drive 폴더 `folderId`를 confirm에 그대로 사용할 수 있게 했다.
+- 일반 company session의 타 업체 폴더 confirm 차단과 Drive folder readiness / `driveFileId` 검증은 유지했다.
+
+**검증**:
+
+- `webhard-api: pnpm test -- src/files/__tests__/files.service.spec.ts src/auth/guards/company-access.guard.spec.ts --runInBand -t "C6|C7|C8|requires file/register"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 4 tests.
+- `webhard-api: pnpm test -- src/files/__tests__/files.service.spec.ts src/files/__tests__/files.controller.spec.ts src/auth/guards/company-access.guard.spec.ts src/integration/auth/api-key.guard.spec.ts src/integration/auth/api-key.scope.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 5 suites / 117 tests.
+- `webhard-api: npx tsc --noEmit --pretty false` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과.
+- `git diff --check` 통과.
+
 ### 2026-06-25 — main-merge-home-v1-restore
 
 **Scope**: main 통합 준비와 공개 홈 화면 기존 V1 디자인 복원.

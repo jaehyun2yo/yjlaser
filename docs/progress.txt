@@ -2,6 +2,46 @@
 
 ## 최신 상태 (가장 위가 최신)
 
+### 세션 #142 — 2026-06-30
+
+- **작업 내용**: 외부웹하드 동기화 업로드 403 회귀의 service-level 권한 방어 보강
+- **반영 기준**:
+  - `/files/presigned-url`, `/files/batch/upload`, `/files/confirm`, `/files/batch/confirm` route는 integration principal을 허용하되 `file/register` 권한이 있어야 한다.
+  - route guard를 우회한 service 직접 호출에서도 권한 없는 integration principal이 업로드 URL 발급이나 metadata 등록을 할 수 없어야 한다.
+  - admin/company 기존 정책, company 타 업체 폴더 차단, Google Drive folder readiness / `driveFileId` 검증은 유지한다.
+- **완료한 것**:
+  - `FilesService` upload/register entrypoint 4곳과 upload 전용 folder access helper에 `file/register` 권한 확인을 추가했다.
+  - 권한 없는 integration principal의 presigned-url, batch upload, confirm, batch confirm service 호출 403 회귀 테스트를 추가했다.
+  - 권한 있는 integration routed Google Drive confirm 성공 테스트는 `file/register` fixture로 명확히 분리했다.
+  - `file/register` 권한이 있는 integration batch confirm도 폴더 `companyId`를 상속하도록 단건 confirm과 맞췄다.
+  - `docs/features-list.md`, `docs/changelog/CHANGELOG.md`, `docs/specs/api/endpoints/webhard.md`를 갱신했다.
+- **검증**:
+  - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts --runInBand -t "upload registration integration permissions"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 4 tests
+  - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts src/auth/guards/company-access.guard.spec.ts --runInBand -t "upload registration integration permissions|C6|C7|C8|requires file/register"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 8 tests
+  - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts src/files/__tests__/files.controller.spec.ts src/auth/guards/company-access.guard.spec.ts src/integration/auth/api-key.guard.spec.ts src/integration/auth/api-key.scope.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 5 suites / 122 tests
+  - `webhard-api`: `npx tsc --noEmit --pretty false` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
+### 세션 #141 — 2026-06-29
+
+- **작업 내용**: 외부웹하드 동기화 프로그램의 Google Drive 업로드 confirm 403 수정
+- **반영 기준**:
+  - API key principal은 `userType='integration'`, `companyId=null`이므로 presigned-url routing이 반환한 업체 폴더 `folderId`를 confirm에 넣으면 기존 `verifyFolderAccess`에서 `folder.companyId !== user.companyId`로 403이 발생했다.
+  - `/files/*upload/confirm` upload endpoint는 명시적으로 integration principal을 허용하고 `file/register` 권한을 요구한다.
+  - 일반 company session의 타 업체 폴더 접근 차단과 Google Drive folder readiness / `driveFileId` 검증은 유지한다.
+- **완료한 것**:
+  - upload/register 전용 폴더 접근 검증을 추가해 integration principal이 routed Google Drive 업체 폴더에 파일 metadata를 등록할 수 있게 했다.
+  - `/files/presigned-url`, `/files/batch/upload`, `/files/confirm`, `/files/batch/confirm`에 `RequireIntegrationPermission('file/register')`를 적용했다.
+  - presigned-url `redirected=true` 응답의 `folderId`를 confirm에 그대로 넣는 회귀 테스트와 company 타 업체 confirm 403 테스트를 추가했다.
+  - `docs/features-list.md`, `docs/changelog/CHANGELOG.md`, `docs/specs/api/endpoints/webhard.md`를 동기화했다.
+- **검증**:
+  - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts src/auth/guards/company-access.guard.spec.ts --runInBand -t "C6|C7|C8|requires file/register"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 4 tests
+  - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts src/files/__tests__/files.controller.spec.ts src/auth/guards/company-access.guard.spec.ts src/integration/auth/api-key.guard.spec.ts src/integration/auth/api-key.scope.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 5 suites / 117 tests
+  - `webhard-api`: `npx tsc --noEmit --pretty false` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과
+  - `git diff --check` 통과
+- **관련 커밋**: 미커밋
+
 ### 세션 #140 — 2026-06-25
 
 - **작업 내용**: main 통합 준비 및 공개 홈 화면 기존 V1 디자인 복원

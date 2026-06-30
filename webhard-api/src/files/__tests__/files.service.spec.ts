@@ -257,6 +257,10 @@ const integrationUser: SessionUser = {
   programType: 'lgu-sync',
   permissions: [],
 };
+const fileRegisterIntegrationUser: SessionUser = {
+  ...integrationUser,
+  permissions: ['file/register'],
+};
 
 describe('FilesService.findExistingUploadMetadata', () => {
   it('driveFileId가 있으면 driveFileId 기준으로 기존 파일 metadata를 조회해 DTO로 반환한다', async () => {
@@ -425,6 +429,91 @@ describe('FilesService.markDownloaded integration access', () => {
       },
       data: { isDownloaded: true },
     });
+  });
+});
+
+describe('FilesService upload registration integration permissions', () => {
+  it('rejects presigned-url for integration principals without file/register permission', async () => {
+    const { service, storage } = makeService();
+
+    await expect(
+      service.getUploadPresignedUrl(
+        {
+          filename: '260629(40308).dxf',
+          contentType: 'application/dxf',
+          size: 40308,
+          folderId: 'folder-uuid-1',
+        },
+        integrationUser
+      )
+    ).rejects.toThrow(ForbiddenException);
+    expect(storage.getUploadPresignedUrl).not.toHaveBeenCalled();
+    expect(storage.createDriveUploadSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects batch presigned-url for integration principals without file/register permission', async () => {
+    const { service, storage } = makeService();
+
+    await expect(
+      service.getBatchUploadPresignedUrls(
+        [
+          {
+            filename: '260629(40308).dxf',
+            contentType: 'application/dxf',
+            size: 40308,
+            folderId: 'folder-uuid-1',
+          },
+        ],
+        integrationUser
+      )
+    ).rejects.toThrow(ForbiddenException);
+    expect(storage.getUploadPresignedUrl).not.toHaveBeenCalled();
+    expect(storage.createDriveUploadSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects confirm upload metadata for integration principals without file/register permission', async () => {
+    const { service, prisma } = makeService();
+
+    await expect(
+      service.confirmUpload(
+        {
+          key: 'webhard/company-5/260629(40308).dxf',
+          name: '260629(40308).dxf',
+          originalName: '260629(40308).dxf',
+          size: 40308,
+          mimeType: 'application/dxf',
+          folderId: 'folder-uuid-1',
+        },
+        integrationUser
+      )
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.webhardFile.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects batch confirm upload metadata for integration principals without file/register permission', async () => {
+    const { service, prisma } = makeService();
+    prisma.webhardFolder.findMany.mockResolvedValueOnce([
+      makeFolder({ id: 'folder-uuid-1', companyId: 5 }),
+    ]);
+
+    await expect(
+      service.batchConfirmUpload(
+        {
+          files: [
+            {
+              key: 'webhard/company-5/260629(40308).dxf',
+              name: '260629(40308).dxf',
+              originalName: '260629(40308).dxf',
+              size: 40308,
+              mimeType: 'application/dxf',
+              folderId: 'folder-uuid-1',
+            },
+          ],
+        },
+        integrationUser
+      )
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.webhardFile.createMany).not.toHaveBeenCalled();
   });
 });
 
@@ -1703,6 +1792,42 @@ describe('FilesService.batchConfirmUpload — companyId 상속 (task 25 F5)', ()
     expect(captured.map((d) => d.companyId)).toEqual([42, 99, null]);
   });
 
+  it('F5c: integration + file/register batch confirm도 폴더 companyId를 상속한다', async () => {
+    const { service, prisma } = makeService();
+
+    const folderA = makeFolder({ id: 'fA', companyId: 42 });
+    (prisma.webhardFolder.findMany as jest.Mock).mockResolvedValue([folderA]);
+    (prisma.webhardFile.createMany as jest.Mock).mockImplementation(
+      ({ data }: { data: Array<Record<string, unknown>> }) =>
+        Promise.resolve({ count: data.length })
+    );
+
+    await service.batchConfirmUpload(
+      {
+        files: [
+          {
+            name: '260629(40308).dxf',
+            originalName: '260629(40308).dxf',
+            size: 40308,
+            mimeType: 'application/dxf',
+            key: 'webhard/company-42/260629(40308).dxf',
+            folderId: 'fA',
+          },
+        ],
+      } as never,
+      fileRegisterIntegrationUser
+    );
+
+    const captured = (prisma.webhardFile.createMany as jest.Mock).mock.calls[0][0].data as Array<{
+      companyId: number | null;
+      uploadedBy: string;
+    }>;
+
+    expect(captured).toEqual([
+      expect.objectContaining({ companyId: 42, uploadedBy: 'api:lgu-sync' }),
+    ]);
+  });
+
   it('Google Drive metadata retry is idempotent when driveFileId already exists', async () => {
     const { service, prisma, storage } = makeService();
     const folder = makeFolder({
@@ -2503,6 +2628,213 @@ describe('FilesService.confirmUpload routing consistency (task 28)', () => {
       expect.objectContaining({
         type: 'file:created',
         folderId: COMPANY_ROOT_ID,
+      })
+    );
+  });
+
+  it('C6: integration principal can confirm Google Drive metadata into a routed company folder', async () => {
+    const routedFolderId = 'routed-company-folder-uuid';
+    const driveFolderId = 'drive-folder-routed-company';
+    const driveFileId = 'drive-file-routed-upload';
+
+    prisma.webhardFolder.findUnique.mockImplementation(
+      async ({ where }: { where: { id: string } }) => {
+        if (where.id !== routedFolderId) return null;
+        return {
+          id: routedFolderId,
+          name: '목형의뢰',
+          companyId: COMPANY_ID,
+          deletedAt: null,
+          path: '/대성목형/목형의뢰',
+          folderKind: 'template',
+          storageProvider: StorageProvider.GOOGLE_DRIVE,
+          driveFolderId,
+        };
+      }
+    );
+    prisma.company.findUnique.mockResolvedValue({
+      driveProvisioningStatus: 'READY',
+    });
+    (storage as unknown as { confirmDriveUploadedFile: jest.Mock }).confirmDriveUploadedFile = jest
+      .fn()
+      .mockResolvedValue({
+        storageFileId: driveFileId,
+        name: '260629(5646).dxf',
+        mimeType: 'application/dxf',
+        size: 5646,
+        parentStorageFolderIds: [driveFolderId],
+      });
+    prisma.webhardFile.create.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) =>
+        makeFile({ ...data, id: 'file-routed-google-drive', company: null })
+    );
+
+    await service.confirmUpload(
+      {
+        key: driveFileId,
+        name: '260629(5646).dxf',
+        originalName: '260629(5646).dxf',
+        size: 5646,
+        mimeType: 'application/dxf',
+        folderId: routedFolderId,
+        storageProvider: 'google_drive',
+        driveFileId,
+      } as never,
+      fileRegisterIntegrationUser
+    );
+
+    expect(prisma.webhardFile.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          folderId: routedFolderId,
+          companyId: COMPANY_ID,
+          storageProvider: StorageProvider.GOOGLE_DRIVE,
+          driveFileId,
+        }),
+      })
+    );
+    expect(events.emitToFolder).toHaveBeenCalledWith(
+      routedFolderId,
+      expect.objectContaining({ folderId: routedFolderId })
+    );
+  });
+
+  it('C7: company user still cannot confirm into another company folder', async () => {
+    const otherCompanyFolderId = 'other-company-folder-uuid';
+    prisma.webhardFolder.findUnique.mockResolvedValueOnce({
+      id: otherCompanyFolderId,
+      companyId: 999,
+      deletedAt: null,
+    });
+
+    await expect(
+      service.confirmUpload(
+        {
+          key: 'webhard/company-999/file.dxf',
+          name: 'file.dxf',
+          originalName: 'file.dxf',
+          size: 100,
+          mimeType: 'application/dxf',
+          folderId: otherCompanyFolderId,
+        } as never,
+        companyUser
+      )
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.webhardFile.create).not.toHaveBeenCalled();
+  });
+
+  it('C8: integration principal can confirm with the folderId returned by redirected presigned-url', async () => {
+    const externalFolderId = 'external-mold-folder-uuid';
+    const companyRootId = 'company-root-for-presign';
+    const routedFolderId = 'routed-mold-folder-uuid';
+    const driveFolderId = 'drive-folder-routed-mold';
+    const driveFileId = 'drive-file-from-presign';
+
+    prisma.webhardFolder.findUnique.mockImplementation(
+      async ({ where }: { where: { id: string } }) => {
+        if (where.id === externalFolderId) {
+          return {
+            id: externalFolderId,
+            name: '목형의뢰',
+            companyId: null,
+            deletedAt: null,
+            path: '/외부웹하드/대성목형/목형의뢰',
+            folderKind: 'template',
+            storageProvider: StorageProvider.R2,
+            driveFolderId: null,
+          };
+        }
+        if (where.id === routedFolderId) {
+          return {
+            id: routedFolderId,
+            name: '목형의뢰',
+            companyId: COMPANY_ID,
+            deletedAt: null,
+            path: '/대성목형/목형의뢰',
+            folderKind: 'template',
+            storageProvider: StorageProvider.GOOGLE_DRIVE,
+            driveFolderId,
+          };
+        }
+        return null;
+      }
+    );
+    prisma.webhardFolder.findFirst.mockImplementation(
+      async ({ where }: { where: Record<string, unknown> }) => {
+        if (where.companyId === COMPANY_ID && where.parentId === null) {
+          return { id: companyRootId };
+        }
+        if (where.parentId === companyRootId && where.name === '목형의뢰') {
+          return { id: routedFolderId };
+        }
+        return null;
+      }
+    );
+    prisma.companyFolderAlias.findFirst.mockResolvedValue({
+      company: { id: COMPANY_ID, companyName: '대성목형' },
+    });
+    prisma.company.findUnique.mockResolvedValue({
+      driveProvisioningStatus: 'READY',
+    });
+
+    const driveStorage = storage as unknown as {
+      createDriveUploadSession: jest.Mock;
+      confirmDriveUploadedFile: jest.Mock;
+    };
+    driveStorage.createDriveUploadSession = jest.fn().mockResolvedValue({
+      storageFileId: driveFileId,
+      uploadUrl: 'https://drive-upload/session',
+      expiresAt: new Date('2026-06-29T00:00:00.000Z'),
+      headers: { 'Content-Type': 'application/dxf' },
+      parentStorageFolderId: driveFolderId,
+    });
+    driveStorage.confirmDriveUploadedFile = jest.fn().mockResolvedValue({
+      storageFileId: driveFileId,
+      name: '260629(5646).dxf',
+      mimeType: 'application/dxf',
+      size: 5646,
+      parentStorageFolderIds: [driveFolderId],
+    });
+    prisma.webhardFile.create.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) =>
+        makeFile({ ...data, id: 'file-presign-confirm', company: null })
+    );
+
+    const presigned = await service.getUploadPresignedUrl(
+      {
+        filename: '260629(5646).dxf',
+        contentType: 'application/dxf',
+        size: 5646,
+        folderId: externalFolderId,
+      },
+      fileRegisterIntegrationUser
+    );
+
+    expect(presigned.redirected).toBe(true);
+    expect(presigned.folderId).toBe(routedFolderId);
+
+    await service.confirmUpload(
+      {
+        key: presigned.key,
+        name: '260629(5646).dxf',
+        originalName: '260629(5646).dxf',
+        size: 5646,
+        mimeType: 'application/dxf',
+        folderId: presigned.folderId,
+        storageProvider: 'google_drive',
+        driveFileId: presigned.driveFileId,
+      } as never,
+      fileRegisterIntegrationUser
+    );
+
+    expect(prisma.webhardFile.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          folderId: routedFolderId,
+          companyId: COMPANY_ID,
+          storageProvider: StorageProvider.GOOGLE_DRIVE,
+          driveFileId,
+        }),
       })
     );
   });
