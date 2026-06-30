@@ -14,12 +14,17 @@
   - 권한 없는 integration principal의 presigned-url, batch upload, confirm, batch confirm service 호출 403 회귀 테스트를 추가했다.
   - 권한 있는 integration routed Google Drive confirm 성공 테스트는 `file/register` fixture로 명확히 분리했다.
   - `file/register` 권한이 있는 integration batch confirm도 폴더 `companyId`를 상속하도록 단건 confirm과 맞췄다.
+  - `prisma/seed.ts`와 `scripts/manage-api-keys.ts`의 동기화 API key 생성값을 `external_webhard_sync` + `file/register`/`event/write`로 보정했다.
+  - 개발 DB의 기존 `sync-production`/`sync-dev` key metadata를 같은 권한으로 보정하고, webhard-api dev 서버를 재시작해 5분 API key cache를 비웠다.
   - `docs/features-list.md`, `docs/changelog/CHANGELOG.md`, `docs/specs/api/endpoints/webhard.md`를 갱신했다.
 - **검증**:
   - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts --runInBand -t "upload registration integration permissions"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 4 tests
   - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts src/auth/guards/company-access.guard.spec.ts --runInBand -t "upload registration integration permissions|C6|C7|C8|requires file/register"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 8 tests
   - `webhard-api`: `pnpm test -- src/files/__tests__/files.service.spec.ts src/files/__tests__/files.controller.spec.ts src/auth/guards/company-access.guard.spec.ts src/integration/auth/api-key.guard.spec.ts src/integration/auth/api-key.scope.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 5 suites / 122 tests
+  - `webhard-api`: `pnpm test -- src/integration/auth/integration-permissions.spec.ts src/integration/auth/api-key.service.spec.ts src/integration/auth/api-key.guard.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 3 suites / 18 tests
   - `webhard-api`: `npx tsc --noEmit --pretty false` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과
+  - 개발 DB 확인: `sync-production`/`sync-dev`의 `programType=external_webhard_sync`, `permissions=['file/register','event/write']` 확인. API key 원문/해시는 출력하지 않음.
+  - 개발서버 확인: `localhost:4000` 새 PID로 재기동 후 `/api/v1/folders/children` integration principal 요청 로그 확인.
   - `git diff --check` 통과
 - **관련 커밋**: 미커밋
 

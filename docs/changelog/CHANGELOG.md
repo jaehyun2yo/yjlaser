@@ -11,6 +11,8 @@
 - route guard뿐 아니라 `FilesService`의 presigned-url, batch upload, confirm, batch confirm entrypoint에서도 integration principal의 `file/register` 권한을 확인한다.
 - 권한 없는 integration principal은 service 직접 호출에서도 업로드 URL 발급과 파일 metadata 등록이 모두 403으로 차단된다.
 - `file/register` 권한이 있는 integration batch confirm도 단건 confirm과 동일하게 폴더 `companyId`를 상속한다.
+- 동기화 API key seed와 `scripts/manage-api-keys.ts create-sync`가 더 이상 legacy `sync` + `read/write/sync` 권한을 만들지 않고, `external_webhard_sync` + `file/register`/`event/write`를 저장한다.
+- 개발 DB의 기존 `sync-production`/`sync-dev` key metadata를 새 권한으로 보정하고, dev 서버를 재시작해 API key 5분 cache를 비웠다.
 - 기존 admin/company 정책, company 사용자의 타 업체 폴더 차단, Google Drive folder readiness / `driveFileId` 검증은 유지했다.
 
 **검증**:
@@ -18,7 +20,10 @@
 - `webhard-api: pnpm test -- src/files/__tests__/files.service.spec.ts --runInBand -t "upload registration integration permissions"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 4 tests.
 - `webhard-api: pnpm test -- src/files/__tests__/files.service.spec.ts src/auth/guards/company-access.guard.spec.ts --runInBand -t "upload registration integration permissions|C6|C7|C8|requires file/register"` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 8 tests.
 - `webhard-api: pnpm test -- src/files/__tests__/files.service.spec.ts src/files/__tests__/files.controller.spec.ts src/auth/guards/company-access.guard.spec.ts src/integration/auth/api-key.guard.spec.ts src/integration/auth/api-key.scope.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 5 suites / 122 tests.
+- `webhard-api: pnpm test -- src/integration/auth/integration-permissions.spec.ts src/integration/auth/api-key.service.spec.ts src/integration/auth/api-key.guard.spec.ts --runInBand` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과 — 3 suites / 18 tests.
 - `webhard-api: npx tsc --noEmit --pretty false` (`NODE_OPTIONS=--max-old-space-size=8192`) 통과.
+- 개발 DB metadata 확인: `sync-production`/`sync-dev`가 `file/register` 권한을 보유. API key 원문/해시는 출력하지 않음.
+- 개발서버 확인: `localhost:4000` 재기동 후 integration principal의 `/folders/children` 요청 로그 확인.
 - `git diff --check` 통과.
 
 ### 2026-06-29 — external-webhard-confirm-integration-access
