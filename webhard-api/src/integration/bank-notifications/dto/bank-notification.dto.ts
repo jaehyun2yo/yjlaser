@@ -21,13 +21,20 @@ export class CollectBankNotificationDto {
   @MaxLength(120)
   device_id!: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  source_app?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(120)
-  source_package!: string;
+  source_package?: string;
 
+  @IsOptional()
   @IsString()
   @MaxLength(240)
-  notification_key!: string;
+  notification_key?: string;
 
   @IsISO8601()
   posted_at!: string;
@@ -43,10 +50,11 @@ export class CollectBankNotificationDto {
   @IsOptional()
   @IsString()
   @MaxLength(8000)
-  raw_big_text?: string;
+  raw_big_text?: string | null;
 
+  @IsOptional()
   @IsObject()
-  raw_payload!: Record<string, unknown>;
+  raw_payload?: Record<string, unknown>;
 }
 
 export class ListBankNotificationsQueryDto {
