@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### 2026-07-08 — integration-bank-notification-parsed-fields
+
+**Scope**: IBK 알림 트래커 앱이 보낸 파싱 필드를 회사사이트가 저장하고 관리프로그램 조회 응답으로 반환.
+
+**수정**:
+
+- `POST /api/v1/integration/bank-notifications`가 `parsed_direction`, `parsed_category`, `parsed_amount_won`, `parsed_counterparty`를 DTO에서 허용한다.
+- 서버는 파싱 필드를 `raw_payload`에 보존하고, `GET /api/v1/integration/bank-notifications` 응답에도 top-level 필드로 반환한다.
+- 운영 실기기 테스트용 `bank_notification_collector` API key를 새로 발급해 휴대폰 앱에 설정했다. 키 원문은 출력/커밋하지 않았다.
+
+**검증**:
+
+- `webhard-api: pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 18 tests.
+- `webhard-api: npx tsc --noEmit --pretty false` 통과.
+- 실기기 업로드는 휴대폰 outbox 기준 `sent` 확인 완료. 파싱 필드 저장은 서버 배포 후 재검증한다.
+
 ### 2026-07-07 — integration-bank-notification-tracking
 
 **Scope**: IBK 은행 알림 트래커 앱 → 회사사이트 → 관리프로그램 은행 알림 조회 계약 정렬.

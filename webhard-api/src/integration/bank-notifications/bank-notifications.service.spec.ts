@@ -12,6 +12,10 @@ function makeCollectDto(input: Record<string, unknown> = {}) {
     raw_text: '입금 123,000원 테스트거래처',
     raw_big_text: '입금 123,000원 테스트거래처 잔액 9,999,999원',
     raw_payload: { template: 'account-deposit' },
+    parsed_direction: 'DEPOSIT',
+    parsed_category: '입금',
+    parsed_amount_won: 123000,
+    parsed_counterparty: '테스트거래처',
     ...input,
   };
 }
@@ -76,7 +80,13 @@ describe('BankNotificationsService', () => {
         rawTitle: 'IBK기업은행',
         rawText: '입금 123,000원 테스트거래처',
         rawBigText: '입금 123,000원 테스트거래처 잔액 9,999,999원',
-        rawPayload: expect.objectContaining({ template: 'account-deposit' }),
+        rawPayload: expect.objectContaining({
+          template: 'account-deposit',
+          parsed_direction: 'DEPOSIT',
+          parsed_category: '입금',
+          parsed_amount_won: 123000,
+          parsed_counterparty: '테스트거래처',
+        }),
         payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
         deviceIdHash: expect.not.stringContaining('dedicated-phone-raw-id'),
         notificationKeyHash: expect.not.stringContaining('raw-notification-key'),
@@ -150,7 +160,17 @@ describe('BankNotificationsService', () => {
   it('marks returned new events as fetched when listing', async () => {
     const prisma = makePrismaMock();
     prisma.bankNotificationEvent.findMany.mockResolvedValue([
-      { id: 'new-id', eventId: 'ibk-event-new', status: 'new' },
+      {
+        id: 'new-id',
+        eventId: 'ibk-event-new',
+        status: 'new',
+        rawPayload: {
+          parsed_direction: 'DEPOSIT',
+          parsed_category: '입금',
+          parsed_amount_won: 123000,
+          parsed_counterparty: '테스트거래처',
+        },
+      },
       { id: 'fetched-id', eventId: 'ibk-event-fetched', status: 'fetched' },
     ]);
     prisma.bankNotificationEvent.updateMany.mockResolvedValue({ count: 1 });
@@ -161,7 +181,21 @@ describe('BankNotificationsService', () => {
     expect(result).toEqual({
       count: 2,
       events: [
-        { id: 'new-id', event_id: 'ibk-event-new', status: 'fetched' },
+        {
+          id: 'new-id',
+          event_id: 'ibk-event-new',
+          status: 'fetched',
+          raw_payload: {
+            parsed_direction: 'DEPOSIT',
+            parsed_category: '입금',
+            parsed_amount_won: 123000,
+            parsed_counterparty: '테스트거래처',
+          },
+          parsed_direction: 'DEPOSIT',
+          parsed_category: '입금',
+          parsed_amount_won: 123000,
+          parsed_counterparty: '테스트거래처',
+        },
         { id: 'fetched-id', event_id: 'ibk-event-fetched', status: 'fetched' },
       ],
     });

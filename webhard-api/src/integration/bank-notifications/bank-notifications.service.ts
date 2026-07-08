@@ -40,6 +40,21 @@ type NormalizedCollectPayload = {
   raw_text: string;
   raw_big_text?: string | null;
   raw_payload: Record<string, unknown>;
+} & ParsedBankNotificationFields;
+
+const PARSED_BANK_NOTIFICATION_FIELDS = [
+  'parsed_direction',
+  'parsed_category',
+  'parsed_amount_won',
+  'parsed_counterparty',
+] as const;
+
+type ParsedBankNotificationField = (typeof PARSED_BANK_NOTIFICATION_FIELDS)[number];
+type ParsedBankNotificationFields = {
+  parsed_direction?: string | null;
+  parsed_category?: string | null;
+  parsed_amount_won?: number | null;
+  parsed_counterparty?: string | null;
 };
 
 type BankNotificationDelegate = {
@@ -239,6 +254,7 @@ export class BankNotificationsService {
     const sourcePackage = nonBlankString(dto.source_package, sourceApp);
     const notificationKey = nonBlankString(dto.notification_key, dto.event_id);
     const rawPayload = isRecord(dto.raw_payload) ? dto.raw_payload : {};
+    const parsedFields = extractParsedFields(dto);
 
     return {
       event_id: dto.event_id,
@@ -250,8 +266,10 @@ export class BankNotificationsService {
       raw_title: dto.raw_title,
       raw_text: dto.raw_text,
       raw_big_text: dto.raw_big_text,
+      ...parsedFields,
       raw_payload: {
         ...rawPayload,
+        ...parsedFields,
         source_app: sourceApp,
       },
     };
@@ -275,7 +293,8 @@ export class BankNotificationsService {
     event: BankNotificationEventRecord,
     wasFetchedNow: boolean
   ): Record<string, unknown> {
-    return {
+    const rawPayload = isRecord(event.rawPayload) ? event.rawPayload : {};
+    const response: Record<string, unknown> = {
       id: event.id,
       event_id: event.eventId,
       status: wasFetchedNow ? 'fetched' : event.status,
@@ -286,6 +305,14 @@ export class BankNotificationsService {
       raw_big_text: event.rawBigText,
       raw_payload: event.rawPayload,
     };
+
+    for (const field of PARSED_BANK_NOTIFICATION_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(rawPayload, field)) {
+        response[field] = rawPayload[field];
+      }
+    }
+
+    return response;
   }
 
   private logCollectResult(
@@ -338,6 +365,31 @@ function stableStringify(value: unknown): string {
       .join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function extractParsedFields(dto: CollectBankNotificationDto): ParsedBankNotificationFields {
+  const source = dto as unknown as Record<string, unknown>;
+  const fields: ParsedBankNotificationFields = {};
+
+  for (const field of PARSED_BANK_NOTIFICATION_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(source, field)) {
+      continue;
+    }
+
+    const value = source[field];
+    if (field === 'parsed_amount_won') {
+      if (typeof value === 'number' || value === null) {
+        fields.parsed_amount_won = value;
+      }
+      continue;
+    }
+
+    if (typeof value === 'string' || value === null) {
+      fields[field] = value;
+    }
+  }
+
+  return fields;
 }
 
 function nonBlankString(value: unknown, fallback: string): string {

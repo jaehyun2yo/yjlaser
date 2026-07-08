@@ -2,6 +2,23 @@
 
 ## 최신 상태 (가장 위가 최신)
 
+### 세션 #144 — 2026-07-08
+
+- **작업 내용**: IBK 은행 알림 파싱 필드의 회사사이트 저장/조회 계약 보강
+- **반영 기준**:
+  - Android 앱이 보낸 `parsed_direction`, `parsed_category`, `parsed_amount_won`, `parsed_counterparty`가 NestJS ValidationPipe에서 제거되지 않아야 한다.
+  - 회사사이트는 파싱 필드를 `raw_payload`에 보존하고 관리프로그램 조회 응답에도 top-level 필드로 반환해야 한다.
+  - 은행 알림 수집용 운영 API key는 `bank_notification_collector` + `bank-notification/write` 권한만 가진다.
+- **완료한 것**:
+  - `CollectBankNotificationDto`에 파싱 필드 4종을 추가했다.
+  - `BankNotificationsService`가 파싱 필드를 저장 JSON과 list 응답에 반영하도록 보강했다.
+  - 운영 실기기 테스트용 `bank_notification_collector` API key를 새로 발급하고 휴대폰 앱에 설정했다. 키 원문은 출력/커밋하지 않았다.
+- **검증**:
+  - `webhard-api`: `pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 18 tests.
+  - `webhard-api`: `npx tsc --noEmit --pretty false` 통과.
+  - 실기기 업로드는 휴대폰 outbox 기준 `sent` 확인 완료. 파싱 필드 저장은 서버 배포 후 재검증한다.
+- **관련 커밋**: 진행 중
+
 ### 세션 #143 — 2026-07-07
 
 - **작업 내용**: IBK 은행 알림 트래커 앱과 회사사이트 은행 알림 API 계약 정렬

@@ -55,6 +55,27 @@ export class CollectBankNotificationDto {
   @IsOptional()
   @IsObject()
   raw_payload?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  parsed_direction?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  parsed_category?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  parsed_amount_won?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  parsed_counterparty?: string | null;
 }
 
 export class ListBankNotificationsQueryDto {

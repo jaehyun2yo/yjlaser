@@ -26,6 +26,10 @@ function makeCollectPayload() {
     raw_text: '입금 123,000원 테스트거래처',
     raw_big_text: '입금 123,000원 테스트거래처 잔액 9,999,999원',
     raw_payload: { template: 'account-deposit' },
+    parsed_direction: 'DEPOSIT',
+    parsed_category: '입금',
+    parsed_amount_won: 123000,
+    parsed_counterparty: '테스트거래처',
   };
 }
 
