@@ -16,7 +16,8 @@
 
 - `webhard-api: pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 18 tests.
 - `webhard-api: npx tsc --noEmit --pretty false` 통과.
-- 실기기 업로드는 휴대폰 outbox 기준 `sent` 확인 완료. 파싱 필드 저장은 서버 배포 후 재검증한다.
+- Railway production 배포 `65c5b853-80a7-4d27-b530-a7399a316167` 성공.
+- 배포 후 실기기 업로드와 운영 DB 조회로 `parsed_direction=DEPOSIT`, `parsed_category=입금`, `parsed_amount_won=789000`, `parsed_counterparty=주식회사마루크리에` 저장 확인.
 
 ### 2026-07-07 — integration-bank-notification-tracking
 
