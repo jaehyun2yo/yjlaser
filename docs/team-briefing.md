@@ -8,9 +8,9 @@ Covers: public website, admin dashboard, company portal, field worker ERP, and w
 ## Tech Stack
 
 - Frontend: Next.js 15 (App Router, React 19, TypeScript 5 strict)
-- Backend: NestJS 10 (`webhard-api/`, Prisma 6 ORM), prefix `/api/v1`
+- Backend: NestJS 11 (`webhard-api/`, Prisma 6 ORM), prefix `/api/v1`
 - DB: PostgreSQL (Prisma ORM — all DB access via NestJS API)
-- Storage: Cloudflare R2 (S3-compatible, presigned URLs)
+- Storage: Google Drive (new webhard files) + Cloudflare R2 (portfolio/legacy compatibility)
 - State: React Query v5 (server) + Zustand v5 (client)
 - Deployment: Vercel (frontend) + Railway (backend, Docker)
 

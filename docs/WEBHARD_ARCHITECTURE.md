@@ -1,7 +1,8 @@
-# 웹하드 시스템 완전 기술 문서
+# 웹하드 시스템 레거시 기술 문서 (R2 기반)
 
-> 최종 업데이트: 2026-02-20
-> 버전: 3.0
+> 최종 업데이트: 2026-07-09
+> 버전: 3.1
+> 현재 코드 기준: 신규 웹하드 파일은 Google Drive + PostgreSQL 메타데이터를 사용한다. 이 문서는 R2 직접 업로드 시절의 상세 설계를 보존하는 레거시 참고 문서이며, 최신 운영 기준은 `README.md`, `CLAUDE.md`, `webhard-api/README.md`를 우선한다.
 
 ## 목차
 
@@ -38,7 +39,7 @@
 | 백엔드 API      | NestJS (모듈 기반)                |
 | ORM             | Prisma (PostgreSQL)               |
 | 데이터베이스    | Supabase (PostgreSQL)             |
-| 파일 저장소     | Cloudflare R2 (S3 호환)           |
+| 파일 저장소     | Google Drive (신규 웹하드) + Cloudflare R2 (포트폴리오/레거시) |
 | 서버 상태 관리  | React Query (TanStack Query)      |
 | 클라이언트 상태 | Zustand                           |
 | 패키지 매니저   | pnpm                              |

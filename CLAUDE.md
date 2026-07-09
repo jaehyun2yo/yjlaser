@@ -46,7 +46,7 @@ Monorepo: two apps sharing `.env.local` and one PostgreSQL database (Prisma ORM)
 
 **NestJS backend** (`webhard-api/`) — Railway (Docker)
 
-- NestJS 10, Prisma ORM (sole DB access layer), Socket.IO, prefix `/api/v1`
+- NestJS 11, Prisma ORM (sole DB access layer), Socket.IO, prefix `/api/v1`
 - 37 Prisma models: Contact, ContactStatusHistory, Company, CompanyStorage, CompanyFeedback, VisitBooking, Portfolio, Post, WebhardFile, WebhardFolder, WebhardFolderFavorite, WebhardSettings, WebhardUserSettings, WebhardLog, WebhardSyncHistory, WebhardSyncState, Machine, Task, ErpWorker, WorkerAccessLog, WorkerNote, Order, OrderEvent, Delivery, DeliveryCompany, InventoryItem, InventoryTransaction, ApiKey, ProgramHeartbeat, SyncLog, ActivityLog, Notification, PushSubscription, ShareLink, ActiveSession, SystemSetting, NumberCounter
 - Modules: Auth, Files, Folders, Trash, Search, Storage, ERP, Integration, Contacts, Companies, Bookings, Notifications, PublicData, Sessions, ActivityLogs, Feedback, ShareLinks, Sync, Health, Settings, Events, DeliveryCompanies, PushSubscriptions, Mail
 
