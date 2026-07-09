@@ -125,6 +125,42 @@ describe('BankNotificationsService', () => {
     });
   });
 
+  it('ignores codex test notifications and deletes existing test marker rows', async () => {
+    const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const prisma = makePrismaMock();
+    prisma.bankNotificationEvent.deleteMany.mockResolvedValue({ count: 1 });
+    const service = new BankNotificationsService(prisma as never);
+
+    const result = await service.collect(
+      makeCollectDto({
+        event_id: 'ibk-test-event',
+        raw_text:
+          '[입금] 789,000원 주식회사마루크리에 -> 내입출금통장 잔액 7,777,777원 CODEx-PROD-20260708020205',
+        parsed_amount_won: 789000,
+        parsed_counterparty: '주식회사마루크리에',
+      })
+    );
+
+    expect(result).toEqual({
+      event_id: 'ibk-test-event',
+      status: 'ignored_test_notification',
+      id: 'ibk-test-event',
+    });
+    expect(prisma.bankNotificationEvent.create).not.toHaveBeenCalled();
+    expect(prisma.bankNotificationEvent.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        deletedAt: null,
+        OR: expect.arrayContaining([
+          { rawTitle: expect.objectContaining({ contains: 'CODEX-PROD-' }) },
+          { rawText: expect.objectContaining({ contains: 'CODEX-PROD-' }) },
+          { rawBigText: expect.objectContaining({ contains: 'CODEX-PROD-' }) },
+        ]),
+      }),
+    });
+    expect(serializeLoggerCalls(logSpy)).not.toContain('주식회사마루크리에');
+    expect(serializeLoggerCalls(logSpy)).not.toContain('789,000원');
+  });
+
   it('returns duplicate for same event_id and same payload hash', async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
     const prisma = makePrismaMock();
@@ -230,6 +266,26 @@ describe('BankNotificationsService', () => {
     expect(prisma.bankNotificationEvent.updateMany).toHaveBeenCalledWith({
       where: { eventId: { in: ['ibk-event-1', 'ibk-event-2'] }, deletedAt: null },
       data: { status: 'processed', processedAt: expect.any(Date) },
+    });
+  });
+
+  it('deletes codex test notification marker rows on request', async () => {
+    const prisma = makePrismaMock();
+    prisma.bankNotificationEvent.deleteMany.mockResolvedValue({ count: 2 });
+    const service = new BankNotificationsService(prisma as never);
+
+    const result = await service.deleteTestNotifications();
+
+    expect(result).toEqual({ deleted: 2 });
+    expect(prisma.bankNotificationEvent.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        deletedAt: null,
+        OR: expect.arrayContaining([
+          { rawTitle: expect.objectContaining({ contains: 'CODEX-PROD-' }) },
+          { rawText: expect.objectContaining({ contains: 'CODEX-PROD-' }) },
+          { rawBigText: expect.objectContaining({ contains: 'CODEX-PROD-' }) },
+        ]),
+      }),
     });
   });
 

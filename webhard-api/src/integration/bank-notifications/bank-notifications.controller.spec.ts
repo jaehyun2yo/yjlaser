@@ -53,6 +53,7 @@ describe('BankNotificationsController', () => {
     markProcessed: jest.fn(),
     createBackupBatch: jest.fn(),
     deleteBackedUpRetention: jest.fn(),
+    deleteTestNotifications: jest.fn(),
   };
 
   beforeAll(async () => {
@@ -116,6 +117,7 @@ describe('BankNotificationsController', () => {
     service.markProcessed.mockResolvedValue({ updated: 1 });
     service.createBackupBatch.mockResolvedValue({ id: 'backup-batch-id' });
     service.deleteBackedUpRetention.mockResolvedValue({ deleted: 1 });
+    service.deleteTestNotifications.mockResolvedValue({ deleted: 1 });
   });
 
   afterAll(async () => {
@@ -182,6 +184,11 @@ describe('BankNotificationsController', () => {
       .set('X-API-Key', COLLECTOR_KEY)
       .send({ event_ids: ['ibk-controller-event-1'] })
       .expect(403);
+
+    await request(app.getHttpServer())
+      .delete('/integration/bank-notifications/test-notifications')
+      .set('X-API-Key', COLLECTOR_KEY)
+      .expect(403);
   });
 
   it('accepts management key on mark processed endpoint', async () => {
@@ -193,6 +200,16 @@ describe('BankNotificationsController', () => {
 
     expect(response.body).toEqual({ updated: 1 });
     expect(service.markProcessed).toHaveBeenCalledWith({ event_ids: ['ibk-controller-event-1'] });
+  });
+
+  it('accepts management key on test notification cleanup endpoint', async () => {
+    const response = await request(app.getHttpServer())
+      .delete('/integration/bank-notifications/test-notifications')
+      .set('X-API-Key', MANAGEMENT_KEY)
+      .expect(200);
+
+    expect(response.body).toEqual({ deleted: 1 });
+    expect(service.deleteTestNotifications).toHaveBeenCalledWith();
   });
 
   it('accepts management key on backup and retention endpoints', async () => {

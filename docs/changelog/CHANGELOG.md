@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### 2026-07-09 — integration-bank-notification-test-filter
+
+**Scope**: IBK 은행 알림 테스트 마커의 운영 저장 차단과 기존 테스트 row 정리.
+
+**수정**:
+
+- `POST /api/v1/integration/bank-notifications`는 `CODEX-PROD-*`, `CODEX-DEV-*`, `CODEX-TEST-*` 테스트 마커가 포함된 payload를 저장하지 않고 `ignored_test_notification`으로 응답한다.
+- 테스트 마커 payload 수신 시 기존 테스트 마커 row를 정리하되, 로그에는 event id hash와 삭제 건수만 남긴다.
+- `DELETE /api/v1/integration/bank-notifications/test-notifications`를 추가해 `bank-notification/manage` 권한으로 기존 테스트 마커 row를 정리할 수 있게 했다.
+
+**검증**:
+
+- `webhard-api: pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 21 tests.
+- `webhard-api: npx tsc --noEmit --pretty false` 통과.
+
 ### 2026-07-08 — integration-bank-notification-parsed-fields
 
 **Scope**: IBK 알림 트래커 앱이 보낸 파싱 필드를 회사사이트가 저장하고 관리프로그램 조회 응답으로 반환.
