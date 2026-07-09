@@ -16,6 +16,8 @@
 
 - `webhard-api: pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 21 tests.
 - `webhard-api: npx tsc --noEmit --pretty false` 통과.
+- Railway production 배포 `460efe4a-bd93-47ab-ad34-c0ef6240ea06` 성공.
+- 운영 DB 테스트 마커 row dry-run 4건 확인 후 4건 삭제, 재조회 0건 확인.
 
 ### 2026-07-08 — integration-bank-notification-parsed-fields
 
