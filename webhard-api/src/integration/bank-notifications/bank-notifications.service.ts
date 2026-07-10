@@ -15,6 +15,7 @@ import {
 } from './dto/bank-notification.dto';
 
 type BankNotificationStatus = 'accepted' | 'duplicate';
+type IgnoredBankNotificationStatus = 'ignored_test_notification';
 
 type BankNotificationEventRecord = {
   id: string;
@@ -79,7 +80,7 @@ type BankNotificationPrisma = PrismaService & {
 
 export type CollectBankNotificationResponse = {
   event_id: string;
-  status: BankNotificationStatus;
+  status: BankNotificationStatus | IgnoredBankNotificationStatus;
   id: string;
 };
 
@@ -91,9 +92,23 @@ export class BankNotificationsService {
 
   async collect(dto: CollectBankNotificationDto): Promise<CollectBankNotificationResponse> {
     const startedAt = Date.now();
+    const correlationId = generateCorrelationId('bank-notification');
+    if (isTestNotificationPayload(dto)) {
+      const cleanup = await this.deleteTestNotifications();
+      this.logCollectResult('bank_notification_test_ignored', 'success', startedAt, correlationId, {
+        event_id_hash: hashIdentifier(dto.event_id),
+        result: 'ignored_test_notification',
+        deleted_count: cleanup.deleted,
+      });
+      return {
+        event_id: dto.event_id,
+        status: 'ignored_test_notification',
+        id: dto.event_id,
+      };
+    }
+
     const normalized = this.normalizeCollectPayload(dto);
     const payloadHash = this.hashCollectPayload(normalized);
-    const correlationId = generateCorrelationId('bank-notification');
 
     try {
       const created = await this.bankNotificationEvent.create({
@@ -188,6 +203,13 @@ export class BankNotificationsService {
       data: { status: 'processed', processedAt: new Date() },
     });
     return { updated: result.count };
+  }
+
+  async deleteTestNotifications(): Promise<{ deleted: number }> {
+    const result = await this.bankNotificationEvent.deleteMany({
+      where: TEST_NOTIFICATION_DELETE_WHERE,
+    });
+    return { deleted: result.count };
   }
 
   async createBackupBatch(dto: CreateBackupBatchDto): Promise<{ id: string }> {
@@ -350,8 +372,29 @@ export class BankNotificationsService {
   }
 }
 
+const TEST_NOTIFICATION_MARKER_REGEX = /\bCODEX-(?:PROD|DEV|TEST)-\d{8,}\b/i;
+const TEST_NOTIFICATION_MARKER_PREFIXES = ['CODEX-PROD-', 'CODEX-DEV-', 'CODEX-TEST-'];
+
+const TEST_NOTIFICATION_DELETE_WHERE = {
+  deletedAt: null,
+  OR: TEST_NOTIFICATION_MARKER_PREFIXES.flatMap((prefix) => [
+    { rawTitle: { contains: prefix, mode: 'insensitive' } },
+    { rawText: { contains: prefix, mode: 'insensitive' } },
+    { rawBigText: { contains: prefix, mode: 'insensitive' } },
+  ]),
+};
+
 function isUniqueConstraintError(error: unknown): boolean {
   return isRecord(error) && error.code === 'P2002';
+}
+
+function isTestNotificationPayload(dto: CollectBankNotificationDto): boolean {
+  return [
+    dto.raw_title,
+    dto.raw_text,
+    dto.raw_big_text,
+    dto.raw_payload ? stableStringify(dto.raw_payload) : undefined,
+  ].some((value) => typeof value === 'string' && TEST_NOTIFICATION_MARKER_REGEX.test(value));
 }
 
 function stableStringify(value: unknown): string {

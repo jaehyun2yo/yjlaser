@@ -33,6 +33,12 @@ export class BankNotificationsController {
     return this.service.markProcessed(dto);
   }
 
+  @Delete('test-notifications')
+  @RequireIntegrationPermission('bank-notification/manage')
+  deleteTestNotifications() {
+    return this.service.deleteTestNotifications();
+  }
+
   @Post('backup-batches')
   @RequireIntegrationPermission('bank-notification/manage')
   createBackupBatch(@Body() dto: CreateBackupBatchDto) {

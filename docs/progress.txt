@@ -2,6 +2,24 @@
 
 ## 최신 상태 (가장 위가 최신)
 
+### 세션 #145 — 2026-07-09
+
+- **작업 내용**: IBK 은행 알림 테스트 마커 저장 차단과 정리 경로 추가
+- **반영 기준**:
+  - `CODEX-PROD-*`, `CODEX-DEV-*`, `CODEX-TEST-*` 테스트 마커가 포함된 은행 알림은 운영 은행 알림 이벤트로 저장하지 않는다.
+  - 기존 테스트 마커 row는 `bank-notification/manage` 권한 endpoint로 정리할 수 있어야 한다.
+  - 차단/정리 로그에는 원문 알림, 계좌명, 입금자명을 남기지 않는다.
+- **완료한 것**:
+  - `BankNotificationsService.collect()`가 테스트 마커 payload를 저장 전 무시하고 기존 테스트 마커 row 정리를 실행하도록 보강했다.
+  - 관리프로그램 권한용 `DELETE /api/v1/integration/bank-notifications/test-notifications` endpoint를 추가했다.
+  - service/controller 회귀 테스트를 추가했다.
+- **검증**:
+  - `webhard-api`: `pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 21 tests.
+  - `webhard-api`: `npx tsc --noEmit --pretty false` 통과.
+  - Railway production 배포 `460efe4a-bd93-47ab-ad34-c0ef6240ea06` 성공.
+  - 운영 DB 테스트 마커 row dry-run 4건 확인 후 4건 삭제, 재조회 0건 확인.
+- **관련 커밋**: `0bfdcc3d`
+
 ### 세션 #144 — 2026-07-08
 
 - **작업 내용**: IBK 은행 알림 파싱 필드의 회사사이트 저장/조회 계약 보강
