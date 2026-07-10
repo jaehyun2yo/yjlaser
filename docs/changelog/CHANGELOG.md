@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+### 2026-07-08 — integration-bank-notification-parsed-fields
+
+**Scope**: IBK 알림 트래커 앱이 보낸 파싱 필드를 회사사이트가 저장하고 관리프로그램 조회 응답으로 반환.
+
+**수정**:
+
+- `POST /api/v1/integration/bank-notifications`가 `parsed_direction`, `parsed_category`, `parsed_amount_won`, `parsed_counterparty`를 DTO에서 허용한다.
+- 서버는 파싱 필드를 `raw_payload`에 보존하고, `GET /api/v1/integration/bank-notifications` 응답에도 top-level 필드로 반환한다.
+- 운영 실기기 테스트용 `bank_notification_collector` API key를 새로 발급해 휴대폰 앱에 설정했다. 키 원문은 출력/커밋하지 않았다.
+
+**검증**:
+
+- `webhard-api: pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 18 tests.
+- `webhard-api: npx tsc --noEmit --pretty false` 통과.
+- Railway production 배포 `65c5b853-80a7-4d27-b530-a7399a316167` 성공.
+- 배포 후 실기기 업로드와 운영 DB 조회로 `parsed_direction=DEPOSIT`, `parsed_category=입금`, `parsed_amount_won=789000`, `parsed_counterparty=주식회사마루크리에` 저장 확인.
+
+### 2026-07-07 — integration-bank-notification-tracking
+
+**Scope**: IBK 은행 알림 트래커 앱 → 회사사이트 → 관리프로그램 은행 알림 조회 계약 정렬.
+
+**수정**:
+
+- `POST /api/v1/integration/bank-notifications`가 `source_app=bank_tracker` 기반 권장 최소 payload도 수락하도록 DTO와 service 정규화를 보강했다.
+- Android 전용 `source_package`, `notification_key`, `raw_payload`가 없으면 서버가 안전한 기본값으로 저장하되, 관리프로그램 파서 필드(`event_id`, `raw_title`, `raw_text`, `raw_big_text`, `posted_at`, `status`)는 그대로 반환한다.
+- 같은 `event_id` 중복 업로드는 payload hash가 달라도 새 row를 만들지 않고 기존 row id를 `duplicate`로 반환한다.
+- Android 앱 업로드 payload에 `source_app=bank_tracker`를 추가하고, 로컬 device id는 전송 시점에 `dev-*` 해시 형태로 변환한다. Android notification key 원문은 top-level payload와 `raw_payload`에서 제외한다.
+- 수집 로그는 기존처럼 event id hash, source package, 결과, 처리 시간만 남기며 알림 원문/계좌번호/입금자명/API key는 남기지 않는다.
+
+**검증**:
+
+- `webhard-api: pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 18 tests.
+- `ibk_notification_tracker_app: .\gradlew.bat testDebugUnitTest --tests net.yjlaser.ibktracker.net.YjlaserApiClientTest` 통과 — 3 tests.
+
 ### 2026-06-30 — external-webhard-service-permission-defense
 
 **Scope**: 외부웹하드 동기화 업로드 endpoint의 integration 권한 방어 보강.

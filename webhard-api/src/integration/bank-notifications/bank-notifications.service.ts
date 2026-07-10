@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import {
   formatLogEvent,
@@ -27,6 +27,34 @@ type BankNotificationEventRecord = {
   rawText?: string;
   rawBigText?: string | null;
   rawPayload?: unknown;
+};
+
+type NormalizedCollectPayload = {
+  event_id: string;
+  device_id: string;
+  source_app: string;
+  source_package: string;
+  notification_key: string;
+  posted_at: string;
+  raw_title: string;
+  raw_text: string;
+  raw_big_text?: string | null;
+  raw_payload: Record<string, unknown>;
+} & ParsedBankNotificationFields;
+
+const PARSED_BANK_NOTIFICATION_FIELDS = [
+  'parsed_direction',
+  'parsed_category',
+  'parsed_amount_won',
+  'parsed_counterparty',
+] as const;
+
+type ParsedBankNotificationField = (typeof PARSED_BANK_NOTIFICATION_FIELDS)[number];
+type ParsedBankNotificationFields = {
+  parsed_direction?: string | null;
+  parsed_category?: string | null;
+  parsed_amount_won?: number | null;
+  parsed_counterparty?: string | null;
 };
 
 type BankNotificationDelegate = {
@@ -63,30 +91,31 @@ export class BankNotificationsService {
 
   async collect(dto: CollectBankNotificationDto): Promise<CollectBankNotificationResponse> {
     const startedAt = Date.now();
-    const payloadHash = this.hashCollectPayload(dto);
+    const normalized = this.normalizeCollectPayload(dto);
+    const payloadHash = this.hashCollectPayload(normalized);
     const correlationId = generateCorrelationId('bank-notification');
 
     try {
       const created = await this.bankNotificationEvent.create({
         data: {
-          eventId: dto.event_id,
-          deviceIdHash: hashIdentifier(dto.device_id),
-          sourcePackage: dto.source_package,
-          notificationKeyHash: hashIdentifier(dto.notification_key),
-          postedAt: new Date(dto.posted_at),
-          rawTitle: dto.raw_title,
-          rawText: dto.raw_text,
-          rawBigText: dto.raw_big_text,
-          rawPayload: dto.raw_payload,
+          eventId: normalized.event_id,
+          deviceIdHash: hashIdentifier(normalized.device_id),
+          sourcePackage: normalized.source_package,
+          notificationKeyHash: hashIdentifier(normalized.notification_key),
+          postedAt: new Date(normalized.posted_at),
+          rawTitle: normalized.raw_title,
+          rawText: normalized.raw_text,
+          rawBigText: normalized.raw_big_text,
+          rawPayload: normalized.raw_payload,
           payloadHash,
         },
       });
       this.logCollectResult('bank_notification_collected', 'success', startedAt, correlationId, {
-        event_id_hash: hashIdentifier(dto.event_id),
-        source_package: dto.source_package,
+        event_id_hash: hashIdentifier(normalized.event_id),
+        source_package: normalized.source_package,
         result: 'accepted',
       });
-      return { event_id: dto.event_id, status: 'accepted', id: created.id };
+      return { event_id: normalized.event_id, status: 'accepted', id: created.id };
     } catch (error) {
       if (!isUniqueConstraintError(error)) {
         this.logCollectResult(
@@ -95,7 +124,7 @@ export class BankNotificationsService {
           startedAt,
           correlationId,
           {
-            event_id_hash: hashIdentifier(dto.event_id),
+            event_id_hash: hashIdentifier(normalized.event_id),
             error_code: 'BANK_NOTIFICATION_COLLECT_FAILED',
           }
         );
@@ -103,26 +132,30 @@ export class BankNotificationsService {
       }
 
       const existing = await this.bankNotificationEvent.findUnique({
-        where: { eventId: dto.event_id },
+        where: { eventId: normalized.event_id },
         select: { id: true, payloadHash: true },
       });
 
-      if (existing?.payloadHash === payloadHash) {
+      if (existing) {
         this.logCollectResult('bank_notification_duplicate', 'success', startedAt, correlationId, {
-          event_id_hash: hashIdentifier(dto.event_id),
+          event_id_hash: hashIdentifier(normalized.event_id),
           result: 'duplicate',
+          payload_hash_changed: existing.payloadHash !== payloadHash,
         });
-        return { event_id: dto.event_id, status: 'duplicate', id: existing.id };
+        return { event_id: normalized.event_id, status: 'duplicate', id: existing.id };
       }
 
-      this.logCollectResult('bank_notification_conflict', 'failure', startedAt, correlationId, {
-        event_id_hash: hashIdentifier(dto.event_id),
-        error_code: 'BANK_NOTIFICATION_EVENT_ID_CONFLICT',
-      });
-      throw new ConflictException({
-        code: 'BANK_NOTIFICATION_EVENT_ID_CONFLICT',
-        message: 'BANK_NOTIFICATION_EVENT_ID_CONFLICT',
-      });
+      this.logCollectResult(
+        'bank_notification_duplicate_lookup_failed',
+        'failure',
+        startedAt,
+        correlationId,
+        {
+          event_id_hash: hashIdentifier(normalized.event_id),
+          error_code: 'BANK_NOTIFICATION_DUPLICATE_LOOKUP_FAILED',
+        }
+      );
+      throw error;
     }
   }
 
@@ -216,6 +249,32 @@ export class BankNotificationsService {
     return createHash('sha256').update(stableStringify(dto)).digest('hex');
   }
 
+  private normalizeCollectPayload(dto: CollectBankNotificationDto): NormalizedCollectPayload {
+    const sourceApp = nonBlankString(dto.source_app, 'bank_tracker');
+    const sourcePackage = nonBlankString(dto.source_package, sourceApp);
+    const notificationKey = nonBlankString(dto.notification_key, dto.event_id);
+    const rawPayload = isRecord(dto.raw_payload) ? dto.raw_payload : {};
+    const parsedFields = extractParsedFields(dto);
+
+    return {
+      event_id: dto.event_id,
+      device_id: dto.device_id,
+      source_app: sourceApp,
+      source_package: sourcePackage,
+      notification_key: notificationKey,
+      posted_at: dto.posted_at,
+      raw_title: dto.raw_title,
+      raw_text: dto.raw_text,
+      raw_big_text: dto.raw_big_text,
+      ...parsedFields,
+      raw_payload: {
+        ...rawPayload,
+        ...parsedFields,
+        source_app: sourceApp,
+      },
+    };
+  }
+
   private buildListWhere(query: ListBankNotificationsQueryDto): Record<string, unknown> {
     const where: Record<string, unknown> = { deletedAt: null };
     if (query.status) {
@@ -234,7 +293,8 @@ export class BankNotificationsService {
     event: BankNotificationEventRecord,
     wasFetchedNow: boolean
   ): Record<string, unknown> {
-    return {
+    const rawPayload = isRecord(event.rawPayload) ? event.rawPayload : {};
+    const response: Record<string, unknown> = {
       id: event.id,
       event_id: event.eventId,
       status: wasFetchedNow ? 'fetched' : event.status,
@@ -245,6 +305,14 @@ export class BankNotificationsService {
       raw_big_text: event.rawBigText,
       raw_payload: event.rawPayload,
     };
+
+    for (const field of PARSED_BANK_NOTIFICATION_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(rawPayload, field)) {
+        response[field] = rawPayload[field];
+      }
+    }
+
+    return response;
   }
 
   private logCollectResult(
@@ -297,6 +365,39 @@ function stableStringify(value: unknown): string {
       .join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function extractParsedFields(dto: CollectBankNotificationDto): ParsedBankNotificationFields {
+  const source = dto as unknown as Record<string, unknown>;
+  const fields: ParsedBankNotificationFields = {};
+
+  for (const field of PARSED_BANK_NOTIFICATION_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(source, field)) {
+      continue;
+    }
+
+    const value = source[field];
+    if (field === 'parsed_amount_won') {
+      if (typeof value === 'number' || value === null) {
+        fields.parsed_amount_won = value;
+      }
+      continue;
+    }
+
+    if (typeof value === 'string' || value === null) {
+      fields[field] = value;
+    }
+  }
+
+  return fields;
+}
+
+function nonBlankString(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  return trimmed || fallback;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

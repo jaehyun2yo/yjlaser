@@ -26,6 +26,22 @@ function makeCollectPayload() {
     raw_text: '입금 123,000원 테스트거래처',
     raw_big_text: '입금 123,000원 테스트거래처 잔액 9,999,999원',
     raw_payload: { template: 'account-deposit' },
+    parsed_direction: 'DEPOSIT',
+    parsed_category: '입금',
+    parsed_amount_won: 123000,
+    parsed_counterparty: '테스트거래처',
+  };
+}
+
+function makeRecommendedCollectPayload() {
+  return {
+    event_id: 'ibk-controller-recommended-1',
+    raw_title: 'IBK기업은행',
+    raw_text: '입금 123,000원 테스트거래처',
+    raw_big_text: null,
+    posted_at: '2026-06-29T01:02:03.000Z',
+    source_app: 'bank_tracker',
+    device_id: 'dev-4a5f2e9d6a8c1b00',
   };
 }
 
@@ -119,6 +135,27 @@ describe('BankNotificationsController', () => {
       id: 'bank-event-db-id',
     });
     expect(service.collect).toHaveBeenCalledWith(makeCollectPayload());
+  });
+
+  it('accepts the bank tracker recommended payload without Android-only fields', async () => {
+    service.collect.mockResolvedValueOnce({
+      event_id: 'ibk-controller-recommended-1',
+      status: 'accepted',
+      id: 'bank-event-db-id',
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/integration/bank-notifications')
+      .set('X-API-Key', COLLECTOR_KEY)
+      .send(makeRecommendedCollectPayload())
+      .expect(201);
+
+    expect(response.body).toEqual({
+      event_id: 'ibk-controller-recommended-1',
+      status: 'accepted',
+      id: 'bank-event-db-id',
+    });
+    expect(service.collect).toHaveBeenCalledWith(makeRecommendedCollectPayload());
   });
 
   it('rejects collector key on read endpoint', async () => {

@@ -2,6 +2,42 @@
 
 ## 최신 상태 (가장 위가 최신)
 
+### 세션 #144 — 2026-07-08
+
+- **작업 내용**: IBK 은행 알림 파싱 필드의 회사사이트 저장/조회 계약 보강
+- **반영 기준**:
+  - Android 앱이 보낸 `parsed_direction`, `parsed_category`, `parsed_amount_won`, `parsed_counterparty`가 NestJS ValidationPipe에서 제거되지 않아야 한다.
+  - 회사사이트는 파싱 필드를 `raw_payload`에 보존하고 관리프로그램 조회 응답에도 top-level 필드로 반환해야 한다.
+  - 은행 알림 수집용 운영 API key는 `bank_notification_collector` + `bank-notification/write` 권한만 가진다.
+- **완료한 것**:
+  - `CollectBankNotificationDto`에 파싱 필드 4종을 추가했다.
+  - `BankNotificationsService`가 파싱 필드를 저장 JSON과 list 응답에 반영하도록 보강했다.
+  - 운영 실기기 테스트용 `bank_notification_collector` API key를 새로 발급하고 휴대폰 앱에 설정했다. 키 원문은 출력/커밋하지 않았다.
+- **검증**:
+  - `webhard-api`: `pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 18 tests.
+  - `webhard-api`: `npx tsc --noEmit --pretty false` 통과.
+  - Railway production 배포 `65c5b853-80a7-4d27-b530-a7399a316167` 성공.
+  - 배포 후 실기기 업로드와 운영 DB 조회로 `parsed_direction=DEPOSIT`, `parsed_category=입금`, `parsed_amount_won=789000`, `parsed_counterparty=주식회사마루크리에` 저장 확인.
+- **관련 커밋**: `a7d5772d`
+
+### 세션 #143 — 2026-07-07
+
+- **작업 내용**: IBK 은행 알림 트래커 앱과 회사사이트 은행 알림 API 계약 정렬
+- **반영 기준**:
+  - Android 앱은 업로드 payload에 `source_app=bank_tracker`와 해시된 `device_id`를 포함하고 Android notification key 원문은 전송하지 않는다.
+  - 회사사이트 `POST /api/v1/integration/bank-notifications`는 관리프로그램 파서 필드와 권장 최소 payload를 수락한다.
+  - 같은 `event_id` 중복 업로드는 payload hash가 달라도 새 row를 만들지 않고 기존 row를 duplicate로 반환한다.
+  - 실패/중복/성공 로그는 해시 id와 집계 정보만 남기고 알림 원문, 계좌번호, 입금자명을 남기지 않는다.
+- **완료한 것**:
+  - `BankNotificationsService`가 optional `source_app`, `source_package`, `notification_key`, `raw_payload`를 정규화하도록 보강했다.
+  - `event_id` unique 충돌 시 기존 row를 조회해 duplicate 응답으로 수렴하도록 변경했다.
+  - Android `YjlaserApiClient`가 전송 시점에 device id를 `dev-*` 해시 형식으로 변환하고 `source_app`을 포함하도록 변경했다.
+  - API/controller/service 및 Android 업로드 payload 회귀 테스트를 추가했다.
+- **검증**:
+  - `webhard-api`: `pnpm test -- bank-notifications.service.spec.ts bank-notifications.controller.spec.ts --runInBand` 통과 — 2 suites / 18 tests.
+  - `ibk_notification_tracker_app`: `.\gradlew.bat testDebugUnitTest --tests net.yjlaser.ibktracker.net.YjlaserApiClientTest` 통과 — 3 tests.
+- **관련 커밋**: `codex/ibk-bank-notifications-yjsite-sync`
+
 ### 세션 #142 — 2026-06-30
 
 - **작업 내용**: 외부웹하드 동기화 업로드 403 회귀의 service-level 권한 방어 보강

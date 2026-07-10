@@ -1,4 +1,4 @@
-import { ConflictException, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { BankNotificationsService } from './bank-notifications.service';
 
 function makeCollectDto(input: Record<string, unknown> = {}) {
@@ -12,6 +12,23 @@ function makeCollectDto(input: Record<string, unknown> = {}) {
     raw_text: '입금 123,000원 테스트거래처',
     raw_big_text: '입금 123,000원 테스트거래처 잔액 9,999,999원',
     raw_payload: { template: 'account-deposit' },
+    parsed_direction: 'DEPOSIT',
+    parsed_category: '입금',
+    parsed_amount_won: 123000,
+    parsed_counterparty: '테스트거래처',
+    ...input,
+  };
+}
+
+function makeRecommendedCollectDto(input: Record<string, unknown> = {}) {
+  return {
+    event_id: 'ibk-event-recommended-1',
+    device_id: 'dev-4a5f2e9d6a8c1b00',
+    source_app: 'bank_tracker',
+    posted_at: '2026-06-29T01:02:03.000Z',
+    raw_title: 'IBK기업은행',
+    raw_text: '입금 123,000원 테스트거래처',
+    raw_big_text: null,
     ...input,
   };
 }
@@ -63,7 +80,13 @@ describe('BankNotificationsService', () => {
         rawTitle: 'IBK기업은행',
         rawText: '입금 123,000원 테스트거래처',
         rawBigText: '입금 123,000원 테스트거래처 잔액 9,999,999원',
-        rawPayload: { template: 'account-deposit' },
+        rawPayload: expect.objectContaining({
+          template: 'account-deposit',
+          parsed_direction: 'DEPOSIT',
+          parsed_category: '입금',
+          parsed_amount_won: 123000,
+          parsed_counterparty: '테스트거래처',
+        }),
         payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
         deviceIdHash: expect.not.stringContaining('dedicated-phone-raw-id'),
         notificationKeyHash: expect.not.stringContaining('raw-notification-key'),
@@ -72,6 +95,34 @@ describe('BankNotificationsService', () => {
     expect(serializeLoggerCalls(logSpy)).not.toContain('입금 123,000원');
     expect(serializeLoggerCalls(logSpy)).not.toContain('dedicated-phone-raw-id');
     expect(serializeLoggerCalls(logSpy)).not.toContain('raw-notification-key');
+  });
+
+  it('stores the recommended minimal bank tracker payload with safe defaults', async () => {
+    const prisma = makePrismaMock();
+    prisma.bankNotificationEvent.create.mockResolvedValue({
+      id: 'bank-event-db-id',
+      eventId: 'ibk-event-recommended-1',
+    });
+    const service = new BankNotificationsService(prisma as never);
+
+    const result = await service.collect(makeRecommendedCollectDto() as never);
+
+    expect(result).toEqual({
+      event_id: 'ibk-event-recommended-1',
+      status: 'accepted',
+      id: 'bank-event-db-id',
+    });
+    expect(prisma.bankNotificationEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        eventId: 'ibk-event-recommended-1',
+        sourcePackage: 'bank_tracker',
+        rawTitle: 'IBK기업은행',
+        rawText: '입금 123,000원 테스트거래처',
+        rawBigText: null,
+        rawPayload: { source_app: 'bank_tracker' },
+        notificationKeyHash: expect.not.stringContaining('ibk-event-recommended-1'),
+      }),
+    });
   });
 
   it('returns duplicate for same event_id and same payload hash', async () => {
@@ -90,7 +141,7 @@ describe('BankNotificationsService', () => {
     expect(result).toEqual({ event_id: 'ibk-event-1', status: 'duplicate', id: 'existing-id' });
   });
 
-  it('throws conflict for same event_id and different payload hash', async () => {
+  it('returns duplicate for same event_id even when payload hash changed', async () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const prisma = makePrismaMock();
     prisma.bankNotificationEvent.create.mockRejectedValueOnce({ code: 'P2002' });
@@ -101,13 +152,25 @@ describe('BankNotificationsService', () => {
     const service = new BankNotificationsService(prisma as never);
     jest.spyOn(service, 'hashCollectPayload').mockReturnValue('current');
 
-    await expect(service.collect(makeCollectDto())).rejects.toThrow(ConflictException);
+    const result = await service.collect(makeCollectDto());
+
+    expect(result).toEqual({ event_id: 'ibk-event-1', status: 'duplicate', id: 'existing-id' });
   });
 
   it('marks returned new events as fetched when listing', async () => {
     const prisma = makePrismaMock();
     prisma.bankNotificationEvent.findMany.mockResolvedValue([
-      { id: 'new-id', eventId: 'ibk-event-new', status: 'new' },
+      {
+        id: 'new-id',
+        eventId: 'ibk-event-new',
+        status: 'new',
+        rawPayload: {
+          parsed_direction: 'DEPOSIT',
+          parsed_category: '입금',
+          parsed_amount_won: 123000,
+          parsed_counterparty: '테스트거래처',
+        },
+      },
       { id: 'fetched-id', eventId: 'ibk-event-fetched', status: 'fetched' },
     ]);
     prisma.bankNotificationEvent.updateMany.mockResolvedValue({ count: 1 });
@@ -118,7 +181,21 @@ describe('BankNotificationsService', () => {
     expect(result).toEqual({
       count: 2,
       events: [
-        { id: 'new-id', event_id: 'ibk-event-new', status: 'fetched' },
+        {
+          id: 'new-id',
+          event_id: 'ibk-event-new',
+          status: 'fetched',
+          raw_payload: {
+            parsed_direction: 'DEPOSIT',
+            parsed_category: '입금',
+            parsed_amount_won: 123000,
+            parsed_counterparty: '테스트거래처',
+          },
+          parsed_direction: 'DEPOSIT',
+          parsed_category: '입금',
+          parsed_amount_won: 123000,
+          parsed_counterparty: '테스트거래처',
+        },
         { id: 'fetched-id', event_id: 'ibk-event-fetched', status: 'fetched' },
       ],
     });
