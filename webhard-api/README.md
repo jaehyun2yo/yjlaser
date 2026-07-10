@@ -6,9 +6,9 @@
 
 ## 기술 스택
 
-- **Framework**: NestJS 10
+- **Framework**: NestJS 11
 - **Database**: PostgreSQL (Supabase) + Prisma ORM
-- **Storage**: Cloudflare R2 (S3-compatible)
+- **Storage**: Google Drive (신규 웹하드 파일) + Cloudflare R2 (포트폴리오/레거시 호환)
 - **Authentication**: 세션 쿠키 기반 인증 (기존 Next.js 앱과 호환)
 
 ## 설치 및 실행
@@ -22,7 +22,7 @@ pnpm install
 
 ### 2. 환경 변수 설정
 
-`.env.example`을 참조하여 `.env` 파일을 생성합니다:
+Next.js 루트의 `.env.local`을 먼저 사용합니다. 일반 개발에서는 `webhard-api/.env`를 만들지 않습니다. 로딩 순서는 `../.env.local` → `../.env` → `.env.local` → `.env`입니다.
 
 ```env
 # Database (Supabase)
@@ -31,7 +31,11 @@ DATABASE_URL="postgresql://..."
 # Session (메인 앱과 동일한 값 사용)
 SESSION_SECRET="..."
 
-# R2 Storage
+# Google Drive webhard storage
+GOOGLE_SERVICE_ACCOUNT_JSON="..."
+GOOGLE_DRIVE_SHARED_DRIVE_ID="..."
+
+# R2 Storage (portfolio/legacy compatibility)
 R2_ACCOUNT_ID="..."
 R2_ENDPOINT="..."
 R2_ACCESS_KEY_ID="..."
@@ -40,8 +44,8 @@ R2_BUCKET_NAME="..."
 R2_PUBLIC_BASE_URL="..."
 
 # App
-PORT=4000
-CORS_ORIGIN="http://localhost:3000"
+NESTJS_PORT=4000
+CORS_ORIGINS="http://localhost:3000"
 ```
 
 ### 3. Prisma 클라이언트 생성
@@ -127,7 +131,7 @@ webhard-api/
 │   │   ├── guards/             # 인증 가드
 │   │   └── decorators/         # 커스텀 데코레이터
 │   ├── prisma/                 # Prisma 모듈
-│   ├── storage/                # R2 스토리지 모듈
+│   ├── storage/                # Google Drive 신규 웹하드 + R2 레거시/포트폴리오 호환
 │   ├── files/                  # 파일 API
 │   ├── folders/                # 폴더 API
 │   ├── trash/                  # 휴지통 API

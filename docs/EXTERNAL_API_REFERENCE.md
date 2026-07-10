@@ -194,7 +194,7 @@ X-API-Key: yjl_a1b2c3d4e5f6...
 
 ## 6. Programs — 프로그램 하트비트
 
-프로그램 생존 상태를 모니터링합니다. 120초 이상 heartbeat가 없으면 `offline`으로 표시됩니다.
+프로그램 생존 상태를 모니터링합니다. `lastSeenAt` 기준 120초 초과는 `late`, 10분 초과는 `offline`으로 표시됩니다.
 
 ### POST /integration/programs/heartbeat
 
