@@ -28,5 +28,9 @@ describe('IntegrationNav', () => {
       'href',
       '/admin/integration/operations'
     );
+    expect(screen.getByRole('link', { name: /장치 인증/ })).toHaveAttribute(
+      'href',
+      '/admin/integration/devices'
+    );
   });
 });

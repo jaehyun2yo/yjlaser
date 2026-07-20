@@ -211,6 +211,13 @@ POST /files/multipart/initiate
 
 **사용 프로그램:** 외부웹하드동기화프로그램
 
+**장치 bearer confirm 계약:** 장치 클라이언트는 `POST /files/presigned-url` 응답의
+`folderId`와 `key`를 변경하지 않고 이 요청에 전달해야 한다. 원래 외부웹하드 husk
+`folderId`를 다시 보내면 안 된다. 장치 confirm은 routing이나 lazy folder 생성을 다시
+수행하지 않고, 제출된 폴더의 서버 검증 company와 canonical key가 정확히 일치할 때만
+metadata를 저장한다. 기존 static API key 및 admin session 경로의 원본 husk routing
+fallback은 하위 호환을 위해 유지한다.
+
 **Request Body:**
 
 | 필드     | 타입            | Required | 설명                   |

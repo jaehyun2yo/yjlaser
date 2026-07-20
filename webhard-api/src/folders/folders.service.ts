@@ -14,6 +14,7 @@ import { Cache } from 'cache-manager';
 import { Prisma, StorageProvider, WebhardFolder } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionUser } from '../auth/auth.service';
+import type { DeviceAccessPrincipal } from '../integration/device-auth/device-auth.types';
 import { EventsGateway } from '../events/events.gateway';
 import { ContactsGateway } from '../contacts/contacts.gateway';
 import { buildInquiryFolderName } from '../common/inquiry-filename.util';
@@ -521,13 +522,28 @@ export class FoldersService {
    * Get child folders of a specific parent (지연 로딩용)
    */
   async getChildFolders(parentId: string | null, user: SessionUser): Promise<FolderResponseDto[]> {
+    return this.getChildFoldersAuthorized(parentId, user);
+  }
+
+  async getChildFoldersForDevice(
+    parentId: string | null,
+    principal: DeviceAccessPrincipal
+  ): Promise<FolderResponseDto[]> {
+    this.assertDeviceAccess(principal, 'folder/read');
+    return this.getChildFoldersAuthorized(parentId, null);
+  }
+
+  private async getChildFoldersAuthorized(
+    parentId: string | null,
+    user: SessionUser | null
+  ): Promise<FolderResponseDto[]> {
     const where: Record<string, unknown> = {
       deletedAt: null,
       parentId: parentId,
       ...this.validFolderStorageWhere(),
     };
 
-    if (user.userType === 'company') {
+    if (user?.userType === 'company') {
       Object.assign(where, this.companyVisibilityFilter(user.companyId));
     }
 
@@ -855,7 +871,22 @@ export class FoldersService {
     if (user.userType !== 'admin' && user.userType !== 'integration') {
       throw new ForbiddenException('Only admin users can create folders');
     }
+    return this.createFolderAuthorized(dto, user);
+  }
 
+  async createFolderForDevice(
+    dto: CreateFolderDto,
+    principal: DeviceAccessPrincipal
+  ): Promise<FolderResponseDto> {
+    this.assertDeviceAccess(principal, 'folder/write');
+    return this.createFolderAuthorized(dto, null, true);
+  }
+
+  private async createFolderAuthorized(
+    dto: CreateFolderDto,
+    user: SessionUser | null,
+    enforceDeviceNamespace = false
+  ): Promise<FolderResponseDto> {
     // Verify parent folder access if specified
     let parentFolder: WebhardFolder | null = null;
     if (dto.parentId) {
@@ -868,10 +899,16 @@ export class FoldersService {
         throw new NotFoundException('Parent folder not found');
       }
 
-      this.verifyFolderAccess(parentFolder, user);
+      if (user) this.verifyFolderAccess(parentFolder, user);
     }
 
-    const effectiveCompanyId = dto.companyId ?? parentFolder?.companyId ?? null;
+    const parentCompanyId = parentFolder?.companyId ?? null;
+    if (enforceDeviceNamespace) {
+      this.assertDeviceRequestedCompanyId(dto.companyId, parentCompanyId);
+    }
+    const effectiveCompanyId = enforceDeviceNamespace
+      ? parentCompanyId
+      : (dto.companyId ?? parentCompanyId);
 
     // Check for duplicate name in same parent
     const existing = await this.prisma.executeWithRetry(
@@ -953,6 +990,23 @@ export class FoldersService {
     dto: RenameFolderDto,
     user: SessionUser
   ): Promise<FolderResponseDto> {
+    return this.renameFolderAuthorized(folderId, dto, user);
+  }
+
+  async renameFolderForDevice(
+    folderId: string,
+    dto: RenameFolderDto,
+    principal: DeviceAccessPrincipal
+  ): Promise<FolderResponseDto> {
+    this.assertDeviceAccess(principal, 'folder/write');
+    return this.renameFolderAuthorized(folderId, dto, null);
+  }
+
+  private async renameFolderAuthorized(
+    folderId: string,
+    dto: RenameFolderDto,
+    user: SessionUser | null
+  ): Promise<FolderResponseDto> {
     // name 또는 newName 파라미터 허용 (문서 호환성)
     const newName = dto.name ?? dto.newName;
     if (!newName) {
@@ -968,7 +1022,7 @@ export class FoldersService {
       throw new NotFoundException('Folder not found');
     }
 
-    this.verifyFolderAccess(folder, user);
+    if (user) this.verifyFolderAccess(folder, user);
 
     // Check for duplicate name in same parent
     const existing = await this.prisma.executeWithRetry(
@@ -1054,7 +1108,24 @@ export class FoldersService {
     if (user.userType !== 'admin') {
       throw new ForbiddenException('Only admin users can move folders');
     }
+    return this.moveFolderAuthorized(folderId, dto, user);
+  }
 
+  async moveFolderForDevice(
+    folderId: string,
+    dto: MoveFolderDto,
+    principal: DeviceAccessPrincipal
+  ): Promise<FolderResponseDto> {
+    this.assertDeviceAccess(principal, 'folder/move');
+    return this.moveFolderAuthorized(folderId, dto, null, true);
+  }
+
+  private async moveFolderAuthorized(
+    folderId: string,
+    dto: MoveFolderDto,
+    user: SessionUser | null,
+    enforceDeviceNamespace = false
+  ): Promise<FolderResponseDto> {
     const folder = await this.prisma.executeWithRetry(
       () => this.prisma.webhardFolder.findUnique({ where: { id: folderId } }),
       { operationName: 'moveFolder.findUnique' }
@@ -1064,7 +1135,7 @@ export class FoldersService {
       throw new NotFoundException('Folder not found');
     }
 
-    this.verifyFolderAccess(folder, user);
+    if (user) this.verifyFolderAccess(folder, user);
 
     // Cannot move to itself
     if (dto.parentId === folderId) {
@@ -1084,13 +1155,21 @@ export class FoldersService {
         throw new NotFoundException('Target folder not found');
       }
 
-      this.verifyFolderAccess(targetParentFolder, user);
+      if (user) this.verifyFolderAccess(targetParentFolder, user);
+
+      if (enforceDeviceNamespace) {
+        this.assertSameDeviceCompanyNamespace(folder.companyId, targetParentFolder.companyId);
+      }
 
       // Check for circular reference
       const isDescendant = await this.isDescendantOf(dto.parentId, folderId);
       if (isDescendant) {
         throw new BadRequestException('Cannot move folder to its own descendant');
       }
+    }
+
+    if (enforceDeviceNamespace && !targetParentFolder) {
+      this.assertSameDeviceCompanyNamespace(folder.companyId, null);
     }
 
     // Check for duplicate name in target parent and auto-rename if needed (1회 쿼리로 최적화)
@@ -1639,6 +1718,38 @@ export class FoldersService {
     return this.folderPathService.replaceDescendantPathPrefix(client, folderId, oldPath, newPath);
   }
 
+  private assertDeviceAccess(
+    principal: DeviceAccessPrincipal,
+    permission: DeviceAccessPrincipal['permissions'][number]
+  ): void {
+    if (
+      principal.programType !== 'external_webhard_sync' ||
+      principal.capabilityProfile !== 'standard' ||
+      principal.credentialVersion < 1 ||
+      !principal.permissions.includes(permission)
+    ) {
+      throw new ForbiddenException('Device principal is not allowed for this operation');
+    }
+  }
+
+  private assertDeviceRequestedCompanyId(
+    requestedCompanyId: number | null | undefined,
+    serverCompanyId: number | null
+  ): void {
+    if (requestedCompanyId !== undefined && requestedCompanyId !== serverCompanyId) {
+      throw new ForbiddenException('Device company namespace mismatch');
+    }
+  }
+
+  private assertSameDeviceCompanyNamespace(
+    sourceCompanyId: number | null,
+    targetCompanyId: number | null
+  ): void {
+    if (sourceCompanyId !== targetCompanyId) {
+      throw new ForbiddenException('Device company namespace mismatch');
+    }
+  }
+
   /**
    * Verify user has access to the folder
    */
@@ -1748,7 +1859,7 @@ export class FoldersService {
 
   private async getLatestFileMetadataByFolderRoot(
     folders: { id: string }[],
-    user: SessionUser
+    user: SessionUser | null
   ): Promise<Map<string, FolderLatestFileMetadata>> {
     const rootIds = folders.map((folder) => folder.id);
     if (rootIds.length === 0) {
@@ -1757,11 +1868,11 @@ export class FoldersService {
 
     const rootValues = Prisma.join(rootIds.map((id) => Prisma.sql`(${id})`));
     const folderVisibility =
-      user.userType === 'admin'
+      !user || user.userType === 'admin'
         ? Prisma.empty
         : Prisma.sql`AND (child.company_id = ${user.companyId} OR child.company_id IS NULL)`;
     const rootVisibility =
-      user.userType === 'admin'
+      !user || user.userType === 'admin'
         ? Prisma.empty
         : Prisma.sql`AND (root.company_id = ${user.companyId} OR root.company_id IS NULL)`;
 

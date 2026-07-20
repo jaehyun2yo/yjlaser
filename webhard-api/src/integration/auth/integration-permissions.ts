@@ -7,6 +7,12 @@ export const INTEGRATION_PERMISSIONS = [
   'bank-notification/write',
   'bank-notification/read',
   'bank-notification/manage',
+  'folder/read',
+  'folder/write',
+  'folder/move',
+  'file/read',
+  'file/write',
+  'file/move',
 ] as const;
 
 export type IntegrationPermission = (typeof INTEGRATION_PERMISSIONS)[number];
@@ -41,6 +47,31 @@ export const DEFAULT_INTEGRATION_WORKER_PERMISSIONS: Record<
   admin_dashboard: ['operation/read', 'job/read'],
   bank_notification_collector: ['bank-notification/write'],
 };
+
+export type DeviceAccessProgramType =
+  | 'external_webhard_sync'
+  | 'management_program'
+  | 'nesting_program';
+
+export const DEFAULT_DEVICE_ACCESS_PERMISSIONS: Readonly<
+  Record<DeviceAccessProgramType, readonly IntegrationPermission[]>
+> = Object.freeze({
+  external_webhard_sync: Object.freeze([
+    'folder/read',
+    'folder/write',
+    'folder/move',
+    'file/read',
+    'file/write',
+    'file/move',
+  ] as const),
+  management_program: Object.freeze([
+    'event/write',
+    'job/read',
+    'bank-notification/read',
+    'bank-notification/manage',
+  ] as const),
+  nesting_program: Object.freeze([] as const),
+});
 
 export function isIntegrationPermission(value: string): value is IntegrationPermission {
   return (INTEGRATION_PERMISSIONS as readonly string[]).includes(value);

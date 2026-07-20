@@ -1,5 +1,7 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
-import { ApiKeyGuard } from '../auth/api-key.guard';
+import { DeviceEndpointPolicyGuard } from '../auth/device-endpoint-policy.guard';
+import { IntegrationPrincipalSourceGuard } from '../auth/integration-principal-source.guard';
+import { RequireDeviceEndpointPolicy } from '../auth/require-device-endpoint-policy.decorator';
 import { RequireIntegrationPermission } from '../auth/require-integration-permission.decorator';
 import { OrdersService } from './orders.service';
 import {
@@ -12,7 +14,7 @@ import {
 } from './dto/order.dto';
 
 @Controller('integration/orders')
-@UseGuards(ApiKeyGuard)
+@UseGuards(IntegrationPrincipalSourceGuard, DeviceEndpointPolicyGuard)
 export class OrdersController {
   constructor(private ordersService: OrdersService) {}
 
@@ -27,6 +29,7 @@ export class OrdersController {
   }
 
   @Get()
+  @RequireDeviceEndpointPolicy('GET', '/integration/orders')
   async getOrders(@Query() query: OrderQueryDto) {
     return this.ordersService.getOrders(query);
   }

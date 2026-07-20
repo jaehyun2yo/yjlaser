@@ -2,6 +2,115 @@
 
 ## [Unreleased]
 
+### 2026-07-20 — central-device-auth-rotation-compatibility-source-evidence
+
+**Scope**: 중앙 rotation/endpoint policy의 source-only contract lock과 no-secret 호환 증적.
+
+**수정**:
+
+- deterministic source/build/schema hash와 exact rotation enum/5개 nullable-column 호환성을 확인하는
+  read-only collector를 추가했다. runtime flag가 꺼져 있으면 실제 raw middleware가 5개 rotation HTTP
+  target을 body parser보다 먼저 404/no-store로 종료하고 controller/service/Prisma write에 도달하지
+  않는지 source와 built output에서 확인한다. token rotation directive suppression은 별도 service gate로
+  확인한다.
+- 중앙 contract는 rotation/ACK 응답 유실 복구, 승인 route 14개, legacy 분리와
+  `device_rotation_incompatible` 409/no-store/fail-closed 경계를 잠갔다.
+
+**검증 및 경계**:
+
+- 중앙 source 53 suites / 905 tests, review-fix 영향 7 suites / 195 tests, collector 1 suite / 16 tests,
+  TypeScript, Nest build,
+  placeholder-only Prisma validate와 중앙 fixture verifier `--require-copies 0`을 통과했다.
+- source-only 재리뷰는 correctness/security 모두 Critical/Important 0으로 승인됐다. current dist는 final
+  no-emit TypeScript incremental 파일을 포함한 1103 files이며 동일 built hash와 actual probe가 연속 2회
+  재현됐다. 최종 evidence는 clean build 뒤 probe/hash를 완료하고 이후 build output을 변경하지 않는
+  순서로 수집한다.
+- Docker client는 존재하지만 daemon pipe와 prior rollback image digest가 없어 image/deploy는 No-Go다.
+  실제 DB/migration, secret, PC/장치, desktop copy, image build/publish/sign, 배포는 수행하지 않았다.
+
+### 2026-07-20 — central-device-auth-token-bearer-source-boundary
+
+**Scope**: 중앙 장치 token 교환과 bearer 전용 heartbeat/safe-canary의 clean RC 소스 경계.
+
+**수정**:
+
+- cookie/static key/session/recovery/CSRF와 분리된 `/integration/device-auth/token`을 추가했다. 응답
+  유실은 동일 현재 credential·candidate·request ID로만 복구하며, public 응답은 access token과
+  서버 권위의 최소 필드만 반환한다.
+- `/integration/devices/heartbeat`와 `/integration/devices/canary`를 정확히 하나의 device bearer
+  전용 경로로 추가했다. guard는 매 요청마다 현재 환경의 active/revoke 상태, program/profile,
+  credential version, 활성 credential 및 폐기된 exchange를 확인하고 권한을 서버에서 유도한다.
+- heartbeat는 `{}` 또는 선택 `appVersion`만 받고 검증된 장치별 6회/60초 quota 뒤
+  `lastHeartbeatAt`과 선택 version만 갱신한다. canary는 DB write나 업무 service 호출이 없는
+  contract check다. `safe_canary`에는 rotation·동기화·발송·DXF·nesting 업무를 허용하지 않는다.
+
+**검증 및 경계**:
+
+- source-only auth Jest 34 suites / 549 tests, TypeScript, Nest build, placeholder DSN Prisma schema
+  validate와 JS/Python canonical fixture 검증(`--require-copies 0`)을 통과했다. 실제 DB/Redis/proxy,
+  migration, secret, PC, artifact, deploy는 다루지 않았다.
+- 소스의 다음-request 폐기 검사는 새 `DeviceBearerGuard` heartbeat/canary에만 적용된다. legacy
+  static-key 업무 호출과 실제 PC 즉시 폐기는 아직 보장하지 않는다. rotation prepare/ack/admin,
+  업무 endpoint policy, 세 데스크톱 vault/client, DEV/STG, 서명 artifact와 production pilot이 남았다.
+
+### 2026-07-20 — central-device-auth-admin-control-source-boundary
+
+**Scope**: 회사사이트 중앙 장치 인증의 관리자 목록·승인·폐기 제어 plane과 관리자 UI 소스 경계.
+
+**수정**:
+
+- admin session 전용 장치 목록과 admin session+CSRF 전용 등록 승인·폐기 controller/화면을
+  추가했다. 대상은 외부웹하드동기화프로그램, 관리프로그램, 레이저네스팅프로그램뿐이며
+  `computeroff`는 제외한다.
+- 목록은 최소 장치 요약만 반환하고, 승인/폐기는 raw credential·hash·actor·PC 식별 메타데이터를
+  반환하지 않는다. 관리자 action은 빈 body만 허용하며, API key/recovery key/Authorization 혼용을
+  값 유무와 중복에 관계없이 거부하고 장치 목록/승인/폐기 세 경로에 `no-store` cache policy를 적용한다.
+- 폐기 소스 transaction은 장치 상태, 준비/활성 refresh credential, 요청/준비 rotation을 함께
+  종료하도록 구현했다. 이 entry 시점에는 token endpoint와 per-request bearer guard가 없었다. 현재는
+  heartbeat/canary 보호 경로 소스에 guard가 구현되었지만, legacy static-key 업무 호출이나 실제 PC의
+  원격 업무 중지를 즉시 차단하지는 않는다.
+
+**검증 및 경계**:
+
+- `webhard-api` 장치 인증 source Jest 21 suites / 303 tests, TypeScript, Nest build, Prisma schema
+  validate를 통과했다. 관리자 UI Jest 4 suites / 32 tests, TypeScript, Prettier를 통과했고, canonical
+  fixture JS/Python 검증은 아직 데스크톱 전환 사본이 없으므로 `--require-copies 0` 범위에서 통과했다.
+- 실제 DB migration, secret, PC 등록·승인·폐기, key 재발급, endpoint 배포는 실행하지 않았다.
+
+### 2026-07-20 — central-device-auth-bootstrap-source-boundary
+
+**Scope**: 회사사이트 중앙 장치 인증의 관리자 등록코드·공개 bootstrap 소스 경계.
+
+**수정**:
+
+- admin session 전용 등록코드 발급 화면과 CSRF 준비 경로를 추가했다. 대상은 외부웹하드동기화,
+  관리프로그램, 레이저네스팅프로그램뿐이며 `computeroff`는 제외한다.
+- 공개 enroll/status는 4 KiB non-inflating parser, metadata CSRF 예외, ambient credential 차단,
+  exact payload shape, 전용 Upstash `EVAL` rate/replay store를 사용하도록 소스에 구현했다.
+- raw 등록코드·attempt·refresh credential은 응답/오류/로그/Redis key에 남기지 않고, Redis key는
+  DEV/STG/PRD 분리 HMAC 식별자만 사용한다.
+
+**검증 및 경계**:
+
+- clean RC source Jest와 TypeScript 검증을 실행했다. 실제 Upstash, secret, DB migration,
+  public deployment, PC 등록·승인·폐기·재발급은 실행하지 않았다.
+- Railway/edge proxy chain, trusted client identity, WAF abuse 제어가 별도 운영 승인 gate다.
+
+### 2026-07-20 — integration-programs-legacy-heartbeat-boundary
+
+**Scope**: legacy 프로그램 heartbeat의 API key 최소권한과 PC 메타데이터 최소수집.
+
+**수정**:
+
+- `POST /api/v1/integration/programs/heartbeat`는 `event/write` 또는 legacy `all` API key만 허용하고, admin/company/worker session을 쓰기 principal에서 제외한다.
+- `GET /api/v1/integration/programs`는 admin session 또는 `operation/read`/legacy `all` API key만 허용한다.
+- legacy wire의 `hostname`/`metadata` DTO 수신 호환은 유지하지만 새 heartbeat upsert에 저장하지 않고, 목록은 명시적으로 선택한 안전 필드만 반환한다. 기존 DB 값의 삭제·정리는 수행하지 않는다.
+
+**검증**:
+
+- clean RC source test 3 suites / 19 tests 통과 (`programs.service`, `programs-access.guard`, `programs.controller`).
+- 실제 DB, migration, seed, API 배포, API key 발급·폐기, PC 호출은 실행하지 않았다.
+
 ### 2026-07-09 — integration-bank-notification-test-filter
 
 **Scope**: IBK 은행 알림 테스트 마커의 운영 저장 차단과 기존 테스트 row 정리.

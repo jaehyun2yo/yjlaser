@@ -20,6 +20,10 @@ import { FileTransferController } from './file-transfer/file-transfer.controller
 import { LogEventsModule } from './log-events/log-events.module';
 import { IntegrationContactsModule } from './contacts/contacts.module';
 import { BankNotificationsModule } from './bank-notifications/bank-notifications.module';
+import { DeviceAuthModule } from './device-auth/device-auth.module';
+import { ApiKeyGuard } from './auth/api-key.guard';
+import { DeviceEndpointPolicyGuard } from './auth/device-endpoint-policy.guard';
+import { IntegrationPrincipalSourceGuard } from './auth/integration-principal-source.guard';
 
 @Module({
   imports: [
@@ -42,8 +46,10 @@ import { BankNotificationsModule } from './bank-notifications/bank-notifications
     LogEventsModule,
     IntegrationContactsModule,
     BankNotificationsModule,
+    DeviceAuthModule,
   ],
   controllers: [ApiKeyController, FileTransferController],
+  providers: [ApiKeyGuard, IntegrationPrincipalSourceGuard, DeviceEndpointPolicyGuard],
   exports: [
     ApiKeyModule,
     OrdersModule,
@@ -62,6 +68,8 @@ import { BankNotificationsModule } from './bank-notifications/bank-notifications
     LogEventsModule,
     IntegrationContactsModule,
     BankNotificationsModule,
+    IntegrationPrincipalSourceGuard,
+    DeviceEndpointPolicyGuard,
   ],
 })
 export class IntegrationModule {}

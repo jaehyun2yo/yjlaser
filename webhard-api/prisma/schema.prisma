@@ -19,6 +19,34 @@ enum DriveProvisioningStatus {
   FAILED  @map("failed")
 }
 
+enum IntegrationDeviceStatus {
+  pending_approval
+  active
+  revoked
+}
+
+enum DeviceRefreshCredentialStatus {
+  prepared
+  active
+  revoked
+}
+
+enum DeviceCredentialRotationStatus {
+  requested
+  prepared
+  acknowledged
+  timed_out
+  cancelled
+  expired
+  revoked
+}
+
+enum DeviceTokenExchangeStatus {
+  completed
+  revoked
+  expired
+}
+
 model Company {
   // === 기존 필드 (유지) ===
   id          Int       @id @default(autoincrement())
@@ -517,6 +545,178 @@ model ApiKey {
   @@map("api_keys")
 }
 
+model IntegrationDevice {
+  id                  String                  @id @default(uuid())
+  environment         String                  @db.VarChar(3)
+  // Device program-type allowlisting remains a service-layer concern; the persistence layer intentionally stores a free string.
+  programType         String                  @map("program_type") @db.VarChar(50)
+  capabilityProfile   String                  @default("standard") @map("capability_profile") @db.VarChar(20)
+  displayName         String                  @map("display_name") @db.VarChar(100)
+  appVersion          String?                 @map("app_version") @db.VarChar(50)
+  status              IntegrationDeviceStatus @default(pending_approval)
+  credentialVersion   Int                     @default(1) @map("credential_version")
+  approvedAt          DateTime?               @map("approved_at")
+  approvedByActorHash String?                 @map("approved_by_actor_hash") @db.VarChar(128)
+  enrolledAt          DateTime                @default(now()) @map("enrolled_at")
+  lastHeartbeatAt     DateTime?               @map("last_heartbeat_at")
+  revokedAt           DateTime?               @map("revoked_at")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+
+  enrollments            DeviceEnrollment[]         @relation("DeviceEnrollmentDevice")
+  replacementEnrollments DeviceEnrollment[]         @relation("DeviceEnrollmentReplacementTarget")
+  refreshCredentials     DeviceRefreshCredential[]
+  rotations              DeviceCredentialRotation[]
+  tokenExchanges         DeviceTokenExchange[]
+  auditLogs              DeviceCredentialAuditLog[]
+  heartbeats             ProgramHeartbeat[]
+
+  @@index([environment, programType, status])
+  @@index([programType, status])
+  @@map("integration_devices")
+}
+
+model DeviceEnrollment {
+  id                      String    @id @default(uuid())
+  deviceId                String?   @map("device_id")
+  environment             String    @db.VarChar(3)
+  programType             String    @map("program_type") @db.VarChar(50)
+  capabilityProfile       String    @default("standard") @map("capability_profile") @db.VarChar(20)
+  enrollmentCodeHash      String    @unique @map("enrollment_code_hash") @db.VarChar(128)
+  hashKeyVersion          Int       @default(1) @map("hash_key_version")
+  candidateCredentialHash String?   @map("candidate_credential_hash") @db.VarChar(128)
+  expectedDisplayNameHash String?   @map("expected_display_name_hash") @db.VarChar(128)
+  replacementDeviceId     String?   @map("replacement_device_id")
+  approvalPolicy          String    @default("pending_approval") @map("approval_policy") @db.VarChar(30)
+  actorHash               String?   @map("actor_hash") @db.VarChar(128)
+  expiresAt               DateTime  @map("expires_at")
+  consumedAt              DateTime? @map("consumed_at")
+  invalidatedAt           DateTime? @map("invalidated_at")
+  consumedAttemptHash     String?   @map("consumed_attempt_hash") @db.VarChar(128)
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  device            IntegrationDevice?         @relation("DeviceEnrollmentDevice", fields: [deviceId], references: [id], onDelete: SetNull)
+  replacementDevice IntegrationDevice?         @relation("DeviceEnrollmentReplacementTarget", fields: [replacementDeviceId], references: [id], onDelete: SetNull)
+  auditLogs         DeviceCredentialAuditLog[]
+
+  @@index([deviceId])
+  @@index([replacementDeviceId])
+  @@index([expiresAt])
+  @@map("device_enrollments")
+}
+
+model DeviceRefreshCredential {
+  id                         String                        @id @default(uuid())
+  deviceId                   String                        @map("device_id")
+  credentialHash             String                        @unique @map("credential_hash") @db.VarChar(128)
+  hashKeyVersion             Int                           @default(1) @map("hash_key_version")
+  status                     DeviceRefreshCredentialStatus @default(prepared)
+  credentialVersion          Int                           @map("credential_version")
+  actorHash                  String?                       @map("actor_hash") @db.VarChar(128)
+  expiresAt                  DateTime                      @map("expires_at")
+  lastUsedAt                 DateTime?                     @map("last_used_at")
+  revokedAt                  DateTime?                     @map("revoked_at")
+  tokenRequestIdHash         String?                       @map("token_request_id_hash") @db.VarChar(128)
+  tokenRequestAt             DateTime?                     @map("token_request_at")
+  tokenResponseReferenceHash String?                       @map("token_response_reference_hash") @db.VarChar(128)
+  tokenResponseIssuedAt      DateTime?                     @map("token_response_issued_at")
+  tokenResponseReplayUntil   DateTime?                     @map("token_response_replay_until")
+  createdAt                  DateTime                      @default(now()) @map("created_at")
+  updatedAt                  DateTime                      @updatedAt @map("updated_at")
+
+  device                 IntegrationDevice          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  rotationCandidate      DeviceCredentialRotation?  @relation("DeviceCredentialRotationCandidate")
+  predecessorRotations   DeviceCredentialRotation[] @relation("DeviceCredentialRotationPredecessor")
+  previousTokenExchanges DeviceTokenExchange[]      @relation("DeviceTokenExchangePrevious")
+  successorTokenExchange DeviceTokenExchange?       @relation("DeviceTokenExchangeSuccessor")
+  auditLogs              DeviceCredentialAuditLog[]
+
+  @@unique([id, deviceId])
+  @@index([deviceId, status])
+  @@index([expiresAt])
+  @@map("device_refresh_credentials")
+}
+
+model DeviceCredentialRotation {
+  id                      String                         @id @default(uuid())
+  deviceId                String                         @map("device_id")
+  baseCredentialVersion   Int?                           @map("base_credential_version")
+  predecessorCredentialId String?                        @map("predecessor_credential_id")
+  candidateCredentialId   String?                        @unique @map("candidate_credential_id")
+  status                  DeviceCredentialRotationStatus @default(requested)
+  actorHash               String?                        @map("actor_hash") @db.VarChar(128)
+  requestReason           String?                        @map("request_reason") @db.VarChar(200)
+  deadlineAt              DateTime                       @map("deadline_at")
+  preparedAt              DateTime?                      @map("prepared_at")
+  acknowledgedAt          DateTime?                      @map("acknowledged_at")
+  timedOutAt              DateTime?                      @map("timed_out_at")
+  cancelledAt             DateTime?                      @map("cancelled_at")
+  expiredAt               DateTime?                      @map("expired_at")
+  revokedAt               DateTime?                      @map("revoked_at")
+  createdAt               DateTime                       @default(now()) @map("created_at")
+  updatedAt               DateTime                       @updatedAt @map("updated_at")
+
+  device                IntegrationDevice          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  predecessorCredential DeviceRefreshCredential?   @relation("DeviceCredentialRotationPredecessor", fields: [predecessorCredentialId, deviceId], references: [id, deviceId], onDelete: NoAction, onUpdate: NoAction, map: "device_credential_rotations_predecessor_credential_device_fkey")
+  candidateCredential   DeviceRefreshCredential?   @relation("DeviceCredentialRotationCandidate", fields: [candidateCredentialId, deviceId], references: [id, deviceId], onDelete: NoAction, onUpdate: NoAction, map: "device_credential_rotations_candidate_credential_device_fkey")
+  auditLogs             DeviceCredentialAuditLog[]
+
+  @@unique([candidateCredentialId, deviceId])
+  @@index([deviceId, status])
+  @@index([predecessorCredentialId, status], map: "device_credential_rotations_predecessor_status_idx")
+  @@index([deadlineAt])
+  @@map("device_credential_rotations")
+}
+
+model DeviceTokenExchange {
+  id                    String                    @id @default(uuid())
+  deviceId              String                    @map("device_id")
+  previousCredentialId  String                    @map("previous_credential_id")
+  successorCredentialId String                    @unique @map("successor_credential_id")
+  requestIdDigest       String                    @map("request_id_digest") @db.VarChar(128)
+  credentialVersion     Int                       @map("credential_version")
+  status                DeviceTokenExchangeStatus @default(completed)
+  completedAt           DateTime                  @map("completed_at")
+  recoverableUntil      DateTime                  @map("recoverable_until")
+  revokedAt             DateTime?                 @map("revoked_at")
+  createdAt             DateTime                  @default(now()) @map("created_at")
+
+  device    IntegrationDevice       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  previous  DeviceRefreshCredential @relation("DeviceTokenExchangePrevious", fields: [previousCredentialId, deviceId], references: [id, deviceId], onDelete: Cascade)
+  successor DeviceRefreshCredential @relation("DeviceTokenExchangeSuccessor", fields: [successorCredentialId, deviceId], references: [id, deviceId], onDelete: Cascade)
+
+  @@unique([deviceId, requestIdDigest])
+  @@unique([successorCredentialId, deviceId])
+  @@index([previousCredentialId, status])
+  @@index([recoverableUntil])
+  @@map("device_token_exchanges")
+}
+
+model DeviceCredentialAuditLog {
+  id                  String   @id @default(uuid())
+  deviceId            String   @map("device_id")
+  enrollmentId        String?  @map("enrollment_id")
+  refreshCredentialId String?  @map("refresh_credential_id")
+  rotationId          String?  @map("rotation_id")
+  action              String   @db.VarChar(80)
+  actorHash           String?  @map("actor_hash") @db.VarChar(128)
+  expiresAt           DateTime @map("expires_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  device     IntegrationDevice         @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  enrollment DeviceEnrollment?         @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+  credential DeviceRefreshCredential?  @relation(fields: [refreshCredentialId], references: [id], onDelete: SetNull)
+  rotation   DeviceCredentialRotation? @relation(fields: [rotationId], references: [id], onDelete: SetNull)
+
+  @@index([deviceId, createdAt(sort: Desc)])
+  @@index([enrollmentId])
+  @@index([refreshCredentialId])
+  @@index([rotationId])
+  @@index([expiresAt])
+  @@map("device_credential_audit_logs")
+}
+
 model ProgramHeartbeat {
   id           String   @id @default(uuid())
   programType  String   @map("program_type") @db.VarChar(30)
@@ -528,6 +728,9 @@ model ProgramHeartbeat {
   metadata     Json?
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+  deviceId     String?  @unique @map("device_id")
+
+  device IntegrationDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
 
   @@unique([programType, instanceName])
   @@map("program_heartbeats")

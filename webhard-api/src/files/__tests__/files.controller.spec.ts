@@ -12,6 +12,7 @@ import { FilesService } from '../files.service';
 import { StorageService } from '../../storage/storage.service';
 import { ZipService } from '../zip.service';
 import { SessionUser } from '../../auth/auth.service';
+import type { CurrentIntegrationPrincipalValue } from '../../integration/auth/current-integration-principal.decorator';
 import {
   FileResponseDto,
   FileListResponseDto,
@@ -43,6 +44,13 @@ function makeCompanyUser(companyId = 123): SessionUser {
     userType: 'company',
     userId: `company-${companyId}`,
     companyId,
+  };
+}
+
+function asSessionPrincipal(user: SessionUser): CurrentIntegrationPrincipalValue {
+  return {
+    mode: user.userType === 'admin' ? 'admin_session' : 'company_session',
+    user,
   };
 }
 
@@ -138,7 +146,7 @@ describe('FilesController', () => {
 
       filesService.getFiles.mockResolvedValue(expectedResponse);
 
-      const result = await controller.getFiles(query, user);
+      const result = await controller.getFiles(query, asSessionPrincipal(user));
 
       expect(filesService.getFiles).toHaveBeenCalledWith(query, user);
       expect(result).toEqual(expectedResponse);
@@ -159,7 +167,7 @@ describe('FilesController', () => {
 
       filesService.getFiles.mockResolvedValue(expectedResponse);
 
-      const result = await controller.getFiles(query, user);
+      const result = await controller.getFiles(query, asSessionPrincipal(user));
 
       expect(filesService.getFiles).toHaveBeenCalledWith(query, user);
       expect(result.files[0].company_id).toBe(123);
@@ -177,7 +185,7 @@ describe('FilesController', () => {
 
       filesService.getFiles.mockResolvedValue(expectedResponse);
 
-      await controller.getFiles(query, user);
+      await controller.getFiles(query, asSessionPrincipal(user));
 
       expect(filesService.getFiles).toHaveBeenCalledWith(
         expect.objectContaining({ sortBy: 'name', sortOrder: 'asc' }),
@@ -302,7 +310,7 @@ describe('FilesController', () => {
 
       filesService.getUploadPresignedUrl.mockResolvedValue(expectedUrl);
 
-      const result = await controller.getPresignedUrl(dto, user);
+      const result = await controller.getPresignedUrl(dto, asSessionPrincipal(user));
 
       expect(filesService.getUploadPresignedUrl).toHaveBeenCalledWith(dto, user);
       expect(result).toEqual(expectedUrl);
@@ -326,7 +334,7 @@ describe('FilesController', () => {
 
       filesService.confirmUpload.mockResolvedValue(savedFile);
 
-      const result = await controller.confirmUpload(dto, user);
+      const result = await controller.confirmUpload(dto, asSessionPrincipal(user));
 
       expect(filesService.confirmUpload).toHaveBeenCalledWith(dto, user);
       expect(result).toEqual(savedFile);
@@ -407,7 +415,7 @@ describe('FilesController', () => {
 
       filesService.renameFile.mockResolvedValue(renamedFile);
 
-      const result = await controller.renameFile(fileId, dto, user);
+      const result = await controller.renameFile(fileId, dto, asSessionPrincipal(user));
 
       expect(filesService.renameFile).toHaveBeenCalledWith(fileId, dto, user);
       expect(result).toEqual(renamedFile);
@@ -425,7 +433,7 @@ describe('FilesController', () => {
 
       filesService.moveFile.mockResolvedValue(movedFile);
 
-      const result = await controller.moveFile(fileId, dto, user);
+      const result = await controller.moveFile(fileId, dto, asSessionPrincipal(user));
 
       expect(filesService.moveFile).toHaveBeenCalledWith(fileId, dto, user);
       expect(result).toEqual(movedFile);
@@ -439,7 +447,7 @@ describe('FilesController', () => {
 
       filesService.moveFile.mockResolvedValue(movedFile);
 
-      const result = await controller.moveFile(fileId, dto, user);
+      const result = await controller.moveFile(fileId, dto, asSessionPrincipal(user));
 
       expect(result.folder_id).toBeNull();
     });

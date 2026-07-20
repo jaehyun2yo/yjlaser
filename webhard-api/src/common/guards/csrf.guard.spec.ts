@@ -1,5 +1,8 @@
 import { ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { CSRF_EXEMPT_METADATA_KEY, CsrfExempt } from '../decorators/csrf-exempt.decorator';
 import { CsrfGuard } from './csrf.guard';
+import { DeviceBearerController } from '../../integration/device-auth/device-bearer.controller';
 
 type LoggedSecurityEvent = {
   project?: string;
@@ -16,6 +19,8 @@ function makeContext(input: {
   headers?: Record<string, string | undefined>;
   cookies?: Record<string, string>;
   path?: string;
+  handler?: Function;
+  targetClass?: Function;
 }): ExecutionContext {
   return {
     switchToHttp: () => ({
@@ -26,7 +31,9 @@ function makeContext(input: {
         path: input.path || '/api/v1/auth/find-id/request',
       }),
     }),
-  } as ExecutionContext;
+    getHandler: () => input.handler || (() => undefined),
+    getClass: () => input.targetClass || class TestController {},
+  } as unknown as ExecutionContext;
 }
 
 describe('CsrfGuard', () => {
@@ -45,6 +52,89 @@ describe('CsrfGuard', () => {
         })
       )
     ).toBe(true);
+  });
+
+  it('명시적으로 CsrfExempt 처리한 handler만 CSRF 검증을 건너뛴다', () => {
+    class PublicDeviceAuthController {
+      @CsrfExempt()
+      public enroll(): void {}
+    }
+
+    const createGuardWithReflector = CsrfGuard as unknown as new (
+      reflector: Reflector
+    ) => CsrfGuard;
+    const guard = new createGuardWithReflector(new Reflector());
+
+    expect(
+      guard.canActivate(
+        makeContext({
+          method: 'POST',
+          handler: PublicDeviceAuthController.prototype.enroll,
+          targetClass: PublicDeviceAuthController,
+        })
+      )
+    ).toBe(true);
+    expect(
+      Reflect.getMetadata(CSRF_EXEMPT_METADATA_KEY, PublicDeviceAuthController.prototype.enroll)
+    ).toBe(true);
+  });
+
+  it('명시적으로 CsrfExempt 처리한 controller class도 CSRF 검증을 건너뛴다', () => {
+    @CsrfExempt()
+    class PublicDeviceAuthController {
+      public enrollmentStatus(): void {}
+    }
+
+    const createGuardWithReflector = CsrfGuard as unknown as new (
+      reflector: Reflector
+    ) => CsrfGuard;
+    const guard = new createGuardWithReflector(new Reflector());
+
+    expect(
+      guard.canActivate(
+        makeContext({
+          method: 'POST',
+          handler: PublicDeviceAuthController.prototype.enrollmentStatus,
+          targetClass: PublicDeviceAuthController,
+        })
+      )
+    ).toBe(true);
+  });
+
+  it.each(['heartbeat', 'canary'] as const)(
+    'bearer device %s handler의 CSRF 면제는 명시적 metadata로만 적용된다',
+    (methodName) => {
+      const guard = new CsrfGuard(new Reflector());
+      const handler = DeviceBearerController.prototype[methodName];
+
+      expect(Reflect.getMetadata(CSRF_EXEMPT_METADATA_KEY, handler)).toBe(true);
+      expect(
+        guard.canActivate(
+          makeContext({
+            method: 'POST',
+            path: `/api/v1/integration/devices/${methodName}`,
+            handler,
+            targetClass: DeviceBearerController,
+          })
+        )
+      ).toBe(true);
+    }
+  );
+
+  it('CsrfExempt metadata가 없는 handler는 Reflector가 있어도 기존 CSRF 검증을 유지한다', () => {
+    const createGuardWithReflector = CsrfGuard as unknown as new (
+      reflector: Reflector
+    ) => CsrfGuard;
+    const guard = new createGuardWithReflector(new Reflector());
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    expect(() =>
+      guard.canActivate(
+        makeContext({
+          method: 'POST',
+        })
+      )
+    ).toThrow(ForbiddenException);
   });
 
   it('key와 csrf token이 없는 POST 요청은 거부한다', () => {

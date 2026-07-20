@@ -1,4 +1,5 @@
 import {
+  DEFAULT_DEVICE_ACCESS_PERMISSIONS,
   DEFAULT_INTEGRATION_WORKER_PERMISSIONS,
   INTEGRATION_PERMISSIONS,
   INTEGRATION_WORKER_TYPES,
@@ -8,6 +9,31 @@ import {
 } from './integration-permissions';
 
 describe('integration permissions', () => {
+  it('device access 기본 권한은 legacy worker 기본값과 분리한다', () => {
+    expect(DEFAULT_DEVICE_ACCESS_PERMISSIONS).toEqual({
+      external_webhard_sync: [
+        'folder/read',
+        'folder/write',
+        'folder/move',
+        'file/read',
+        'file/write',
+        'file/move',
+      ],
+      management_program: [
+        'event/write',
+        'job/read',
+        'bank-notification/read',
+        'bank-notification/manage',
+      ],
+      nesting_program: [],
+    });
+
+    expect(DEFAULT_INTEGRATION_WORKER_PERMISSIONS.external_webhard_sync).toEqual([
+      'file/register',
+      'event/write',
+    ]);
+  });
+
   it('계약 문서의 worker scope 이름을 상수로 고정한다', () => {
     expect(INTEGRATION_PERMISSIONS).toEqual([
       'contact/process-stage:write',
@@ -18,6 +44,12 @@ describe('integration permissions', () => {
       'bank-notification/write',
       'bank-notification/read',
       'bank-notification/manage',
+      'folder/read',
+      'folder/write',
+      'folder/move',
+      'file/read',
+      'file/write',
+      'file/move',
     ]);
   });
 

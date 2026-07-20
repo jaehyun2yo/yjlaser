@@ -23,7 +23,13 @@ import { Readable } from 'stream';
 import { FilesService } from './files.service';
 import { StorageService } from '../storage/storage.service';
 import { ZipService } from './zip.service';
-import { ApiKeyGuard } from '../integration/auth/api-key.guard';
+import { DeviceEndpointPolicyGuard } from '../integration/auth/device-endpoint-policy.guard';
+import { IntegrationPrincipalSourceGuard } from '../integration/auth/integration-principal-source.guard';
+import { RequireDeviceEndpointPolicy } from '../integration/auth/require-device-endpoint-policy.decorator';
+import {
+  CurrentIntegrationPrincipal,
+  type CurrentIntegrationPrincipalValue,
+} from '../integration/auth/current-integration-principal.decorator';
 import { AllowWorkerSession } from '../integration/auth/allow-worker-session.decorator';
 import { AllowIntegrationPrincipal } from '../integration/auth/allow-integration-principal.decorator';
 import { RequireIntegrationPermission } from '../integration/auth/require-integration-permission.decorator';
@@ -54,7 +60,7 @@ const GOOGLE_DRIVE_UPLOAD_HOST = 'www.googleapis.com';
 const GOOGLE_DRIVE_UPLOAD_PATH = '/upload/drive/v3/files';
 
 @Controller('files')
-@UseGuards(ApiKeyGuard, CompanyAccessGuard)
+@UseGuards(IntegrationPrincipalSourceGuard, DeviceEndpointPolicyGuard, CompanyAccessGuard)
 export class FilesController {
   private readonly logger = new Logger(FilesController.name);
 
@@ -69,8 +75,15 @@ export class FilesController {
    */
   @Get()
   @AllowWorkerSession()
-  async getFiles(@Query() query: GetFilesQueryDto, @CurrentUser() user: SessionUser) {
-    return this.filesService.getFiles(query, user);
+  @RequireDeviceEndpointPolicy('GET', '/files')
+  async getFiles(
+    @Query() query: GetFilesQueryDto,
+    @CurrentIntegrationPrincipal() principal: CurrentIntegrationPrincipalValue
+  ) {
+    if (principal.mode === 'device_bearer') {
+      return this.filesService.getFilesForDevice(query, principal.device);
+    }
+    return this.filesService.getFiles(query, principal.user);
   }
 
   /**
@@ -112,8 +125,15 @@ export class FilesController {
   @Post('presigned-url')
   @AllowIntegrationPrincipal()
   @RequireIntegrationPermission('file/register')
-  async getPresignedUrl(@Body() dto: CreatePresignedUrlDto, @CurrentUser() user: SessionUser) {
-    return this.filesService.getUploadPresignedUrl(dto, user);
+  @RequireDeviceEndpointPolicy('POST', '/files/presigned-url')
+  async getPresignedUrl(
+    @Body() dto: CreatePresignedUrlDto,
+    @CurrentIntegrationPrincipal() principal: CurrentIntegrationPrincipalValue
+  ) {
+    if (principal.mode === 'device_bearer') {
+      return this.filesService.getUploadPresignedUrlForDevice(dto, principal.device);
+    }
+    return this.filesService.getUploadPresignedUrl(dto, principal.user);
   }
 
   /**
@@ -133,8 +153,15 @@ export class FilesController {
   @Post('confirm')
   @AllowIntegrationPrincipal()
   @RequireIntegrationPermission('file/register')
-  async confirmUpload(@Body() dto: ConfirmUploadDto, @CurrentUser() user: SessionUser) {
-    return this.filesService.confirmUpload(dto, user);
+  @RequireDeviceEndpointPolicy('POST', '/files/confirm')
+  async confirmUpload(
+    @Body() dto: ConfirmUploadDto,
+    @CurrentIntegrationPrincipal() principal: CurrentIntegrationPrincipalValue
+  ) {
+    if (principal.mode === 'device_bearer') {
+      return this.filesService.confirmUploadForDevice(dto, principal.device);
+    }
+    return this.filesService.confirmUpload(dto, principal.user);
   }
 
   /**
@@ -296,24 +323,32 @@ export class FilesController {
    * PATCH /files/:id/rename - Rename file
    */
   @Patch(':id/rename')
+  @RequireDeviceEndpointPolicy('PATCH', '/files/:id/rename')
   async renameFile(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RenameFileDto,
-    @CurrentUser() user: SessionUser
+    @CurrentIntegrationPrincipal() principal: CurrentIntegrationPrincipalValue
   ) {
-    return this.filesService.renameFile(id, dto, user);
+    if (principal.mode === 'device_bearer') {
+      return this.filesService.renameFileForDevice(id, dto, principal.device);
+    }
+    return this.filesService.renameFile(id, dto, principal.user);
   }
 
   /**
    * PATCH /files/:id/move - Move file to another folder
    */
   @Patch(':id/move')
+  @RequireDeviceEndpointPolicy('PATCH', '/files/:id/move')
   async moveFile(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: MoveFileDto,
-    @CurrentUser() user: SessionUser
+    @CurrentIntegrationPrincipal() principal: CurrentIntegrationPrincipalValue
   ) {
-    return this.filesService.moveFile(id, dto, user);
+    if (principal.mode === 'device_bearer') {
+      return this.filesService.moveFileForDevice(id, dto, principal.device);
+    }
+    return this.filesService.moveFile(id, dto, principal.user);
   }
 
   /**

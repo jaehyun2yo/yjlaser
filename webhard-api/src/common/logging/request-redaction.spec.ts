@@ -3,7 +3,12 @@ import type { ArgumentsHost, CallHandler, ExecutionContext } from '@nestjs/commo
 import { throwError, firstValueFrom } from 'rxjs';
 import { GlobalExceptionFilter } from '../filters/global-exception.filter';
 import { RequestLoggingInterceptor } from '../interceptors/request-logging.interceptor';
-import { redactErrorMessage, redactRequestUrl, safePrincipalLabel } from './request-redaction';
+import {
+  redactErrorMessage,
+  redactLogValue,
+  redactRequestUrl,
+  safePrincipalLabel,
+} from './request-redaction';
 
 function makeExecutionContext(request: Record<string, unknown>): ExecutionContext {
   return {
@@ -36,6 +41,42 @@ describe('request redaction helpers', () => {
     expect(redacted).not.toContain('raw-password');
     expect(redacted).not.toContain('raw-signature');
     expect(redacted).toContain('safe=1');
+  });
+
+  it('URL query와 object field의 device enrollment proof를 제거한다', () => {
+    const redactedUrl = redactRequestUrl(
+      '/api/v1/integration/device-auth/token?refreshCredential=raw-refresh-credential&nextRefreshCredential=raw-next-refresh-credential&refreshRequestId=raw-refresh-request-id&exchangeId=raw-exchange-id&requestIdDigest=raw-request-digest&authorization=Bearer%20raw-access-token&safe=1'
+    );
+    const redactedObject = redactLogValue({
+      refreshCredential: 'raw-refresh-credential',
+      nextRefreshCredential: 'raw-next-refresh-credential',
+      refreshRequestId: 'raw-refresh-request-id',
+      exchangeId: 'raw-exchange-id',
+      requestIdDigest: 'raw-request-digest',
+      predecessorCredentialId: 'raw-predecessor-id',
+      successorCredentialId: 'raw-successor-id',
+      rotation: 'raw-rotation-reference',
+      actor: 'raw-actor-reference',
+      authorization: 'Bearer raw-access-token',
+    });
+
+    expect(redactedUrl).not.toContain('raw-refresh-credential');
+    expect(redactedUrl).not.toContain('raw-next-refresh-credential');
+    expect(redactedUrl).not.toContain('raw-refresh-request-id');
+    expect(redactedUrl).not.toContain('raw-exchange-id');
+    expect(redactedUrl).not.toContain('raw-request-digest');
+    expect(redactedUrl).not.toContain('raw-access-token');
+    expect(redactedUrl).toContain('safe=1');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-refresh-credential');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-next-refresh-credential');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-refresh-request-id');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-exchange-id');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-request-digest');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-predecessor-id');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-successor-id');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-rotation-reference');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-actor-reference');
+    expect(JSON.stringify(redactedObject)).not.toContain('raw-access-token');
   });
 
   it('URL query 값 안에 들어온 presigned URL도 제거한다', () => {

@@ -10,7 +10,19 @@ const SENSITIVE_QUERY_KEYS = new Set([
   'authorization',
   'cookie',
   'expires',
+  'enrollment_code',
+  'enrollmentcode',
+  'enrollment_attempt_id',
+  'enrollmentattemptid',
+  'exchange_id',
+  'exchangeid',
+  'next_refresh_credential',
+  'nextrefreshcredential',
   'password',
+  'refresh_request_id',
+  'refreshrequestid',
+  'request_id_digest',
+  'requestiddigest',
   'resettoken',
   'reset_token',
   'secret',
@@ -22,11 +34,18 @@ const SENSITIVE_QUERY_KEYS = new Set([
 ]);
 
 const SENSITIVE_KEY_PARTS = [
+  'actor',
   'api_key',
   'apikey',
   'authorization',
   'cookie',
   'credential',
+  'enrollment_code',
+  'enrollmentcode',
+  'enrollment_attempt_id',
+  'enrollmentattemptid',
+  'exchange_id',
+  'exchangeid',
   'email',
   'mobile',
   'passwd',
@@ -34,13 +53,22 @@ const SENSITIVE_KEY_PARTS = [
   'phone',
   'private_key',
   'refresh_token',
+  'refresh_credential',
+  'refreshcredential',
+  'refresh_request_id',
+  'refreshrequestid',
+  'request_id_digest',
+  'requestiddigest',
   'secret',
   'session',
+  'predecessor',
+  'rotation',
+  'successor',
   'token',
 ] as const;
 
 const SENSITIVE_ASSIGNMENT_RE =
-  /\b(password|passwd|secret|token|auth|credential|jwt|api_key|apikey|service_role|anon_key|access_key|refresh_token|private_key|session|cookie|authorization|phone|email)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;]+)/gi;
+  /\b(actor|password|passwd|secret|token|auth|credential|jwt|api_key|apikey|service_role|anon_key|access_key|refresh_token|refresh_request_id|refreshrequestid|request_id_digest|requestiddigest|exchange_id|exchangeid|predecessor|successor|rotation|private_key|session|cookie|authorization|phone|email)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;]+)/gi;
 const AUTHORIZATION_RE = /\bAuthorization:\s*[^\r\n]*/gi;
 const COOKIE_RE = /\bCookie:\s*[^\r\n]*/gi;
 const LOCAL_PATH_RE = /[A-Z]:\\Users\\[^\\\s]+\\[^\s,;]+/gi;

@@ -2,6 +2,22 @@
 
 ## 최신 상태 (가장 위가 최신)
 
+### 세션 #146 — 2026-07-20
+
+- **작업 내용**: legacy `integration/programs` heartbeat 최소수집·권한 경계 보강
+- **반영 기준**:
+  - POST heartbeat는 `event/write` 또는 legacy `all` API key만 허용하고, admin/company/worker session은 쓰기 principal이 될 수 없다.
+  - GET 목록은 admin session 또는 `operation/read`/legacy `all` API key만 허용한다.
+  - legacy wire의 `hostname`/`metadata`는 수신 호환을 유지하되 새 row에 저장하거나 목록 응답에 반환하지 않는다.
+- **완료한 것**:
+  - `ProgramsAccessGuard`와 route별 integration permission을 추가해 POST/GET actor 경계를 분리했다.
+  - `ProgramsService` upsert에서 hostname/metadata write를 제거하고, 목록은 explicit Prisma select의 안전 필드만 읽도록 변경했다.
+  - service/guard/controller 회귀 테스트에서 hostile hostname/metadata와 API key·session actor matrix를 고정했다.
+- **검증**:
+  - clean RC 테스트 파일을 로컬 후보 runtime으로 실행: `programs.service.spec.ts`, `programs-access.guard.spec.ts`, `programs.controller.spec.ts` — 3 suites / 19 tests 통과.
+  - 실제 DB, migration, seed, API 배포, API key 발급·폐기, PC 호출은 실행하지 않았다.
+- **관련 커밋**: 미커밋
+
 ### 세션 #145 — 2026-07-09
 
 - **작업 내용**: IBK 은행 알림 테스트 마커 저장 차단과 정리 경로 추가

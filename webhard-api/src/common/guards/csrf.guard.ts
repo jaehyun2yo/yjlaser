@@ -5,7 +5,9 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import * as crypto from 'crypto';
+import { CSRF_EXEMPT_METADATA_KEY } from '../decorators/csrf-exempt.decorator';
 import { formatLogEvent, generateCorrelationId } from '../logging/log-event';
 
 /**
@@ -30,6 +32,8 @@ const LOG_INGESTION_PATH = '/api/v1/integration/log-events';
 export class CsrfGuard implements CanActivate {
   private readonly logger = new Logger(CsrfGuard.name);
 
+  public constructor(private readonly reflector?: Reflector) {}
+
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<{
       method: string;
@@ -42,6 +46,10 @@ export class CsrfGuard implements CanActivate {
 
     // GET / HEAD / OPTIONS는 상태를 변경하지 않으므로 스킵
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+      return true;
+    }
+
+    if (this.isCsrfExempt(context)) {
       return true;
     }
 
@@ -101,6 +109,23 @@ export class CsrfGuard implements CanActivate {
           path,
         },
       })
+    );
+  }
+
+  private isCsrfExempt(context: ExecutionContext): boolean {
+    if (
+      !this.reflector ||
+      typeof context.getHandler !== 'function' ||
+      typeof context.getClass !== 'function'
+    ) {
+      return false;
+    }
+
+    return (
+      this.reflector.getAllAndOverride<boolean>(CSRF_EXEMPT_METADATA_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
     );
   }
 }

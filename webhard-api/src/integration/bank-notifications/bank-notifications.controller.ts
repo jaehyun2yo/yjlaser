@@ -1,5 +1,7 @@
 import { Body, Controller, Delete, Get, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiKeyGuard } from '../auth/api-key.guard';
+import { DeviceEndpointPolicyGuard } from '../auth/device-endpoint-policy.guard';
+import { IntegrationPrincipalSourceGuard } from '../auth/integration-principal-source.guard';
+import { RequireDeviceEndpointPolicy } from '../auth/require-device-endpoint-policy.decorator';
 import { RequireIntegrationPermission } from '../auth/require-integration-permission.decorator';
 import { BankNotificationsService } from './bank-notifications.service';
 import {
@@ -11,7 +13,7 @@ import {
 } from './dto/bank-notification.dto';
 
 @Controller('integration/bank-notifications')
-@UseGuards(ApiKeyGuard)
+@UseGuards(IntegrationPrincipalSourceGuard, DeviceEndpointPolicyGuard)
 export class BankNotificationsController {
   constructor(private readonly service: BankNotificationsService) {}
 
@@ -23,12 +25,14 @@ export class BankNotificationsController {
 
   @Get()
   @RequireIntegrationPermission('bank-notification/read')
+  @RequireDeviceEndpointPolicy('GET', '/integration/bank-notifications')
   list(@Query() query: ListBankNotificationsQueryDto) {
     return this.service.list(query);
   }
 
   @Patch('mark-processed')
   @RequireIntegrationPermission('bank-notification/manage')
+  @RequireDeviceEndpointPolicy('PATCH', '/integration/bank-notifications/mark-processed')
   markProcessed(@Body() dto: MarkProcessedDto) {
     return this.service.markProcessed(dto);
   }
@@ -41,6 +45,7 @@ export class BankNotificationsController {
 
   @Post('backup-batches')
   @RequireIntegrationPermission('bank-notification/manage')
+  @RequireDeviceEndpointPolicy('POST', '/integration/bank-notifications/backup-batches')
   createBackupBatch(@Body() dto: CreateBackupBatchDto) {
     return this.service.createBackupBatch(dto);
   }
