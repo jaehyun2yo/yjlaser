@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### 2026-07-21 — root-lockfile-consistency
+
+**Scope**: 회사사이트 root pnpm lockfile와 CI frozen-install 정합성.
+
+**수정**:
+
+- root `pnpm-lock.yaml`을 package manifest의 10개 `pnpm.overrides` 및 기존 `nodemailer ^9.0.1` 선언에 맞춰 재생성했다.
+
+**검증 및 경계**:
+
+- exact pnpm 9 frozen lockfile-only 검증, scripts-off frozen install, TypeScript, root Jest 158 suites / 1,149 tests를 통과했다.
+- root lint는 이번 lockfile 변경과 무관한 기존 35 errors / 1,031 warnings로 실패한다. 실제 GitHub CI 재실행, 배포, migration, DB/secret/environment/server 작업은 수행하지 않았다.
+
 ### 2026-07-21 — device-auth-deployment-contract
 
 **Scope**: 회사사이트 장치 rotation의 CI, container startup, PostgreSQL enum migration 배포 경계.
