@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### 2026-07-21 — ci-gate-closure
+
+**Scope**: 회사사이트 root CI lint/test gate의 플랫폼 독립성 및 정적 검사 정합성.
+
+**수정**:
+
+- secret fallback static gate가 GitHub Ubuntu runner에 없는 `rg` 실행 파일에 의존하지 않도록 Node `fs`의 정렬 순회로 바꿨다. 기존 source root와 검사 제외 규칙은 유지한다.
+- 장치 인증 test/collector의 35개 ESLint 오류를 정적 import, 정확한 타입, 명확한 지역 변수명으로 해소했다. built artifact runtime probe에만 좁은 `createRequire(__filename)`을 사용한다.
+
+**검증 및 경계**:
+
+- root lint error-only 0/0, secret gate 1/5, 영향 Nest 11/220, root/backend TypeScript, collector runtime probe, Prettier, root Jest 158 suites / 1,149 tests를 통과했다.
+- 기존 lint warning 1,031건은 범위 밖으로 남겼다. 실제 GitHub CI 재실행, 배포, migration, DB/secret/environment/server 작업은 수행하지 않았다.
+
 ### 2026-07-21 — root-lockfile-consistency
 
 **Scope**: 회사사이트 root pnpm lockfile와 CI frozen-install 정합성.

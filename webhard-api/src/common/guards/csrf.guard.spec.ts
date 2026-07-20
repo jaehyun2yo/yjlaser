@@ -14,13 +14,16 @@ type LoggedSecurityEvent = {
   metadata: Record<string, unknown>;
 };
 
+type Handler = (...args: readonly unknown[]) => unknown;
+type ControllerClass = new (...args: readonly unknown[]) => unknown;
+
 function makeContext(input: {
   method: string;
   headers?: Record<string, string | undefined>;
   cookies?: Record<string, string>;
   path?: string;
-  handler?: Function;
-  targetClass?: Function;
+  handler?: Handler;
+  targetClass?: ControllerClass;
 }): ExecutionContext {
   return {
     switchToHttp: () => ({

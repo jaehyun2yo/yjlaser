@@ -27,6 +27,7 @@ import {
   DEVICE_CREDENTIAL_ROTATION_SERVICE,
   DeviceAuthModule,
 } from './device-auth.module';
+import * as deviceAuthModule from './device-auth.module';
 
 const PEPPER_V1 = 'synthetic-device-auth-module-pepper-v1-0123456789';
 const AUDIT_HMAC_SECRET = 'synthetic-device-auth-module-audit-hmac-0123456789';
@@ -61,8 +62,7 @@ function createEnvironment(overrides: Record<string, unknown> = {}): Record<stri
 }
 
 function getRequiredExportedSymbol(name: string): symbol {
-  const exportedModule = require('./device-auth.module') as Record<string, unknown>;
-  const value = exportedModule[name];
+  const value = deviceAuthModule[name as keyof typeof deviceAuthModule];
   if (typeof value !== 'symbol') {
     throw new Error(`${name} is not implemented as a symbol token`);
   }
@@ -183,7 +183,7 @@ describe('DeviceAuthModule', () => {
   });
 
   it('exports device-auth dependencies through symbols rather than service classes', () => {
-    const exportedModule = require('./device-auth.module') as Record<string, unknown>;
+    const exportedModule: Record<string, unknown> = deviceAuthModule;
 
     expect(typeof exportedModule.DEVICE_ACCESS_TOKEN_CONFIG).toBe('symbol');
     expect(typeof exportedModule.DEVICE_TOKEN_EXCHANGE_REQUEST_HASHER).toBe('symbol');

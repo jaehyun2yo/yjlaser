@@ -2,19 +2,15 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import * as express from 'express';
 import * as request from 'supertest';
-import type { NextFunction, Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import {
   createDeviceRotationFeatureGateMiddleware,
+  DeviceRotationFeatureGateMiddleware,
   isDeviceRotationAdminRequest,
 } from './device-rotation-feature-gate.middleware';
 
 function loadMiddleware(enabled: boolean) {
-  const loaded = require('./device-rotation-feature-gate.middleware') as Record<string, unknown>;
-  const Middleware = loaded.DeviceRotationFeatureGateMiddleware;
-  if (typeof Middleware !== 'function') throw new Error('rotation feature middleware missing');
-  return new (Middleware as new (options: { rotationRuntimeEnabled: boolean }) => {
-    use(request: Request, response: Response, next: NextFunction): void;
-  })({ rotationRuntimeEnabled: enabled });
+  return new DeviceRotationFeatureGateMiddleware({ rotationRuntimeEnabled: enabled });
 }
 
 describe('DeviceRotationFeatureGateMiddleware', () => {

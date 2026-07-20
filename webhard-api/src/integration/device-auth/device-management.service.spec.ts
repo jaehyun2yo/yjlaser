@@ -1,5 +1,6 @@
 import { loadDeviceAuthConfig } from './device-auth.config';
 import type { ApproveEnrollmentInput } from './device-auth.types';
+import * as deviceManagementServiceModule from './device-management.service';
 
 const NOW = new Date('2026-07-20T01:02:03.000Z');
 const DEVICE_ID = '4ac3e42f-437b-4e6b-88b5-5c12df8d1e4d';
@@ -92,11 +93,7 @@ function makeRevokePrisma(device: ManagedDeviceRow | null = makeDevice()) {
 }
 
 function loadServiceModule(): Record<string, unknown> {
-  try {
-    return require('./device-management.service') as Record<string, unknown>;
-  } catch {
-    return {};
-  }
+  return deviceManagementServiceModule;
 }
 
 function createServiceUnderTest(

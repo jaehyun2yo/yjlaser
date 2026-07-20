@@ -19,7 +19,7 @@ function expectMapped(error: unknown, status: number, code: string, message: str
 
 describe('device token exchange errors', () => {
   it('provides a dedicated public error mapper', () => {
-    expect(() => require('./device-token-exchange.errors')).not.toThrow();
+    expect(mapDeviceTokenExchangeError).toEqual(expect.any(Function));
   });
 
   it.each([

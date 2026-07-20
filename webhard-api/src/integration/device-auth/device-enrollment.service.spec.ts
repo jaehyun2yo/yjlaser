@@ -1,5 +1,6 @@
 import { loadDeviceAuthConfig } from './device-auth.config';
 import { hashDeviceCredential } from './device-credential-hash';
+import * as deviceEnrollmentServiceModule from './device-enrollment.service';
 
 const NOW = new Date('2026-07-20T00:00:00.000Z');
 const RETRY_NOW = new Date('2026-07-20T00:11:00.000Z');
@@ -184,11 +185,7 @@ function makeApprovalPrisma() {
 }
 
 function loadServiceModule(): Record<string, unknown> {
-  try {
-    return require('./device-enrollment.service') as Record<string, unknown>;
-  } catch {
-    return {};
-  }
+  return deviceEnrollmentServiceModule;
 }
 
 interface DeviceEnrollmentServiceLike {
@@ -238,8 +235,8 @@ function createServiceUnderTest(
 
 describe('DeviceEnrollmentService', () => {
   it('requires an explicit active credential TTL policy', () => {
-    const module = loadServiceModule();
-    const DeviceEnrollmentService = module.DeviceEnrollmentService;
+    const testingModule = loadServiceModule();
+    const DeviceEnrollmentService = testingModule.DeviceEnrollmentService;
 
     expect(typeof DeviceEnrollmentService).toBe('function');
     if (typeof DeviceEnrollmentService !== 'function') {
@@ -262,8 +259,8 @@ describe('DeviceEnrollmentService', () => {
   });
 
   it('creates a ten-minute hash-only enrollment code from injected server dependencies', async () => {
-    const module = loadServiceModule();
-    const DeviceEnrollmentService = module.DeviceEnrollmentService;
+    const testingModule = loadServiceModule();
+    const DeviceEnrollmentService = testingModule.DeviceEnrollmentService;
 
     expect(typeof DeviceEnrollmentService).toBe('function');
     if (typeof DeviceEnrollmentService !== 'function') {
@@ -342,8 +339,8 @@ describe('DeviceEnrollmentService', () => {
   });
 
   it('retries a serialization conflict with the same generated enrollment code', async () => {
-    const module = loadServiceModule();
-    const DeviceEnrollmentService = module.DeviceEnrollmentService;
+    const testingModule = loadServiceModule();
+    const DeviceEnrollmentService = testingModule.DeviceEnrollmentService;
 
     expect(typeof DeviceEnrollmentService).toBe('function');
     if (typeof DeviceEnrollmentService !== 'function') {
@@ -443,8 +440,8 @@ describe('DeviceEnrollmentService', () => {
   });
 
   it('replaces a rare enrollment-code hash collision with a fresh generated code', async () => {
-    const module = loadServiceModule();
-    const DeviceEnrollmentService = module.DeviceEnrollmentService;
+    const testingModule = loadServiceModule();
+    const DeviceEnrollmentService = testingModule.DeviceEnrollmentService;
 
     expect(typeof DeviceEnrollmentService).toBe('function');
     if (typeof DeviceEnrollmentService !== 'function') {
@@ -748,8 +745,8 @@ describe('DeviceEnrollmentService', () => {
   });
 
   it('consumes a retained-version code with an indexed OR lookup and atomically creates pending credentials', async () => {
-    const module = loadServiceModule();
-    const DeviceEnrollmentService = module.DeviceEnrollmentService;
+    const testingModule = loadServiceModule();
+    const DeviceEnrollmentService = testingModule.DeviceEnrollmentService;
 
     expect(typeof DeviceEnrollmentService).toBe('function');
     if (typeof DeviceEnrollmentService !== 'function') {
@@ -987,8 +984,8 @@ describe('DeviceEnrollmentService', () => {
   });
 
   it('normalizes an enrollment lookup failure to one safe unavailable code', async () => {
-    const module = loadServiceModule();
-    const DeviceEnrollmentService = module.DeviceEnrollmentService;
+    const testingModule = loadServiceModule();
+    const DeviceEnrollmentService = testingModule.DeviceEnrollmentService;
 
     expect(typeof DeviceEnrollmentService).toBe('function');
     if (typeof DeviceEnrollmentService !== 'function') {
@@ -1042,8 +1039,8 @@ describe('DeviceEnrollmentService', () => {
   });
 
   it('returns pending status only to the matching retained-version attempt and refresh proof', async () => {
-    const module = loadServiceModule();
-    const DeviceEnrollmentService = module.DeviceEnrollmentService;
+    const testingModule = loadServiceModule();
+    const DeviceEnrollmentService = testingModule.DeviceEnrollmentService;
 
     expect(typeof DeviceEnrollmentService).toBe('function');
     if (typeof DeviceEnrollmentService !== 'function') {
@@ -1315,8 +1312,8 @@ describe('DeviceEnrollmentService', () => {
   });
 
   it('rejects a status row unless the attempt proof itself verifies', async () => {
-    const module = loadServiceModule();
-    const DeviceEnrollmentService = module.DeviceEnrollmentService;
+    const testingModule = loadServiceModule();
+    const DeviceEnrollmentService = testingModule.DeviceEnrollmentService;
 
     expect(typeof DeviceEnrollmentService).toBe('function');
     if (typeof DeviceEnrollmentService !== 'function') {
@@ -1528,8 +1525,8 @@ describe('DeviceEnrollmentService', () => {
   });
 
   it('atomically approves one pending device and its prepared credential', async () => {
-    const module = loadServiceModule();
-    const DeviceEnrollmentService = module.DeviceEnrollmentService;
+    const testingModule = loadServiceModule();
+    const DeviceEnrollmentService = testingModule.DeviceEnrollmentService;
 
     expect(typeof DeviceEnrollmentService).toBe('function');
     if (typeof DeviceEnrollmentService !== 'function') {

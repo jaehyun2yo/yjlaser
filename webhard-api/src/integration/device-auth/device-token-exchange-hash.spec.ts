@@ -1,4 +1,5 @@
 import { createHmac } from 'crypto';
+import * as deviceTokenExchangeHashModule from './device-token-exchange-hash';
 
 const HMAC_SECRET = 'synthetic-token-exchange-hmac-secret-0123456789';
 const REQUEST_ID = Buffer.alloc(16, 7).toString('base64url');
@@ -18,11 +19,7 @@ interface DeviceTokenExchangeHashModule {
 }
 
 function loadHasherModule(): DeviceTokenExchangeHashModule {
-  try {
-    return require('./device-token-exchange-hash') as DeviceTokenExchangeHashModule;
-  } catch {
-    return {};
-  }
+  return deviceTokenExchangeHashModule;
 }
 
 function createHasher(
@@ -57,8 +54,8 @@ function expectHashError(action: () => unknown, code: string): void {
 
 describe('DeviceTokenExchangeRequestHasher', () => {
   it('creates a stable lowercase SHA-256 HMAC over the dedicated domain, selected environment, and request id', () => {
-    const module = loadHasherModule();
-    const domain = module.TOKEN_EXCHANGE_REQUEST_DOMAIN;
+    const testingModule = loadHasherModule();
+    const domain = testingModule.TOKEN_EXCHANGE_REQUEST_DOMAIN;
     if (typeof domain !== 'string') {
       throw new Error('TOKEN_EXCHANGE_REQUEST_DOMAIN is not implemented');
     }

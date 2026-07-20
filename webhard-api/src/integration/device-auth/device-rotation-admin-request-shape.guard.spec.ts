@@ -1,4 +1,5 @@
 import type { ExecutionContext } from '@nestjs/common';
+import { DeviceRotationAdminRequestShapeGuard } from './device-rotation-admin-request-shape.guard';
 
 const DEVICE_ID = '11111111-1111-4111-8111-111111111111';
 const ROTATION_ID = '22222222-2222-4222-8222-222222222222';
@@ -10,14 +11,7 @@ function context(request: Record<string, unknown>): ExecutionContext {
 }
 
 function loadGuard(enabled = true): { canActivate(context: ExecutionContext): boolean } {
-  const loaded = require('./device-rotation-admin-request-shape.guard') as Record<string, unknown>;
-  const Guard = loaded.DeviceRotationAdminRequestShapeGuard;
-  if (typeof Guard !== 'function') {
-    throw new Error('DeviceRotationAdminRequestShapeGuard is not implemented');
-  }
-  return new (Guard as new (options: { readonly rotationRuntimeEnabled: boolean }) => {
-    canActivate(context: ExecutionContext): boolean;
-  })({ rotationRuntimeEnabled: enabled });
+  return new DeviceRotationAdminRequestShapeGuard({ rotationRuntimeEnabled: enabled });
 }
 
 function validRequest(overrides: Record<string, unknown> = {}) {

@@ -1,5 +1,7 @@
 import { loadDeviceAuthConfig } from './device-auth.config';
 import { hashDeviceCredential } from './device-credential-hash';
+import * as deviceTokenExchangeHashModule from './device-token-exchange-hash';
+import * as deviceTokenExchangeServiceModule from './device-token-exchange.service';
 
 const NOW = new Date('2026-07-20T00:00:00.000Z');
 const DEVICE_ID = '8b3d9a4e-5c66-4c89-a813-4f33fd70fd21';
@@ -85,19 +87,11 @@ interface ExchangeRow {
 }
 
 function loadServiceModule(): DeviceTokenExchangeServiceModule {
-  try {
-    return require('./device-token-exchange.service') as DeviceTokenExchangeServiceModule;
-  } catch {
-    return {};
-  }
+  return deviceTokenExchangeServiceModule;
 }
 
 function loadHasherModule(): DeviceTokenExchangeHashModule {
-  try {
-    return require('./device-token-exchange-hash') as DeviceTokenExchangeHashModule;
-  } catch {
-    return {};
-  }
+  return deviceTokenExchangeHashModule;
 }
 
 function makeConfig() {

@@ -2,6 +2,7 @@ import 'reflect-metadata';
 
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { deserializeDeviceCredentialRotationStatus } from '../src/integration/device-auth/device-auth-rotation-compatibility';
@@ -17,6 +18,7 @@ import {
 } from '../src/integration/device-auth/device-rotation-feature-gate.middleware';
 
 const SOURCE_DIRECTORIES = ['src', 'prisma', 'scripts'] as const;
+const runtimeRequire = createRequire(__filename);
 const SOURCE_ROOT_FILES = [
   'Dockerfile',
   'jest.config.js',
@@ -245,7 +247,7 @@ export function verifyBuiltArtifactCompatibility(
     throw new Error('built_artifact_compatibility_module_missing');
   }
 
-  const compatibilityModule = require(modulePath) as BuiltCompatibilityModule;
+  const compatibilityModule = runtimeRequire(modulePath) as BuiltCompatibilityModule;
   if (typeof compatibilityModule.deserializeDeviceCredentialRotationStatus !== 'function') {
     throw new Error('built_artifact_compatibility_exports_missing');
   }
@@ -282,12 +284,14 @@ export function verifyBuiltArtifactCompatibility(
   ) {
     throw new Error('built_artifact_runtime_boundary_missing');
   }
-  const gateModule = require(gateModulePath) as {
+  const gateModule = runtimeRequire(gateModulePath) as {
     readonly DeviceRotationFeatureGateMiddleware?: unknown;
     readonly createDeviceRotationFeatureGateMiddleware?: RuntimeGateFactory;
   };
-  const authModule = require(authModulePath) as { readonly DeviceAuthModule?: RuntimeModuleClass };
-  const controllerModule = require(controllerModulePath) as {
+  const authModule = runtimeRequire(authModulePath) as {
+    readonly DeviceAuthModule?: RuntimeModuleClass;
+  };
+  const controllerModule = runtimeRequire(controllerModulePath) as {
     readonly DeviceCredentialRotationController?: RuntimeControllerClass;
     readonly DeviceCredentialRotationBearerController?: RuntimeControllerClass;
   };

@@ -2,13 +2,13 @@
  * @jest-environment node
  */
 
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 const REPO_ROOT = process.cwd();
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 const SOURCE_ROOTS = ['src', 'webhard-api/src', 'middleware.ts'];
+const IGNORED_DIRECTORY_NAMES = new Set(['.git', '.next', 'coverage', 'dist', 'node_modules']);
 
 const NON_EMPTY_SECRET_ENV_FALLBACK =
   /process\.env\.(?:SESSION_SECRET|SESSION_SECRET_PREVIOUS|MIGRATION_API_KEY|ACCOUNT_RECOVERY_API_KEY|R2_SECRET_ACCESS_KEY|JWT_SECRET)[^\r\n]*(?:\|\||\?\?)[^\r\n]*['"`][^'"`]{6,}['"`]/;
@@ -17,21 +17,46 @@ const DEV_ONLY_SECRET_LITERAL = /['"`]change-this-in-production-dev-only['"`]/;
 const DEVELOPMENT_RECOVERY_KEY_LITERAL = /['"`]yjlaser-dev-account-recovery-key['"`]/;
 
 function getProductionSourceFiles(): string[] {
-  const output = execFileSync('rg', ['--files', ...SOURCE_ROOTS], {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-  });
+  const sourceFiles = SOURCE_ROOTS.flatMap((sourceRoot) => collectSourceFiles(sourceRoot));
 
-  return output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
+  return sourceFiles
     .filter((relativePath) => SOURCE_EXTENSIONS.has(path.extname(relativePath)))
     .filter((relativePath) => !relativePath.includes('/__tests__/'))
     .filter((relativePath) => !relativePath.includes('\\__tests__\\'))
     .filter((relativePath) => !relativePath.endsWith('.test.ts'))
     .filter((relativePath) => !relativePath.endsWith('.spec.ts'))
     .filter((relativePath) => !relativePath.endsWith('.d.ts'));
+}
+
+function collectSourceFiles(relativeRoot: string): string[] {
+  const absoluteRoot = path.join(REPO_ROOT, relativeRoot);
+  const rootStat = statSync(absoluteRoot);
+  if (rootStat.isFile()) {
+    return [relativeRoot];
+  }
+
+  const sourceFiles: string[] = [];
+  const visit = (absoluteDirectory: string): void => {
+    const entries = readdirSync(absoluteDirectory, { withFileTypes: true }).sort((left, right) =>
+      left.name.localeCompare(right.name)
+    );
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith('.') && !IGNORED_DIRECTORY_NAMES.has(entry.name)) {
+          visit(path.join(absoluteDirectory, entry.name));
+        }
+        continue;
+      }
+
+      if (entry.isFile() && !entry.name.startsWith('.')) {
+        sourceFiles.push(path.relative(REPO_ROOT, path.join(absoluteDirectory, entry.name)));
+      }
+    }
+  };
+
+  visit(absoluteRoot);
+  return sourceFiles;
 }
 
 describe('secret fallback static gate', () => {

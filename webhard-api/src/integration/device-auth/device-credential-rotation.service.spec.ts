@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { loadDeviceAuthConfig } from './device-auth.config';
 import { hashDeviceCredential } from './device-credential-hash';
+import * as deviceCredentialRotationServiceModule from './device-credential-rotation.service';
 
 const NOW = new Date('2026-07-20T01:00:00.000Z');
 const DEVICE_ID = '11111111-1111-4111-8111-111111111111';
@@ -131,14 +132,13 @@ function createService(
     issue: jest.fn().mockResolvedValue('rotation-access-token'),
   }
 ): RotationServiceLike {
-  const loaded = require('./device-credential-rotation.service') as Record<string, unknown>;
-  const Service = loaded.DeviceCredentialRotationService;
+  const Service = deviceCredentialRotationServiceModule.DeviceCredentialRotationService;
   if (typeof Service !== 'function') {
     throw new Error('DeviceCredentialRotationService is not implemented');
   }
 
-  return new (Service as new (...args: readonly unknown[]) => RotationServiceLike)(
-    prisma,
+  return new Service(
+    prisma as unknown as ConstructorParameters<typeof Service>[0],
     loadDeviceAuthConfig({
       environment: 'dev',
       environments: {
@@ -158,7 +158,7 @@ function createService(
       activeCredentialTtlMs: 30 * 24 * 60 * 60 * 1000,
     },
     accessTokenService
-  );
+  ) as unknown as RotationServiceLike;
 }
 
 function expectRotationCode(error: unknown, code: string): void {

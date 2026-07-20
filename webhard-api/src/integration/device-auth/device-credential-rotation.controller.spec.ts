@@ -11,9 +11,15 @@ import { CsrfGuard } from '../../common/guards/csrf.guard';
 import { CsrfTokenMiddleware } from '../../common/middleware/csrf-token.middleware';
 import { DeviceEnrollmentAdminSessionSourceGuard } from './device-enrollment-admin-session-source.guard';
 import { DeviceManagementNoStoreMiddleware } from './device-management-no-store.middleware';
-import { DeviceCredentialRotationBearerController } from './device-credential-rotation.controller';
+import {
+  DeviceCredentialRotationBearerController,
+  DeviceCredentialRotationController,
+} from './device-credential-rotation.controller';
 import { DeviceCredentialRotationError } from './device-credential-rotation.service';
 import { DeviceAuthModule } from './device-auth.module';
+import * as deviceAuthTokens from './device-auth.tokens';
+import { DeviceRotationAdminRequestShapeGuard } from './device-rotation-admin-request-shape.guard';
+import { DeviceRotationFeatureGateMiddleware } from './device-rotation-feature-gate.middleware';
 
 const BASE = '/api/v1/integration/devices';
 const DEVICE_ID = '11111111-1111-4111-8111-111111111111';
@@ -39,17 +45,9 @@ describe('DeviceCredentialRotationController', () => {
 
   beforeAll(async () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
-    const controllerModule = require('./device-credential-rotation.controller') as Record<
-      string,
-      unknown
-    >;
-    const guardModule = require('./device-rotation-admin-request-shape.guard') as Record<
-      string,
-      unknown
-    >;
-    const Controller = controllerModule.DeviceCredentialRotationController as Type<unknown>;
-    const Guard = guardModule.DeviceRotationAdminRequestShapeGuard;
-    const tokens = require('./device-auth.tokens') as Record<string, unknown>;
+    const Controller = DeviceCredentialRotationController as Type<unknown>;
+    const Guard = DeviceRotationAdminRequestShapeGuard;
+    const tokens = deviceAuthTokens;
     if (
       typeof Controller !== 'function' ||
       typeof Guard !== 'function' ||
@@ -269,10 +267,8 @@ describe('DeviceCredentialRotationController', () => {
     ['DEVICE_ROTATION_IN_PROGRESS', 409, 'device_rotation_in_progress'],
     ['DEVICE_ROTATION_INVALID', 409, 'device_rotation_invalid'],
     ['DEVICE_ROTATION_UNAVAILABLE', 503, 'device_auth_unavailable'],
-  ])('maps %s to a generic no-store public error', async (code, status, publicCode) => {
-    const loaded = require('./device-credential-rotation.service') as Record<string, unknown>;
-    const ErrorClass = loaded.DeviceCredentialRotationError as new (code: string) => Error;
-    service.getRotation.mockRejectedValue(new ErrorClass(code));
+  ] as const)('maps %s to a generic no-store public error', async (code, status, publicCode) => {
+    service.getRotation.mockRejectedValue(new DeviceCredentialRotationError(code));
     const response = await session('get', DETAIL).expect(status);
     expect(response.headers['cache-control']).toBe('no-store, private');
     expect(response.body).toMatchObject({ code: publicCode });
@@ -289,21 +285,12 @@ describe('DeviceCredentialRotationController disabled feature boundary', () => {
   };
 
   beforeAll(async () => {
-    const { DeviceCredentialRotationController: Controller } =
-      require('./device-credential-rotation.controller') as {
-        DeviceCredentialRotationController: Type<unknown>;
-      };
-    const { DeviceRotationAdminRequestShapeGuard: ShapeGuard } =
-      require('./device-rotation-admin-request-shape.guard') as {
-        DeviceRotationAdminRequestShapeGuard: Type<unknown>;
-      };
-    const { DeviceRotationFeatureGateMiddleware: FeatureGate } =
-      require('./device-rotation-feature-gate.middleware') as {
-        DeviceRotationFeatureGateMiddleware: new (options: { rotationRuntimeEnabled: boolean }) => {
-          use: express.RequestHandler;
-        };
-      };
-    const tokens = require('./device-auth.tokens') as Record<string, symbol>;
+    const Controller = DeviceCredentialRotationController as Type<unknown>;
+    const ShapeGuard = DeviceRotationAdminRequestShapeGuard as Type<unknown>;
+    const FeatureGate = DeviceRotationFeatureGateMiddleware as new (options: {
+      rotationRuntimeEnabled: boolean;
+    }) => { use: express.RequestHandler };
+    const tokens = deviceAuthTokens;
     const moduleFixture = await Test.createTestingModule({
       controllers: [Controller],
       providers: [
