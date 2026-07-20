@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### 2026-07-21 — docker-build-heap-boundary
+
+**Scope**: 회사사이트 Webhard API Docker build 단계의 V8 heap OOM 방지와 runtime 환경 경계.
+
+**수정**:
+
+- NestJS build RUN에만 process-scoped `NODE_OPTIONS=--max-old-space-size=4096`을 적용했다. global `ENV`, runtime CMD, startup migration은 변경하지 않았다.
+- 정적 배포 계약은 유일한 `pnpm build`가 4096 MiB 이상 heap을 받고, `NODE_OPTIONS`가 runtime CMD/ENV로 전파되지 않으며 `node dist/src/main` startup command가 유지됨을 검사한다.
+
+**검증 및 경계**:
+
+- contract TDD는 RED 3/4에서 GREEN 4/4로 전환됐고, backend TypeScript, Nest build, source compatibility collector 및 Prettier를 통과했다.
+- Docker retry/rebuild, image/registry/sign, CI 재실행, deploy, migration, DB, secret/environment/server 작업은 수행하지 않았다.
+
 ### 2026-07-21 — ci-gate-closure
 
 **Scope**: 회사사이트 root CI lint/test gate의 플랫폼 독립성 및 정적 검사 정합성.

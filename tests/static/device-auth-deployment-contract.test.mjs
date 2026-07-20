@@ -27,6 +27,21 @@ test('device-auth deployment contract: Docker starts without a migration', () =>
   assert.doesNotMatch(command, /migrate|prisma|doppler/i);
 });
 
+test('device-auth deployment contract: Docker build reserves heap without changing runtime', () => {
+  const dockerfile = readProjectFile('webhard-api/Dockerfile');
+  const lines = dockerfile.split(/\r?\n/);
+  const buildCommands = lines.filter((line) => /\bpnpm build\b/.test(line));
+  const nodeOptionsLines = lines.filter((line) => /\bNODE_OPTIONS\b/.test(line));
+
+  assert.equal(buildCommands.length, 1);
+  assert.match(buildCommands[0], /^RUN NODE_OPTIONS=--max-old-space-size=(\d+) pnpm build$/);
+  const [, heapLimit] = buildCommands[0].match(/--max-old-space-size=(\d+)/) ?? [];
+  assert.ok(Number(heapLimit) >= 4096);
+  assert.deepEqual(nodeOptionsLines, buildCommands);
+  assert.doesNotMatch(dockerfile, /^ENV\s+NODE_OPTIONS(?:=|\s)/im);
+  assert.doesNotMatch(dockerfile.slice(dockerfile.lastIndexOf('\nCMD ')), /NODE_OPTIONS/i);
+});
+
 test('device-auth deployment contract: enum values commit before later constraints use them', () => {
   const migrationsDirectory = join(projectRoot, 'webhard-api/prisma/migrations');
   const migrationDirectories = readdirSync(migrationsDirectory).sort();

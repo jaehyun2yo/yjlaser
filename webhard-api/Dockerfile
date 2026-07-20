@@ -24,7 +24,7 @@ COPY . .
 RUN npx prisma generate
 
 # Build the application
-RUN pnpm build
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm build
 
 # Verify build output
 # scripts/*.ts 가 src/ 밖에 있어 tsc rootDir 가 webhard-api/ 로 자동 설정되므로
