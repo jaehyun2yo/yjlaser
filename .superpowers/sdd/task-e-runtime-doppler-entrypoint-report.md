@@ -2,7 +2,7 @@
 
 ## 상태
 
-`REVIEW_APPROVED`
+`COMPLETE`
 
 ## 변경
 
@@ -37,10 +37,20 @@
   startup migration 설명을 현재 config-as-code 계약으로 동기화해 해소했다.
 - fresh spec/quality re-review: 모두 APPROVED, Critical/Important/Minor 0/0/0.
 
-## 남은 검증
+## CI와 Docker image 검증
 
-- commit/push 및 GitHub CI all-green
-- no-cache Docker rebuild, image command inspect와 built-image probe
+- source commit `06b0e6b1`을 push했다.
+- GitHub CI run `29786176056`: Lint, Type Check, Test, NestJS Type Check, Build 5개
+  job이 모두 success다. GitHub Actions Node 20 deprecation annotation은 별도 유지보수 항목이다.
+- `--pull=false --no-cache` build가 tag `yjlaser-webhard-api:06b0e6b1-task-e`, image ID
+  `sha256:ac011111dd40c566159cf3008326b71057db4ba3e9f88f11856621765d7857b3`으로 성공했다.
+- image inspect는 CMD `[/app/docker-entrypoint.sh]`, runtime `NODE_OPTIONS` 부재를 확인했다.
+  entrypoint는 mode 755, CR 0이며 shell syntax 검사를 통과했다.
+- built-image offline PATH stub probe는 token 없음 `node:dist/src/main`, synthetic token 있음
+  `doppler:run -- node dist/src/main`을 각각 반환했다. 실제 Doppler network/secret과 Nest 서버는
+  사용하지 않았다.
+- built collector는 exit 0, rotation status 7개 수용/invalid 3개 거부, runtime-disabled 5개
+  target 404/no-store와 controller/service/Prisma write 0을 확인했다.
 
 ## 운영 경계
 

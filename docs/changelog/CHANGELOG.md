@@ -19,7 +19,9 @@
 - 정적 배포 계약은 RED 3/5에서 GREEN 5/5로 전환됐고, review-fix mutation RED 4/5에서
   복원 GREEN 5/5를 확인했다. shell/LF, token 유/무 PATH stub probe, TypeScript, Nest build,
   compatibility collector, Prettier/diff/secret scan을 통과했으며 fresh spec/quality re-review는
-  모두 Critical/Important/Minor 0/0/0으로 승인됐다. CI와 no-cache Docker image 검증은 남았다.
+  모두 Critical/Important/Minor 0/0/0으로 승인됐다. source CI는 5/5 success이며 no-cache
+  Docker image의 CMD/755/LF/runtime `NODE_OPTIONS` 부재, offline token 유/무 분기와 built
+  compatibility collector도 통과했다.
 - 운영 배포, secret/environment 변경, DB 연결, migration 실행은 수행하지 않았다.
 
 ### 2026-07-21 — docker-build-heap-boundary
