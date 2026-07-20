@@ -3,6 +3,8 @@ import { resolve } from 'path';
 
 const MIGRATION_DIRECTORY = '20260719120000_add_integration_device_credentials';
 const TOKEN_EXCHANGE_MIGRATION_DIRECTORY = '20260720100000_add_device_token_exchanges';
+const ROTATION_STATUS_ENUM_MIGRATION_DIRECTORY =
+  '20260720140000_add_device_credential_rotation_status_values';
 const ROTATION_MIGRATION_DIRECTORY = '20260720150000_complete_device_credential_rotation';
 const DEVICE_CREDENTIAL_TABLES = [
   'integration_devices',
@@ -42,6 +44,16 @@ function readTokenExchangeMigration(): string {
 function readRotationMigration(): string {
   return readFileSync(
     resolve(__dirname, `../../../prisma/migrations/${ROTATION_MIGRATION_DIRECTORY}/migration.sql`),
+    'utf8'
+  );
+}
+
+function readRotationStatusEnumMigration(): string {
+  return readFileSync(
+    resolve(
+      __dirname,
+      `../../../prisma/migrations/${ROTATION_STATUS_ENUM_MIGRATION_DIRECTORY}/migration.sql`
+    ),
     'utf8'
   );
 }
@@ -379,15 +391,18 @@ describe('device credential rotation additive completion', () => {
     );
   });
 
-  it('uses only additive enum and nullable-column changes without rewriting legacy rows', () => {
+  it('uses a committed enum-only migration before additive nullable-column changes', () => {
+    const enumMigration = readRotationStatusEnumMigration();
     const migration = readRotationMigration();
 
-    expect(migration).toContain(
+    expect(enumMigration).toContain(
       `ALTER TYPE "DeviceCredentialRotationStatus" ADD VALUE IF NOT EXISTS 'expired'`
     );
-    expect(migration).toContain(
+    expect(enumMigration).toContain(
       `ALTER TYPE "DeviceCredentialRotationStatus" ADD VALUE IF NOT EXISTS 'revoked'`
     );
+    expect(enumMigration).not.toMatch(/ALTER TABLE|ADD CONSTRAINT|CREATE INDEX/i);
+    expect(migration).not.toContain('ALTER TYPE "DeviceCredentialRotationStatus" ADD VALUE');
     expect(migration).toContain('ADD COLUMN "base_credential_version" INTEGER');
     expect(migration).toContain('ADD COLUMN "predecessor_credential_id" TEXT');
     expect(migration).toContain('ADD COLUMN "expired_at" TIMESTAMP(3)');

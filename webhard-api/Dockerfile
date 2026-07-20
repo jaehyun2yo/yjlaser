@@ -35,5 +35,4 @@ RUN ls dist/src/main.js && echo "Build OK"
 ENV NODE_ENV=production
 
 # Start the application
-# DOPPLER_TOKEN이 설정되어 있으면 Doppler에서 시크릿을 주입, 없으면 기존 환경변수 사용
-CMD ["sh", "-c", "if [ -n \"$DOPPLER_TOKEN\" ]; then doppler run -- sh -c 'npx prisma migrate deploy && node dist/src/main'; else npx prisma migrate deploy && node dist/src/main; fi"]
+CMD ["node", "dist/src/main"]

@@ -1,8 +1,6 @@
 -- This migration is deliberately additive. Existing rotation rows keep the
 -- legacy NULL/NULL base pair and remain readable by the compatibility build.
-
-ALTER TYPE "DeviceCredentialRotationStatus" ADD VALUE IF NOT EXISTS 'expired';
-ALTER TYPE "DeviceCredentialRotationStatus" ADD VALUE IF NOT EXISTS 'revoked';
+-- The expired/revoked enum values were committed by the preceding migration.
 
 ALTER TABLE "device_credential_rotations"
     ADD COLUMN "base_credential_version" INTEGER,

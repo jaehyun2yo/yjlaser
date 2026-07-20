@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### 2026-07-21 — device-auth-deployment-contract
+
+**Scope**: 회사사이트 장치 rotation의 CI, container startup, PostgreSQL enum migration 배포 경계.
+
+**수정**:
+
+- CI가 `main`과 `codex/**` push, `main` 대상 PR을 수신하도록 고치고, Node 내장 배포 계약 test를 test job에 연결했다.
+- Webhard API container는 시작 시 migration을 실행하지 않고 `node dist/src/main`만 실행한다. migration deploy는 명시적인 one-off `pnpm migrate:deploy` script로 남는다.
+- `expired`/`revoked` enum 값은 후속 constraint migration보다 앞선 enum 전용 Prisma migration에서 추가했다.
+
+**검증 및 경계**:
+
+- RED 0/3에서 GREEN 3/3까지 계약을 확인했고 persistence 18/18, rotation compatibility 25/25, TypeScript, Nest build, compatibility collector, placeholder-only Prisma validate와 diff check를 통과했다.
+- 실제 PostgreSQL migration apply, Docker build, GitHub CI run, deploy는 수행하지 않았다.
+
 ### 2026-07-20 — central-device-auth-rotation-compatibility-source-evidence
 
 **Scope**: 중앙 rotation/endpoint policy의 source-only contract lock과 no-secret 호환 증적.
