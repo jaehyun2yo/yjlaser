@@ -17,7 +17,7 @@ NestJS 백엔드(`webhard-api/`)의 Railway 배포 설정·수동 배포·장애
 | 브랜치      | `master`                              |
 | 감시 경로   | `webhard-api/**`                      |
 | 빌더        | Dockerfile (`webhard-api/Dockerfile`) |
-| 시작 명령   | `node dist/src/main`                  |
+| 시작 명령   | `/app/docker-entrypoint.sh`           |
 | Healthcheck | `GET /api/v1/health` (120s timeout)   |
 
 Dockerfile은 Node 20 Alpine 이미지를 사용하므로 `corepack prepare pnpm@latest`를 쓰지 않는다.
@@ -37,7 +37,7 @@ query {
     builder              # "RAILPACK"  (dockerfilePath 지정 시 자동으로 DOCKERFILE 로 감지)
     dockerfilePath       # "Dockerfile"
     railwayConfigFile    # ""  ← 빈 문자열 필수 (이유는 §5 참조)
-    startCommand         # "node dist/src/main"
+    startCommand         # "/app/docker-entrypoint.sh"
     healthcheckPath      # "/api/v1/health"
     source { repo }      # "jaehyun2yo/yjlaser"
   }
@@ -53,8 +53,12 @@ TOKEN=$(node -p "require('$HOME/.railway/config.json').user.token")
 curl -s -X POST https://backboard.railway.app/graphql/v2 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"query":"mutation{serviceInstanceUpdate(serviceId:\"8e9819d9-9b55-4efd-b7d0-76076d6fe6ea\",environmentId:\"82814e22-a20f-47d2-8c6a-ab63d8c2f1c6\",input:{rootDirectory:\"webhard-api\",watchPatterns:[\"webhard-api/**\"],dockerfilePath:\"Dockerfile\",railwayConfigFile:\"\",startCommand:\"node dist/src/main\",healthcheckPath:\"/api/v1/health\",healthcheckTimeout:120})}"}'
+  -d '{"query":"mutation{serviceInstanceUpdate(serviceId:\"8e9819d9-9b55-4efd-b7d0-76076d6fe6ea\",environmentId:\"82814e22-a20f-47d2-8c6a-ab63d8c2f1c6\",input:{rootDirectory:\"webhard-api\",watchPatterns:[\"webhard-api/**\"],dockerfilePath:\"Dockerfile\",railwayConfigFile:\"\",startCommand:\"/app/docker-entrypoint.sh\",healthcheckPath:\"/api/v1/health\",healthcheckTimeout:120})}"}'
 ```
+
+`webhard-api/railway.toml`이 startCommand의 config-as-code 원천이다. Dashboard/API에서
+수동으로 다른 값을 저장하지 말고, 불일치가 있으면 `/app/docker-entrypoint.sh`로 되돌린다.
+배포 시 저장소 설정이 Dashboard의 일회성 값보다 우선하도록 유지한다.
 
 ---
 
@@ -169,7 +173,9 @@ curl ... -d '{"query":"mutation{serviceInstanceUpdate(...,input:{railwayConfigFi
 
 **원인**: `webhard-api/scripts/*.ts` 가 `src/` 밖에 존재 → tsc 가 rootDir 를 `webhard-api/` 로 자동 설정 → 빌드 출력이 `dist/src/main.js` (+ `dist/scripts/*.js`). Dockerfile/railway.toml 이 `dist/main.js` 를 기대하면 즉시 크래시.
 
-**해결**: 시작 경로를 `dist/src/main` 으로 일관되게 사용 (현재 설정). 근본 정리(`scripts/` → `src/scripts/`)는 연쇄 변경이 많아 보류.
+**해결**: Docker와 Railway는 `/app/docker-entrypoint.sh`를 공통 시작점으로 사용한다.
+entrypoint는 Doppler 주입 여부에 따라 최종적으로 `node dist/src/main`을 실행한다. 근본
+정리(`scripts/` → `src/scripts/`)는 연쇄 변경이 많아 보류.
 
 ### 5-5. 빌드는 SUCCESS 인데 `dist/main.js: No such file or directory`
 
@@ -181,7 +187,8 @@ curl ... -d '{"query":"mutation{serviceInstanceUpdate(...,input:{railwayConfigFi
 
 **증상**: 배포는 SUCCESS 인데 Prisma schema 가 prod DB 와 안 맞아 500 에러 발생.
 
-**원인**: Dockerfile CMD 에 `npx prisma migrate deploy && node dist/src/main` 이 있으나 특정 상황(스냅샷/이전 이미지 재사용 등)에서 migrate 가 실제로 돌지 않거나 실패 migration 이 섞여 있을 수 있음.
+**원인**: startup 경로는 의도적으로 migration을 실행하지 않는다. 대상 DB 확인과 백업을
+거친 별도 one-off migration 단계를 생략하면 새 코드와 prod schema가 어긋날 수 있다.
 
 **해결**:
 

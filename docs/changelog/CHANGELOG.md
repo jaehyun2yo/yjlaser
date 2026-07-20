@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### 2026-07-21 — runtime-doppler-entrypoint
+
+**Scope**: 회사사이트 Webhard API의 Railway/Docker runtime secret 주입 시작 경계.
+
+**수정**:
+
+- Docker CMD와 Railway startCommand를 단일 `/app/docker-entrypoint.sh`에 결속했다.
+- `DOPPLER_TOKEN`이 있으면 `doppler run`으로 runtime secret을 주입하고, 없으면 직접 Node를
+  실행한다. 두 분기 모두 `exec`를 사용하고 startup migration은 실행하지 않는다.
+- Windows checkout의 CRLF를 image build에서 정규화하고 entrypoint 실행 권한을 부여한다.
+  기존 build 전용 4096 MiB heap과 runtime `NODE_OPTIONS` 부재는 유지한다.
+
+**검증 및 경계**:
+
+- 정적 배포 계약은 RED 3/5에서 GREEN 5/5로 전환됐고, review-fix mutation RED 4/5에서
+  복원 GREEN 5/5를 확인했다. shell/LF, token 유/무 PATH stub probe, TypeScript, Nest build,
+  compatibility collector, Prettier/diff/secret scan을 통과했으며 fresh spec/quality re-review는
+  모두 Critical/Important/Minor 0/0/0으로 승인됐다. CI와 no-cache Docker image 검증은 남았다.
+- 운영 배포, secret/environment 변경, DB 연결, migration 실행은 수행하지 않았다.
+
 ### 2026-07-21 — docker-build-heap-boundary
 
 **Scope**: 회사사이트 Webhard API Docker build 단계의 V8 heap OOM 방지와 runtime 환경 경계.

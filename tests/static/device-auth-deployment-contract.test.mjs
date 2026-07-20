@@ -1,11 +1,21 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
 const projectRoot = process.cwd();
 const rotationMigration = '20260720150000_complete_device_credential_rotation';
 const enumMigration = '20260720140000_add_device_credential_rotation_status_values';
+const runtimeEntrypoint = '/app/docker-entrypoint.sh';
+const runtimeEntrypointSource = `#!/bin/sh
+set -eu
+
+if [ -n "\${DOPPLER_TOKEN:-}" ]; then
+  exec doppler run -- node dist/src/main
+else
+  exec node dist/src/main
+fi
+`;
 
 function readProjectFile(relativePath) {
   return readFileSync(join(projectRoot, relativePath), 'utf8');
@@ -19,12 +29,27 @@ test('device-auth deployment contract: CI targets main and codex candidates', ()
   assert.doesNotMatch(workflow, /branches:\s*\[master\]/);
 });
 
-test('device-auth deployment contract: Docker starts without a migration', () => {
+test('device-auth deployment contract: Docker and Railway share one runtime entrypoint', () => {
   const dockerfile = readProjectFile('webhard-api/Dockerfile');
+  const railwayConfig = readProjectFile('webhard-api/railway.toml');
   const command = dockerfile.slice(dockerfile.lastIndexOf('\nCMD ')).trim();
+  const railwayStartCommands = railwayConfig.match(/^startCommand\s*=.*$/gm) ?? [];
 
-  assert.equal(command, 'CMD ["node", "dist/src/main"]');
-  assert.doesNotMatch(command, /migrate|prisma|doppler/i);
+  assert.match(
+    dockerfile,
+    /^RUN sed -i 's\/\\r\$\/\/' docker-entrypoint\.sh && chmod \+x docker-entrypoint\.sh$/m
+  );
+  assert.equal(command, `CMD ["${runtimeEntrypoint}"]`);
+  assert.deepEqual(railwayStartCommands, [`startCommand = "${runtimeEntrypoint}"`]);
+});
+
+test('device-auth deployment contract: runtime entrypoint injects Doppler without migration', () => {
+  const entrypointPath = join(projectRoot, 'webhard-api/docker-entrypoint.sh');
+
+  assert.ok(existsSync(entrypointPath), 'webhard-api/docker-entrypoint.sh must exist');
+  const entrypoint = readFileSync(entrypointPath, 'utf8');
+
+  assert.equal(entrypoint, runtimeEntrypointSource);
 });
 
 test('device-auth deployment contract: Docker build reserves heap without changing runtime', () => {
@@ -33,10 +58,7 @@ test('device-auth deployment contract: Docker build reserves heap without changi
   const buildCommands = lines.filter((line) => /\bpnpm build\b/.test(line));
   const nodeOptionsLines = lines.filter((line) => /\bNODE_OPTIONS\b/.test(line));
 
-  assert.equal(buildCommands.length, 1);
-  assert.match(buildCommands[0], /^RUN NODE_OPTIONS=--max-old-space-size=(\d+) pnpm build$/);
-  const [, heapLimit] = buildCommands[0].match(/--max-old-space-size=(\d+)/) ?? [];
-  assert.ok(Number(heapLimit) >= 4096);
+  assert.deepEqual(buildCommands, ['RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm build']);
   assert.deepEqual(nodeOptionsLines, buildCommands);
   assert.doesNotMatch(dockerfile, /^ENV\s+NODE_OPTIONS(?:=|\s)/im);
   assert.doesNotMatch(dockerfile.slice(dockerfile.lastIndexOf('\nCMD ')), /NODE_OPTIONS/i);

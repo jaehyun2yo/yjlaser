@@ -20,6 +20,9 @@ RUN pnpm install --frozen-lockfile
 # Copy source files
 COPY . .
 
+# Normalize the runtime entrypoint for Windows checkouts and make it executable.
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
+
 # Generate Prisma client
 RUN npx prisma generate
 
@@ -35,4 +38,4 @@ RUN ls dist/src/main.js && echo "Build OK"
 ENV NODE_ENV=production
 
 # Start the application
-CMD ["node", "dist/src/main"]
+CMD ["/app/docker-entrypoint.sh"]
