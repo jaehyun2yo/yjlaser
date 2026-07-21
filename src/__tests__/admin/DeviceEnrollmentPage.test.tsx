@@ -8,8 +8,10 @@ import {
   approveManagedDevice,
   createDeviceEnrollmentCode,
   listManagedDevices,
+  requestManagedDeviceCredentialRotation,
   revokeManagedDevice,
   type DeviceEnrollmentStatus,
+  type DeviceRotationSummary,
   type ManagedDeviceSummary,
 } from '@/app/(admin)/admin/integration/devices/_lib/device-enrollment-api';
 
@@ -21,12 +23,16 @@ jest.mock('@/app/(admin)/admin/integration/devices/_lib/device-enrollment-api', 
   approveManagedDevice: jest.fn(),
   createDeviceEnrollmentCode: jest.fn(),
   listManagedDevices: jest.fn(),
+  requestManagedDeviceCredentialRotation: jest.fn(),
   revokeManagedDevice: jest.fn(),
 }));
 
 const approveManagedDeviceMock = jest.mocked(approveManagedDevice);
 const createDeviceEnrollmentCodeMock = jest.mocked(createDeviceEnrollmentCode);
 const listManagedDevicesMock = jest.mocked(listManagedDevices);
+const requestManagedDeviceCredentialRotationMock = jest.mocked(
+  requestManagedDeviceCredentialRotation
+);
 const revokeManagedDeviceMock = jest.mocked(revokeManagedDevice);
 
 const pendingDevice: ManagedDeviceSummary = {
@@ -54,6 +60,13 @@ const activeDevice: ManagedDeviceSummary = {
   approvedAt: '2026-07-19T12:05:00.000Z',
 };
 
+const activeSafeCanaryDevice: ManagedDeviceSummary = {
+  ...activeDevice,
+  deviceId: 'a2f8ec25-a888-4a9e-8792-9ffed2bbd283',
+  displayName: '네스팅 시험 PC',
+  capabilityProfile: 'safe_canary',
+};
+
 const approvedStatus: DeviceEnrollmentStatus = {
   deviceId: pendingDevice.deviceId,
   environment: 'dev',
@@ -61,6 +74,14 @@ const approvedStatus: DeviceEnrollmentStatus = {
   capabilityProfile: 'safe_canary',
   state: 'active',
   credentialVersion: 1,
+};
+
+const requestedRotation: DeviceRotationSummary = {
+  id: 'd978ca90-3dc7-47eb-b719-f58d68ad3aa4',
+  deviceId: activeDevice.deviceId,
+  status: 'requested',
+  deadlineAt: '2026-07-20T12:15:00.000Z',
+  credentialVersion: 3,
 };
 
 function createDeferred<T>() {
@@ -85,6 +106,7 @@ describe('Device enrollment page', () => {
     approveManagedDeviceMock.mockReset();
     createDeviceEnrollmentCodeMock.mockReset();
     listManagedDevicesMock.mockReset();
+    requestManagedDeviceCredentialRotationMock.mockReset();
     revokeManagedDeviceMock.mockReset();
     clipboardWriteText.mockReset();
     clipboardWriteText.mockResolvedValue(undefined);
@@ -236,6 +258,39 @@ describe('Device enrollment page', () => {
       expect(listManagedDevicesMock).toHaveBeenCalledTimes(2);
     });
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('requests remote credential reissue only for an active device after local confirmation', async () => {
+    listManagedDevicesMock
+      .mockResolvedValueOnce([pendingDevice, activeDevice, activeSafeCanaryDevice])
+      .mockResolvedValueOnce([pendingDevice, activeDevice, activeSafeCanaryDevice]);
+    requestManagedDeviceCredentialRotationMock.mockResolvedValue(requestedRotation);
+
+    render(<DevicesPage />);
+
+    await screen.findByText(activeDevice.displayName);
+    expect(screen.getByText(activeSafeCanaryDevice.displayName)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '키 재발급' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: '키 재발급' }));
+
+    const confirmation = await screen.findByRole('dialog');
+    expect(confirmation).toHaveTextContent(activeDevice.displayName);
+    expect(confirmation).not.toHaveTextContent(activeDevice.deviceId);
+    expect(requestManagedDeviceCredentialRotationMock).not.toHaveBeenCalled();
+
+    fireEvent.click(within(confirmation).getByRole('button', { name: '재발급 요청' }));
+
+    await waitFor(() => {
+      expect(requestManagedDeviceCredentialRotationMock).toHaveBeenCalledWith(
+        activeDevice.deviceId
+      );
+    });
+    await waitFor(() => {
+      expect(listManagedDevicesMock).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByText('키 재발급 요청 완료')).toBeInTheDocument();
+    expect(screen.getByText(/다음 인증 시 새 키로 전환/)).toBeInTheDocument();
   });
 
   it('keeps an action refresh when an earlier list refresh resolves afterwards', async () => {

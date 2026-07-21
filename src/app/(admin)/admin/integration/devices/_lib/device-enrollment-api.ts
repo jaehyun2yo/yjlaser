@@ -4,6 +4,15 @@ const DEVICE_ENROLLMENT_CODE_ENDPOINT = `${NESTJS_CLIENT_API_BASE}/integration/d
 const DEVICE_ENROLLMENT_CSRF_ENDPOINT = `${NESTJS_CLIENT_API_BASE}/integration/devices/csrf`;
 const DEVICE_MANAGEMENT_ENDPOINT = `${NESTJS_CLIENT_API_BASE}/integration/devices`;
 const DEVICE_MANAGEMENT_STATES = ['pending_approval', 'active', 'revoked'] as const;
+const DEVICE_ROTATION_STATUSES = [
+  'requested',
+  'prepared',
+  'acknowledged',
+  'timed_out',
+  'cancelled',
+  'expired',
+  'revoked',
+] as const;
 const CANONICAL_DEVICE_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CANONICAL_UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -66,6 +75,16 @@ export interface ManagedDeviceSummary extends DeviceEnrollmentStatus {
   readonly approvedAt?: string;
   readonly lastHeartbeatAt?: string;
   readonly revokedAt?: string;
+}
+
+export type DeviceRotationStatus = (typeof DEVICE_ROTATION_STATUSES)[number];
+
+export interface DeviceRotationSummary {
+  readonly id: string;
+  readonly deviceId: string;
+  readonly status: DeviceRotationStatus;
+  readonly deadlineAt: string;
+  readonly credentialVersion?: number;
 }
 
 export interface ListManagedDevicesOptions {
@@ -159,6 +178,12 @@ function isCapabilityProfile(value: unknown): value is DeviceEnrollmentCapabilit
 function isDeviceEnrollmentState(value: unknown): value is DeviceEnrollmentState {
   return (
     typeof value === 'string' && DEVICE_MANAGEMENT_STATES.includes(value as DeviceEnrollmentState)
+  );
+}
+
+function isDeviceRotationStatus(value: unknown): value is DeviceRotationStatus {
+  return (
+    typeof value === 'string' && DEVICE_ROTATION_STATUSES.includes(value as DeviceRotationStatus)
   );
 }
 
@@ -348,6 +373,33 @@ function parseManagedDeviceList(value: unknown): readonly ManagedDeviceSummary[]
   return value.map((item) => parseManagedDeviceSummary(item));
 }
 
+function parseDeviceRotationSummary(value: unknown): DeviceRotationSummary {
+  if (!isRecord(value)) {
+    throw new DeviceManagementRequestError();
+  }
+
+  assertOnlyAllowedKeys(value, ['id', 'deviceId', 'status', 'deadlineAt', 'credentialVersion']);
+
+  const { id, deviceId, status, deadlineAt, credentialVersion } = value;
+  if (
+    !isCanonicalDeviceId(id) ||
+    !isCanonicalDeviceId(deviceId) ||
+    !isDeviceRotationStatus(status) ||
+    !isCanonicalUtcTimestamp(deadlineAt) ||
+    (credentialVersion !== undefined && !isCredentialVersion(credentialVersion))
+  ) {
+    throw new DeviceManagementRequestError();
+  }
+
+  return {
+    id,
+    deviceId,
+    status,
+    deadlineAt,
+    ...(credentialVersion === undefined ? {} : { credentialVersion }),
+  };
+}
+
 async function parseManagedDeviceResponse<T>(
   response: Response,
   parser: (value: unknown) => T
@@ -439,6 +491,21 @@ export async function revokeManagedDevice(deviceId: string): Promise<ManagedDevi
     `${DEVICE_MANAGEMENT_ENDPOINT}/${encodeURIComponent(deviceId)}/revoke`,
     parseManagedDeviceSummary
   );
+}
+
+export async function requestManagedDeviceCredentialRotation(
+  deviceId: string
+): Promise<DeviceRotationSummary> {
+  const summary = await postManagedDeviceAction(
+    `${DEVICE_MANAGEMENT_ENDPOINT}/${encodeURIComponent(deviceId)}/credential-rotations`,
+    parseDeviceRotationSummary
+  );
+
+  if (summary.deviceId !== deviceId) {
+    throw new DeviceManagementRequestError();
+  }
+
+  return summary;
 }
 
 function parseEnrollmentCodeResponse(value: unknown): DeviceEnrollmentCodeResponse {

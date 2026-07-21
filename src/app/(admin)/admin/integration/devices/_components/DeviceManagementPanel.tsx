@@ -17,7 +17,9 @@ import {
 import {
   approveManagedDevice,
   listManagedDevices,
+  requestManagedDeviceCredentialRotation,
   revokeManagedDevice,
+  type DeviceRotationSummary,
   type ManagedDeviceSummary,
 } from '@/app/(admin)/admin/integration/devices/_lib/device-enrollment-api';
 
@@ -41,6 +43,16 @@ const FRESH_LIST_ERROR =
 interface RevokeConfirmation {
   readonly deviceId: string;
   readonly displayName: string;
+}
+
+interface RotationConfirmation {
+  readonly deviceId: string;
+  readonly displayName: string;
+}
+
+interface RotationResult {
+  readonly displayName: string;
+  readonly summary: DeviceRotationSummary;
 }
 
 type ListLoadPurpose = 'initial' | 'manual' | 'action';
@@ -67,6 +79,10 @@ export function DeviceManagementPanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [isActionPending, setIsActionPending] = useState(false);
   const [revokeConfirmation, setRevokeConfirmation] = useState<RevokeConfirmation | null>(null);
+  const [rotationConfirmation, setRotationConfirmation] = useState<RotationConfirmation | null>(
+    null
+  );
+  const [rotationResult, setRotationResult] = useState<RotationResult | null>(null);
   const activeListAbortControllerRef = useRef<AbortController | null>(null);
   const listGenerationRef = useRef(0);
   const isMountedRef = useRef(false);
@@ -133,7 +149,7 @@ export function DeviceManagementPanel() {
     };
   }, [loadDevices]);
 
-  const runAction = async (action: () => Promise<unknown>) => {
+  const runAction = async <T,>(action: () => Promise<T>, onSuccess?: (result: T) => void) => {
     if (actionPendingRef.current) return;
 
     actionPendingRef.current = true;
@@ -142,10 +158,12 @@ export function DeviceManagementPanel() {
     setIsActionPending(true);
 
     try {
-      await action();
+      const result = await action();
       if (!isMountedRef.current) return;
 
+      onSuccess?.(result);
       setRevokeConfirmation(null);
+      setRotationConfirmation(null);
       await loadDevices('action');
     } catch {
       if (isMountedRef.current) {
@@ -167,6 +185,7 @@ export function DeviceManagementPanel() {
     if (actionPendingRef.current) return;
 
     setActionError(null);
+    setRotationResult(null);
     setRevokeConfirmation({ deviceId: device.deviceId, displayName: device.displayName });
   };
 
@@ -181,6 +200,37 @@ export function DeviceManagementPanel() {
     if (!revokeConfirmation) return;
 
     void runAction(() => revokeManagedDevice(revokeConfirmation.deviceId));
+  };
+
+  const openRotationConfirmation = (device: ManagedDeviceSummary) => {
+    if (
+      actionPendingRef.current ||
+      device.state !== 'active' ||
+      device.capabilityProfile !== 'standard'
+    ) {
+      return;
+    }
+
+    setActionError(null);
+    setRotationResult(null);
+    setRotationConfirmation({ deviceId: device.deviceId, displayName: device.displayName });
+  };
+
+  const closeRotationConfirmation = () => {
+    if (actionPendingRef.current) return;
+
+    setActionError(null);
+    setRotationConfirmation(null);
+  };
+
+  const confirmRotation = () => {
+    if (!rotationConfirmation) return;
+
+    const confirmation = rotationConfirmation;
+    void runAction(
+      () => requestManagedDeviceCredentialRotation(confirmation.deviceId),
+      (summary) => setRotationResult({ displayName: confirmation.displayName, summary })
+    );
   };
 
   return (
@@ -207,7 +257,16 @@ export function DeviceManagementPanel() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div aria-live="polite" aria-atomic="true" className="space-y-3">
-            {actionError && !revokeConfirmation && (
+            {rotationResult ? (
+              <Alert variant="success">
+                <AlertTitle>키 재발급 요청 완료</AlertTitle>
+                <AlertDescription>
+                  {rotationResult.displayName} 장치가 다음 인증 시 새 키로 전환하도록 요청했습니다.
+                  완료 기한: {formatTimestamp(rotationResult.summary.deadlineAt)}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            {actionError && !revokeConfirmation && !rotationConfirmation && (
               <Alert variant="error">
                 <AlertTitle>상태 변경 실패</AlertTitle>
                 <AlertDescription>{actionError}</AlertDescription>
@@ -256,6 +315,17 @@ export function DeviceManagementPanel() {
                             disabled={isActionPending}
                           >
                             승인
+                          </Button>
+                        ) : null}
+                        {device.state === 'active' && device.capabilityProfile === 'standard' ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openRotationConfirmation(device)}
+                            disabled={isActionPending}
+                          >
+                            키 재발급
                           </Button>
                         ) : null}
                         {device.state !== 'revoked' ? (
@@ -383,6 +453,60 @@ export function DeviceManagementPanel() {
                 disabled={isActionPending}
               >
                 {isActionPending ? '해제 중…' : '해제 확인'}
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      ) : null}
+
+      {rotationConfirmation ? (
+        <Modal
+          open
+          onOpenChange={(isOpen) => {
+            if (!isOpen) closeRotationConfirmation();
+          }}
+        >
+          <ModalContent
+            showCloseButton={false}
+            onEscapeKeyDown={(event) => {
+              if (isActionPending) event.preventDefault();
+            }}
+            onPointerDownOutside={(event) => {
+              if (isActionPending) event.preventDefault();
+            }}
+          >
+            <ModalHeader>
+              <ModalTitle>장치 인증키 재발급</ModalTitle>
+              <ModalDescription>재발급할 장치의 표시명을 확인한 뒤 진행하세요.</ModalDescription>
+            </ModalHeader>
+            <ModalBody className="space-y-3">
+              <p className="text-sm text-foreground">
+                <strong>&ldquo;{rotationConfirmation.displayName}&rdquo;</strong> 장치에 새 인증키
+                전환을 요청하시겠습니까?
+              </p>
+              <p className="text-sm text-muted-foreground">
+                장치가 다음 인증을 수행할 때 기존 키를 안전하게 교체합니다.
+              </p>
+              {actionError ? (
+                <div aria-live="polite" aria-atomic="true">
+                  <Alert variant="error">
+                    <AlertTitle>재발급 요청 실패</AlertTitle>
+                    <AlertDescription>{actionError}</AlertDescription>
+                  </Alert>
+                </div>
+              ) : null}
+            </ModalBody>
+            <ModalFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={closeRotationConfirmation}
+                disabled={isActionPending}
+              >
+                취소
+              </Button>
+              <Button type="button" onClick={confirmRotation} disabled={isActionPending}>
+                {isActionPending ? '요청 중…' : '재발급 요청'}
               </Button>
             </ModalFooter>
           </ModalContent>

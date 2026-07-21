@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### 2026-07-21 — central-device-auth-admin-rotation-control
+
+**Scope**: 회사사이트 관리자 장치 인증 화면의 원격 credential 재발급 요청.
+
+**수정**:
+
+- `standard` 권한의 활성 장치에만 `키 재발급` 작업을 표시하고 표시명 확인 모달을 거쳐 중앙
+  `POST /integration/devices/:id/credential-rotations`를 호출한다.
+- 응답은 rotation ID, 장치 ID, 상태, 완료 기한, 선택 credential version의 정확한 공개 필드만
+  수락한다. refresh credential이나 알 수 없는 필드가 섞이면 UI에 전달하지 않고 실패 처리한다.
+- 요청 성공 시 장치가 다음 인증에서 키를 교체한다는 점과 완료 기한을 표시한다. 등록 대기·폐기·
+  `safe_canary` 장치에는 재발급 작업을 노출하지 않는다.
+
+**검증 및 경계**:
+
+- 관리자 장치 API/UI TDD는 RED 3건을 확인한 뒤 집중 2 suites / 28 tests와 관련 전체 4 suites /
+  30 tests, 대상 ESLint, root TypeScript를 통과했다. correctness/security 재검토는 P0/P1 0이다.
+- 실제 credential 원문은 브라우저 상태·문구·로그에 노출하지 않는다. 물리 PC가 다음 인증에서
+  rotation prepare/ack를 완료하는 검증은 데스크톱 배포 단계에서 수행한다.
+
 ### 2026-07-21 — runtime-doppler-entrypoint
 
 **Scope**: 회사사이트 Webhard API의 Railway/Docker runtime secret 주입 시작 경계.

@@ -5,8 +5,10 @@
 import {
   approveManagedDevice,
   listManagedDevices,
+  requestManagedDeviceCredentialRotation,
   revokeManagedDevice,
   type DeviceEnrollmentStatus,
+  type DeviceRotationSummary,
   type ManagedDeviceSummary,
 } from '@/app/(admin)/admin/integration/devices/_lib/device-enrollment-api';
 
@@ -31,6 +33,14 @@ const APPROVED_STATUS: DeviceEnrollmentStatus = {
   capabilityProfile: 'safe_canary',
   state: 'active',
   credentialVersion: 1,
+};
+
+const ROTATION_SUMMARY: DeviceRotationSummary = {
+  id: 'd978ca90-3dc7-47eb-b719-f58d68ad3aa4',
+  deviceId: DEVICE_ID,
+  status: 'requested',
+  deadlineAt: '2026-07-20T12:15:00.000Z',
+  credentialVersion: 2,
 };
 
 interface JsonResponse {
@@ -130,6 +140,64 @@ describe('device management API helper', () => {
 
     const postRequests = fetchMock.mock.calls.filter(([, options]) => options?.method === 'POST');
     expect(postRequests).toHaveLength(2);
+  });
+
+  it('requests credential rotation with CSRF and accepts only the safe rotation summary', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ROTATION_SUMMARY,
+    });
+
+    await expect(requestManagedDeviceCredentialRotation(DEVICE_ID)).resolves.toEqual(
+      ROTATION_SUMMARY
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/nestapi/integration/devices/${DEVICE_ID}/credential-rotations`,
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        body: undefined,
+        headers: {
+          Accept: 'application/json',
+          'x-csrf-token': 'device-management-csrf-token',
+        },
+      })
+    );
+  });
+
+  it('rejects credential material or malformed fields from a rotation response', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ ...ROTATION_SUMMARY, refreshCredential: 'must not reach the UI' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ ...ROTATION_SUMMARY, deadlineAt: '2026-07-20T21:15:00+09:00' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          ...ROTATION_SUMMARY,
+          deviceId: '8763d3d9-4b84-4dc1-8526-18175a8ced20',
+        }),
+      });
+
+    await expect(requestManagedDeviceCredentialRotation(DEVICE_ID)).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
+    await expect(requestManagedDeviceCredentialRotation(DEVICE_ID)).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
+    await expect(requestManagedDeviceCredentialRotation(DEVICE_ID)).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
   });
 
   it('does not send an action POST when CSRF bootstrap fails', async () => {
