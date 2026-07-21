@@ -49,7 +49,7 @@ end
 local count = redis.call('INCR', KEYS[1])
 if count == 1 then
   local expiryResult = redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
-  if expiryResult ~= 1 then
+  if expiryResult ~= 1 and expiryResult ~= true then
     return {-1, 0}
   end
 end
@@ -81,7 +81,7 @@ for index = 1, #KEYS do
   local count = redis.call('INCR', KEYS[index])
   if count == 1 then
     local expiryResult = redis.call('EXPIRE', KEYS[index], ttlSeconds[index])
-    if expiryResult ~= 1 then
+    if expiryResult ~= 1 and expiryResult ~= true then
       return {-1, 0}
     end
   end
@@ -126,14 +126,15 @@ for index = 1, 3 do
   local count = redis.call('INCR', KEYS[index])
   if count == 1 then
     local expiryResult = redis.call('EXPIRE', KEYS[index], ttlSeconds[index])
-    if expiryResult ~= 1 then
+    if expiryResult ~= 1 and expiryResult ~= true then
       return {-1, 0}
     end
   end
 end
 
 local leaseResult = redis.call('SET', KEYS[4], ARGV[7], 'EX', ARGV[8], 'NX')
-if leaseResult ~= 'OK' then
+if leaseResult ~= 'OK' and leaseResult ~= true and
+  (type(leaseResult) ~= 'table' or leaseResult.ok ~= 'OK') then
   return {-1, 0}
 end
 
