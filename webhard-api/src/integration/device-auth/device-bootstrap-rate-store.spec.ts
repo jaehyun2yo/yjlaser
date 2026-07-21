@@ -213,6 +213,60 @@ describe('DeviceBootstrapRateStore', () => {
     expect(JSON.stringify(store)).not.toContain(RAW_HMAC_SECRET);
   });
 
+  it('accepts boolean and integer EXPIRE success values in every quota Lua script', async () => {
+    const transport = createFetch(
+      createResponse([1, 0]),
+      createResponse([1, 0]),
+      createResponse([1, 0])
+    );
+    const store = new DeviceBootstrapRateStore(createConfiguration(), transport);
+
+    await store.acquireEnrollment({
+      peerAddress: RAW_PEER,
+      enrollmentCode: RAW_ENROLLMENT_CODE,
+      enrollmentAttemptId: RAW_ENROLLMENT_ATTEMPT,
+    });
+    await store.checkEnrollmentStatus({
+      peerAddress: RAW_PEER,
+      refreshCredential: RAW_REFRESH_CREDENTIAL,
+    });
+    await store.checkDeviceHeartbeat({ deviceId: RAW_ENROLLMENT_ATTEMPT });
+
+    expect(transport.calls).toHaveLength(3);
+    for (const call of transport.calls) {
+      const script = String(readEvalCommand(call)[1]);
+      expect(script).toContain('expiryResult ~= 1 and expiryResult ~= true');
+    }
+  });
+
+  it('accepts boolean and string SET NX success values in the replay Lua script', async () => {
+    const transport = createFetch(createResponse([1, 0]));
+    const store = new DeviceBootstrapRateStore(createConfiguration(), transport);
+
+    await store.acquireEnrollment({
+      peerAddress: RAW_PEER,
+      enrollmentCode: RAW_ENROLLMENT_CODE,
+      enrollmentAttemptId: RAW_ENROLLMENT_ATTEMPT,
+    });
+
+    const script = String(readEvalCommand(transport.calls[0])[1]);
+    expect(script).toContain("leaseResult ~= 'OK' and leaseResult ~= true");
+  });
+
+  it('accepts a Redis Lua status-reply table for SET NX success', async () => {
+    const transport = createFetch(createResponse([1, 0]));
+    const store = new DeviceBootstrapRateStore(createConfiguration(), transport);
+
+    await store.acquireEnrollment({
+      peerAddress: RAW_PEER,
+      enrollmentCode: RAW_ENROLLMENT_CODE,
+      enrollmentAttemptId: RAW_ENROLLMENT_ATTEMPT,
+    });
+
+    const script = String(readEvalCommand(transport.calls[0])[1]);
+    expect(script).toContain("type(leaseResult) ~= 'table' or leaseResult.ok ~= 'OK'");
+  });
+
   it('returns a bounded retry decision for a quota or replay limit instead of throwing raw backend details', async () => {
     const transport = createFetch(createResponse([0, 17]));
     const store = new DeviceBootstrapRateStore(createConfiguration(), transport);
