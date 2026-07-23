@@ -443,13 +443,11 @@ $sharedBoundary = [pscustomobject]@{
     $stagingVariables.DEVICE_AUTH_BOOTSTRAP_RATE_LIMIT_HMAC_SECRET -ne
       $productionSecrets.DEVICE_AUTH_BOOTSTRAP_RATE_LIMIT_HMAC_SECRET
   )
-  credentialPepperMaterialSeparated = Test-NoFingerprintOverlap(
-    $stagingPepperFingerprints,
-    $productionPepperFingerprints
+  credentialPepperMaterialSeparated = (
+    Test-NoFingerprintOverlap $stagingPepperFingerprints $productionPepperFingerprints
   )
-  accessTokenSigningMaterialSeparated = Test-NoFingerprintOverlap(
-    $stagingSigningFingerprints,
-    $productionSigningFingerprints
+  accessTokenSigningMaterialSeparated = (
+    Test-NoFingerprintOverlap $stagingSigningFingerprints $productionSigningFingerprints
   )
   auditHmacSeparated = (
     $stagingVariables.DEVICE_AUTH_AUDIT_HMAC_SECRET -and
@@ -921,13 +919,11 @@ $productionBoundary = [pscustomobject]@{
     $stagingVariables.DEVICE_AUTH_BOOTSTRAP_RATE_LIMIT_HMAC_SECRET -ne
       $productionSecrets.DEVICE_AUTH_BOOTSTRAP_RATE_LIMIT_HMAC_SECRET
   )
-  credentialPepperMaterialSeparated = Test-NoFingerprintOverlap(
-    $stagingPepperFingerprints,
-    $productionPepperFingerprints
+  credentialPepperMaterialSeparated = (
+    Test-NoFingerprintOverlap $stagingPepperFingerprints $productionPepperFingerprints
   )
-  accessTokenSigningMaterialSeparated = Test-NoFingerprintOverlap(
-    $stagingSigningFingerprints,
-    $productionSigningFingerprints
+  accessTokenSigningMaterialSeparated = (
+    Test-NoFingerprintOverlap $stagingSigningFingerprints $productionSigningFingerprints
   )
   auditHmacSeparated = (
     $stagingVariables.DEVICE_AUTH_AUDIT_HMAC_SECRET -and
