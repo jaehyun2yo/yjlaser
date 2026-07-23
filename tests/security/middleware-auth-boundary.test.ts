@@ -14,16 +14,27 @@ function makeRequest(pathname: string, cookie?: string, headers: Record<string, 
   });
 }
 
-function expectRedirectsToLogin(response: Response, loginPath: string) {
+function expectRedirectsToLogin(
+  response: Response,
+  loginPath: string,
+  expectedNextPath?: string,
+) {
   expect(response.headers.get('x-middleware-next')).not.toBe('1');
-  expect(response.headers.get('location')).toContain(loginPath);
+  const location = response.headers.get('location');
+  expect(location).not.toBeNull();
+
+  const redirectUrl = new URL(location!);
+  expect(redirectUrl.pathname).toBe(loginPath);
+  if (expectedNextPath) {
+    expect(redirectUrl.searchParams.get('next')).toBe(expectedNextPath);
+  }
 }
 
 describe('middleware auth boundary', () => {
   it('redirects forged admin-session cookies instead of trusting token.signature shape', async () => {
     const response = await middleware(makeRequest('/admin/companies', 'admin-session=a.b'));
 
-    expectRedirectsToLogin(response, '/admin/login');
+    expectRedirectsToLogin(response, '/login', '/admin/companies');
   });
 
   it('redirects forged company-session cookies instead of trusting token.signature shape', async () => {
@@ -45,6 +56,10 @@ describe('middleware auth boundary', () => {
       })
     );
 
-    expectRedirectsToLogin(response, '/admin/login');
+    expectRedirectsToLogin(
+      response,
+      '/login',
+      '/admin/integration/workshop',
+    );
   });
 });
