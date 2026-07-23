@@ -40,7 +40,7 @@ export interface DevLifecycleEnvironment {
   readonly DATABASE_URL?: string;
 }
 
-interface LifecycleServices {
+export interface LifecycleServices {
   readonly enrollment: DeviceEnrollmentService;
   readonly management: DeviceManagementService;
   readonly tokenExchange: DeviceTokenExchangeService;
@@ -377,14 +377,12 @@ export async function cleanupSyntheticLifecycleRows(
   }
 }
 
-function createServices(
-  prisma: PrismaService,
-  enrollmentOptions: DeviceEnrollmentServiceOptions
-): LifecycleServices {
+export function createDevLifecycleServices(prisma: PrismaService): LifecycleServices {
   const runtimeConfig = loadDeviceAuthRuntimeConfigFromConfigService(new ConfigService());
   if (runtimeConfig.deviceAuthConfig.environment !== EXPECTED_DEVICE_AUTH_ENVIRONMENT) {
     throw new Error('device_auth_dev_smoke_runtime_environment_mismatch');
   }
+  const enrollmentOptions: DeviceEnrollmentServiceOptions = runtimeConfig.enrollmentOptions;
   const enrollment = new DeviceEnrollmentService(
     prisma,
     runtimeConfig.deviceAuthConfig,
@@ -426,8 +424,7 @@ export async function runDevLifecycleSmoke(): Promise<SafeEvidence> {
   const actorHash = createActorHash(runId);
   const displayNamePrefix = `${DISPLAY_NAME_PREFIX}-${runId}`;
   const prisma = new PrismaService();
-  const runtimeConfig = loadDeviceAuthRuntimeConfigFromConfigService(new ConfigService());
-  const services = createServices(prisma, runtimeConfig.enrollmentOptions);
+  const services = createDevLifecycleServices(prisma);
   const results: LifecycleResult[] = [];
   await prisma.$connect();
   let failure: unknown;
