@@ -184,7 +184,23 @@ admin/company/worker 세션은 이 쓰기 endpoint를 사용할 수 없습니다
 
 중앙 장치 인증은 `external_webhard_sync`, `management_program`, `nesting_program`만 대상으로
 합니다. `computeroff`는 범위 밖입니다. 아래 경로는 clean RC의 소스·합성 테스트 계약이며,
-실제 Redis/DB 설정 주입, migration, PC 등록, 배포를 의미하지 않습니다.
+운영 Redis/DB 설정 주입, migration, 운영 PC 등록, 배포를 의미하지 않습니다.
+
+2026-07-23에는 `webhard-api/scripts/device-auth-dev-lifecycle-smoke.ts`를 Doppler `dev`에서
+실행해 세 program type의 등록→승인→token exchange→heartbeat→폐기→동일 표시명 신규 등록을
+실제 DEV DB로 확인했습니다. 도구는 `DOPPLER_CONFIG=dev`,
+`DEVICE_AUTH_ENVIRONMENT=dev`, 승인된 DEV DB 대상 지문, `--confirm-dev-write`가 모두
+일치하지 않으면 시작하지 않습니다.
+등록 코드·credential·access token·hash는 출력하지 않고, 실행 고유 actor/display-name 범위의
+row와 종속 row를 항상 삭제한 뒤 잔존 0건을 재확인합니다. 생명주기와 정리 단계가 함께
+실패해도 정리 실패를 별도 고정 오류 코드로 보고합니다. 이 증거는 DEV service/DB 생명주기에
+한정하며 관리자 session/CSRF HTTP UI, 운영 환경, 실제 설치 PC의 DPAPI/safeStorage 저장을
+대신하지 않습니다.
+
+로컬 통합 개발 서버는 루트 `npm run dev:all`로 실행합니다. 이 명령의 Next.js와 Webhard
+API 하위 명령은 폴더별 Doppler 선택값을 상속하지 않고 `yjlaser/dev`를 명시해 두 프로세스가
+동일한 DEV 환경으로 시작됩니다. 운영 시작 명령과 운영 Doppler token/config 경계는 변경하지
+않습니다.
 
 ### GET /api/v1/integration/devices/csrf
 

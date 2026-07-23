@@ -26,7 +26,8 @@
     "migrate:status": "npx prisma migrate status",
     "migrate:reset": "npx prisma migrate reset",
     "db:seed": "npx prisma db seed",
-    "r2:dry-run-delete": "npx tsx scripts/dry-run-non-portfolio-r2-delete.ts"
+    "r2:dry-run-delete": "npx tsx scripts/dry-run-non-portfolio-r2-delete.ts",
+    "smoke:device-auth:dev": "tsx scripts/device-auth-dev-lifecycle-smoke.ts"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"

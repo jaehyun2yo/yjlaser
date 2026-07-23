@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### 2026-07-23 — central-device-auth-dev-lifecycle-smoke
+
+**Scope**: 세 데스크톱 program type의 중앙 장치 인증 DEV 실제 상태 전환 증거.
+
+**수정**:
+
+- 루트 `dev`, `dev:webpack`, `webhard:dev`가 로컬 폴더의 이전 Doppler 선택값을
+  상속하지 않고 `yjlaser/dev`를 명시하도록 고정해 `npm run dev:all`의 프런트와
+  Webhard API가 항상 같은 DEV secret 집합으로 시작되게 했다.
+- Doppler config와 장치 인증 환경이 모두 `dev`이고, 실제 `DATABASE_URL` 대상 지문이
+  승인된 DEV DB와 일치하며, 명시 확인 플래그가 있을 때만 실행되는 생명주기 smoke 도구를
+  추가했다.
+- 외부웹하드·관리·네스팅 program type마다 등록, 승인, token exchange, heartbeat, 폐기,
+  동일 표시명 신규 등록을 수행하고 새 device ID가 발급되는지 확인한다.
+- raw 등록 코드, refresh/access token, credential hash는 출력하지 않는다. 실행 고유 actor와
+  display-name 범위의 device/enrollment 및 종속 row만 정리하고 잔존 0건을 재검증한다.
+
+**검증 및 경계**:
+
+- clean RC worktree에서 별도 Doppler scope 설정 없이 `npm run dev:all`로 현재 후보의
+  Next.js와 Webhard API를 각각 3000/4000번 포트에 실행하고, health 200과 장치 관리
+  경로의 로그인 보호 307을 확인했다.
+- 안전 게이트 1 suite / 13 tests, backend TypeScript, Prettier를 통과했다.
+- 확인 플래그 없는 Doppler DEV 실행은 DB 연결 전 차단됐다.
+- 실제 Doppler DEV 실행에서 세 program type 모두 active→revoked→reissued active를 통과하고
+  `cleanupVerified=true`를 확인했다.
+- 생명주기와 정리 단계가 함께 실패하면 정리 실패가 숨지 않도록 고정 오류 코드로 함께
+  보고한다.
+- 운영 config/DB/장치, 관리자 브라우저 세션, 서명·배포에는 접근하지 않았다.
+
 ### 2026-07-21 — runtime-doppler-entrypoint
 
 **Scope**: 회사사이트 Webhard API의 Railway/Docker runtime secret 주입 시작 경계.
