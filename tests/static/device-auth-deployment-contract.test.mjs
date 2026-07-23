@@ -107,3 +107,13 @@ test('device-auth deployment contract: frontend and backend environments are pai
   assert.match(combinedGuide, /환경 불일치.*차단/s);
   assert.match(combinedGuide, /keyring.*HMAC.*재사용.*금지/s);
 });
+
+test('device-auth deployment contract: NestJS emits a secret-free runtime attestation', () => {
+  const mainSource = readProjectFile('webhard-api/src/main.ts');
+
+  assert.match(mainSource, /app\.get<DeviceAuthConfig>\(DEVICE_AUTH_CONFIG\)/);
+  assert.match(
+    mainSource,
+    /JSON\.stringify\(createDeviceAuthRuntimeAttestation\(deviceAuthConfig\.environment\)\)/
+  );
+});

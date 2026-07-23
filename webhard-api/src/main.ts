@@ -29,7 +29,12 @@ import {
   createDeviceAuthBearerTransportMiddleware,
   shouldSkipGenericBodyParserForDeviceAuthBearer,
 } from './common/middleware/device-auth-bearer-transport.middleware';
-import { DEVICE_AUTH_ROTATION_OPTIONS } from './integration/device-auth/device-auth.tokens';
+import type { DeviceAuthConfig } from './integration/device-auth/device-auth.config';
+import { createDeviceAuthRuntimeAttestation } from './integration/device-auth/device-auth-runtime-attestation';
+import {
+  DEVICE_AUTH_CONFIG,
+  DEVICE_AUTH_ROTATION_OPTIONS,
+} from './integration/device-auth/device-auth.tokens';
 import type { DeviceAuthRotationRuntimeOptions } from './integration/device-auth/device-auth.runtime-config';
 import {
   createDeviceRotationFeatureGateMiddleware,
@@ -79,6 +84,7 @@ async function bootstrap() {
   });
   // Device bearer routes and public bootstrap use separate 4 KiB
   // non-inflating parsers before generic parsers below.
+  const deviceAuthConfig = app.get<DeviceAuthConfig>(DEVICE_AUTH_CONFIG);
   const rotationOptions = app.get<DeviceAuthRotationRuntimeOptions>(DEVICE_AUTH_ROTATION_OPTIONS);
   rawExpressApp.use(createDeviceRotationFeatureGateMiddleware(rotationOptions));
   rawExpressApp.use(createDeviceAuthBearerTransportMiddleware());
@@ -159,6 +165,9 @@ async function bootstrap() {
   );
 
   await app.listen(port);
+  new Logger('DeviceAuthRuntime').log(
+    JSON.stringify(createDeviceAuthRuntimeAttestation(deviceAuthConfig.environment))
+  );
   new Logger('Bootstrap').log(`Webhard API is running on: http://localhost:${port}/api/v1`);
 }
 bootstrap();
