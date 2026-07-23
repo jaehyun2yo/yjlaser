@@ -12,7 +12,9 @@ export async function middleware(request: NextRequest) {
     const sessionCookie = request.cookies.get('admin-session')?.value;
     const session = await verifyBrowserSessionCookie(sessionCookie, 'admin');
     if (!session) {
-      return NextResponse.redirect(new URL('/admin/login', request.url));
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('next', pathname);
+      return NextResponse.redirect(loginUrl);
     }
   }
 
