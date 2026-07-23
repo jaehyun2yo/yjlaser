@@ -12,6 +12,7 @@ const request: CreateDeviceEnrollmentCodeInput = {
   capabilityProfile: 'safe_canary',
   expectedDisplayName: '관리 프로그램 - 사무실 PC',
 };
+const EXPECTED_ENVIRONMENT = 'dev';
 
 describe('device enrollment API helper', () => {
   const fetchMock = jest.fn();
@@ -39,7 +40,7 @@ describe('device enrollment API helper', () => {
       }),
     });
 
-    await expect(createDeviceEnrollmentCode(request)).resolves.toEqual({
+    await expect(createDeviceEnrollmentCode(request, EXPECTED_ENVIRONMENT)).resolves.toEqual({
       enrollmentCode: 'enrollment-code-raw-value',
       enrollmentId: 'enrollment-1',
       environment: 'dev',
@@ -57,6 +58,7 @@ describe('device enrollment API helper', () => {
         headers: {
           'Content-Type': 'application/json',
           'x-csrf-token': 'device-auth-csrf-token',
+          'x-device-auth-environment': EXPECTED_ENVIRONMENT,
         },
         body: JSON.stringify(request),
       })
@@ -70,7 +72,7 @@ describe('device enrollment API helper', () => {
       text: async () => 'enrollment-code-raw-value must never be exposed',
     });
 
-    await expect(createDeviceEnrollmentCode(request)).rejects.toThrow(
+    await expect(createDeviceEnrollmentCode(request, EXPECTED_ENVIRONMENT)).rejects.toThrow(
       '장치 인증 코드 발급 요청에 실패했습니다. (HTTP 500)'
     );
   });
@@ -89,7 +91,7 @@ describe('device enrollment API helper', () => {
       }),
     });
 
-    await expect(createDeviceEnrollmentCode(request)).rejects.toThrow(
+    await expect(createDeviceEnrollmentCode(request, EXPECTED_ENVIRONMENT)).rejects.toThrow(
       '장치 인증 코드 발급 요청에 실패했습니다.'
     );
   });
@@ -103,7 +105,10 @@ describe('device enrollment API helper', () => {
           method: 'GET',
           credentials: 'include',
           cache: 'no-store',
-          headers: { Accept: 'application/json' },
+          headers: {
+            Accept: 'application/json',
+            'x-device-auth-environment': EXPECTED_ENVIRONMENT,
+          },
         });
         document.cookie = 'csrf-token=fresh-device-auth-csrf-token; Path=/';
         return { ok: true, status: 200 };
@@ -120,7 +125,7 @@ describe('device enrollment API helper', () => {
         }),
       });
 
-    await expect(createDeviceEnrollmentCode(request)).resolves.toMatchObject({
+    await expect(createDeviceEnrollmentCode(request, EXPECTED_ENVIRONMENT)).resolves.toMatchObject({
       enrollmentCode: 'enrollment-code-raw-value',
     });
 
@@ -130,6 +135,7 @@ describe('device enrollment API helper', () => {
         headers: {
           'Content-Type': 'application/json',
           'x-csrf-token': 'fresh-device-auth-csrf-token',
+          'x-device-auth-environment': EXPECTED_ENVIRONMENT,
         },
       })
     );
@@ -139,13 +145,18 @@ describe('device enrollment API helper', () => {
     document.cookie = 'csrf-token=; Max-Age=0; Path=/';
     fetchMock.mockResolvedValue({ ok: false, status: 403 });
 
-    await expect(createDeviceEnrollmentCode(request)).rejects.toThrow(
+    await expect(createDeviceEnrollmentCode(request, EXPECTED_ENVIRONMENT)).rejects.toThrow(
       '장치 인증 코드 발급 요청에 실패했습니다. (HTTP 403)'
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
       '/nestapi/integration/devices/csrf',
-      expect.objectContaining({ method: 'GET' })
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          'x-device-auth-environment': EXPECTED_ENVIRONMENT,
+        }),
+      })
     );
   });
 
@@ -175,8 +186,8 @@ describe('device enrollment API helper', () => {
       });
     });
 
-    const firstRequest = createDeviceEnrollmentCode(request);
-    const secondRequest = createDeviceEnrollmentCode(request);
+    const firstRequest = createDeviceEnrollmentCode(request, EXPECTED_ENVIRONMENT);
+    const secondRequest = createDeviceEnrollmentCode(request, EXPECTED_ENVIRONMENT);
 
     await Promise.resolve();
     await Promise.resolve();

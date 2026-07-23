@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### 2026-07-23 — central-device-auth-environment-boundary
+
+**Scope**: 회사사이트 중앙 장치 인증의 개발·스테이징·운영 환경 결속.
+
+**수정**:
+
+- Backend에 admin-only `GET /api/v1/integration/devices/runtime-environment`를 추가해
+  `DEVICE_AUTH_ENVIRONMENT`의 `dev`/`stg`/`prd` 식별자만 반환한다.
+- 관리자 장치 인증 화면은 `NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT`와 Backend 식별자가
+  정확히 일치할 때만 등록·조회·승인·폐기·재발급 패널을 렌더한다.
+- 설정 누락, API 실패, 환경 불일치에서는 모든 장치 작업을 차단하고 안전한 재확인만
+  허용한다. exact response parser는 알 수 없는 필드가 섞인 응답도 거부한다.
+- 화면 진입 뒤 연결 대상이 바뀌는 경우도 막기 위해 모든 관리자 장치 요청에 기대
+  환경을 결속하고, Backend guard가 실제 작업 직전에 서버 환경과 exact 비교한다.
+  누락·불일치·대소문자 변형은 서비스 호출 전 generic `409`로 차단한다.
+- 환경별 database, Redis, credential/access-token keyring과
+  audit/token-exchange/rate-limit HMAC namespace 분리표와
+  중지 조건을 배포 문서에 추가했다.
+
+**검증 및 경계**:
+
+- 작업계획서는 새 독립 에이전트 검토에서 보완 후 승인됐다. 구현 후 독립 보안
+  검토에서 요청 시점 환경 결속 누락을 발견해 수정했으며, 재검토는 finding 0건으로
+  `APPROVED` 판정을 받았다.
+- Backend 집중 5 suites / 109 tests, Frontend 집중 4 suites / 58 tests,
+  Frontend 전체 160 suites / 1,177 tests와 양쪽 typecheck·build가 통과했다.
+- Backend 전체 suite의 비관련 기존 11 suites / 28 tests 실패는 별도 검증 보고서에
+  원인과 범위를 기록했다.
+- 외부 개발/운영 배포, secret/environment 변경, DB 연결·migration은 수행하지 않았다.
+
 ### 2026-07-21 — central-device-auth-admin-rotation-control
 
 **Scope**: 회사사이트 관리자 장치 인증 화면의 원격 credential 재발급 요청.

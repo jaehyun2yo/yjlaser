@@ -21,6 +21,7 @@ import {
   type DeviceEnrollmentCodeResponse,
   type DeviceEnrollmentProgramType,
 } from '../_lib/device-enrollment-api';
+import type { DeviceAuthEnvironment } from '@/app/(admin)/admin/integration/devices/_lib/device-auth-environment';
 
 const PROGRAM_OPTIONS: ReadonlyArray<{
   readonly value: DeviceEnrollmentProgramType;
@@ -56,7 +57,11 @@ function formatExpiresAt(value: string): string {
   }).format(new Date(timestamp));
 }
 
-export function DeviceEnrollmentPanel() {
+interface DeviceEnrollmentPanelProps {
+  readonly environment: DeviceAuthEnvironment;
+}
+
+export function DeviceEnrollmentPanel({ environment }: DeviceEnrollmentPanelProps) {
   const [programType, setProgramType] =
     useState<DeviceEnrollmentProgramType>('external_webhard_sync');
   const [capabilityProfile, setCapabilityProfile] =
@@ -101,11 +106,14 @@ export function DeviceEnrollmentPanel() {
     setIsSubmitting(true);
 
     try {
-      const issuedCode = await createDeviceEnrollmentCode({
-        programType,
-        capabilityProfile,
-        expectedDisplayName: trimmedDisplayName,
-      });
+      const issuedCode = await createDeviceEnrollmentCode(
+        {
+          programType,
+          capabilityProfile,
+          expectedDisplayName: trimmedDisplayName,
+        },
+        environment
+      );
       setReveal(issuedCode);
       setExpectedDisplayName('');
     } catch {

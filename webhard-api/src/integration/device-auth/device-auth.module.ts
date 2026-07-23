@@ -10,6 +10,7 @@ import type { DeviceAuthConfig } from './device-auth.config';
 import type { DeviceAccessTokenConfig } from './device-access-token.config';
 import { DeviceAccessTokenService } from './device-access-token.service';
 import { DeviceAdminActorHasher } from './device-admin-actor-hash';
+import { DeviceAdminEnvironmentGuard } from './device-admin-environment.guard';
 import { DeviceBootstrapController } from './device-bootstrap.controller';
 import {
   DeviceBootstrapEnrollmentRateGuard,
@@ -239,6 +240,7 @@ export {
     },
     AdminGuard,
     SessionAuthGuard,
+    DeviceAdminEnvironmentGuard,
     DeviceEnrollmentAdminSessionSourceGuard,
     DeviceEnrollmentAdminRequestShapeGuard,
     DeviceEnrollmentAdminEmptyBodyGuard,

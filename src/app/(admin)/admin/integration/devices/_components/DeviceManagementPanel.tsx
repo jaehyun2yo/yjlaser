@@ -22,6 +22,7 @@ import {
   type DeviceRotationSummary,
   type ManagedDeviceSummary,
 } from '@/app/(admin)/admin/integration/devices/_lib/device-enrollment-api';
+import type { DeviceAuthEnvironment } from '@/app/(admin)/admin/integration/devices/_lib/device-auth-environment';
 
 const PROGRAM_LABELS: Record<ManagedDeviceSummary['programType'], string> = {
   external_webhard_sync: '외부웹하드동기화프로그램',
@@ -72,7 +73,11 @@ function statusBadgeVariant(state: ManagedDeviceSummary['state']): 'success' | '
   return 'gray';
 }
 
-export function DeviceManagementPanel() {
+interface DeviceManagementPanelProps {
+  readonly environment: DeviceAuthEnvironment;
+}
+
+export function DeviceManagementPanel({ environment }: DeviceManagementPanelProps) {
   const [devices, setDevices] = useState<readonly ManagedDeviceSummary[]>([]);
   const [isListLoading, setIsListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -88,54 +93,60 @@ export function DeviceManagementPanel() {
   const isMountedRef = useRef(false);
   const actionPendingRef = useRef(false);
 
-  const loadDevices = useCallback(async (purpose: ListLoadPurpose): Promise<ListLoadResult> => {
-    const generation = listGenerationRef.current + 1;
-    listGenerationRef.current = generation;
-    activeListAbortControllerRef.current?.abort();
+  const loadDevices = useCallback(
+    async (purpose: ListLoadPurpose): Promise<ListLoadResult> => {
+      const generation = listGenerationRef.current + 1;
+      listGenerationRef.current = generation;
+      activeListAbortControllerRef.current?.abort();
 
-    const controller = new AbortController();
-    activeListAbortControllerRef.current = controller;
-    if (isMountedRef.current) {
-      setIsListLoading(true);
-      setListError(null);
-    }
-
-    try {
-      const nextDevices = await listManagedDevices({ signal: controller.signal });
-      if (
-        !isMountedRef.current ||
-        controller.signal.aborted ||
-        generation !== listGenerationRef.current
-      ) {
-        return 'ignored';
+      const controller = new AbortController();
+      activeListAbortControllerRef.current = controller;
+      if (isMountedRef.current) {
+        setIsListLoading(true);
+        setListError(null);
       }
 
-      setDevices(nextDevices);
-      return 'loaded';
-    } catch {
-      if (
-        !isMountedRef.current ||
-        controller.signal.aborted ||
-        generation !== listGenerationRef.current
-      ) {
-        return 'ignored';
-      }
+      try {
+        const nextDevices = await listManagedDevices({
+          expectedEnvironment: environment,
+          signal: controller.signal,
+        });
+        if (
+          !isMountedRef.current ||
+          controller.signal.aborted ||
+          generation !== listGenerationRef.current
+        ) {
+          return 'ignored';
+        }
 
-      setListError(purpose === 'action' ? FRESH_LIST_ERROR : LIST_LOAD_ERROR);
-      return 'failed';
-    } finally {
-      if (activeListAbortControllerRef.current === controller) {
-        activeListAbortControllerRef.current = null;
+        setDevices(nextDevices);
+        return 'loaded';
+      } catch {
+        if (
+          !isMountedRef.current ||
+          controller.signal.aborted ||
+          generation !== listGenerationRef.current
+        ) {
+          return 'ignored';
+        }
+
+        setListError(purpose === 'action' ? FRESH_LIST_ERROR : LIST_LOAD_ERROR);
+        return 'failed';
+      } finally {
+        if (activeListAbortControllerRef.current === controller) {
+          activeListAbortControllerRef.current = null;
+        }
+        if (
+          isMountedRef.current &&
+          !controller.signal.aborted &&
+          generation === listGenerationRef.current
+        ) {
+          setIsListLoading(false);
+        }
       }
-      if (
-        isMountedRef.current &&
-        !controller.signal.aborted &&
-        generation === listGenerationRef.current
-      ) {
-        setIsListLoading(false);
-      }
-    }
-  }, []);
+    },
+    [environment]
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -178,7 +189,7 @@ export function DeviceManagementPanel() {
   };
 
   const handleApprove = (deviceId: string) => {
-    void runAction(() => approveManagedDevice(deviceId));
+    void runAction(() => approveManagedDevice(deviceId, environment));
   };
 
   const openRevokeConfirmation = (device: ManagedDeviceSummary) => {
@@ -199,7 +210,7 @@ export function DeviceManagementPanel() {
   const confirmRevoke = () => {
     if (!revokeConfirmation) return;
 
-    void runAction(() => revokeManagedDevice(revokeConfirmation.deviceId));
+    void runAction(() => revokeManagedDevice(revokeConfirmation.deviceId, environment));
   };
 
   const openRotationConfirmation = (device: ManagedDeviceSummary) => {
@@ -228,7 +239,7 @@ export function DeviceManagementPanel() {
 
     const confirmation = rotationConfirmation;
     void runAction(
-      () => requestManagedDeviceCredentialRotation(confirmation.deviceId),
+      () => requestManagedDeviceCredentialRotation(confirmation.deviceId, environment),
       (summary) => setRotationResult({ displayName: confirmation.displayName, summary })
     );
   };

@@ -4,6 +4,7 @@
 
 import {
   approveManagedDevice,
+  getDeviceAuthRuntimeEnvironment,
   listManagedDevices,
   requestManagedDeviceCredentialRotation,
   revokeManagedDevice,
@@ -13,6 +14,7 @@ import {
 } from '@/app/(admin)/admin/integration/devices/_lib/device-enrollment-api';
 
 const DEVICE_ID = 'b7dfcfe3-1a80-4ee2-92c9-5be9925c12a3';
+const EXPECTED_ENVIRONMENT = 'dev';
 
 const PENDING_DEVICE: ManagedDeviceSummary = {
   deviceId: DEVICE_ID,
@@ -69,7 +71,9 @@ describe('device management API helper', () => {
       json: async () => [PENDING_DEVICE],
     });
 
-    await expect(listManagedDevices()).resolves.toEqual([PENDING_DEVICE]);
+    await expect(
+      listManagedDevices({ expectedEnvironment: EXPECTED_ENVIRONMENT })
+    ).resolves.toEqual([PENDING_DEVICE]);
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/nestapi/integration/devices',
@@ -77,9 +81,67 @@ describe('device management API helper', () => {
         method: 'GET',
         credentials: 'include',
         cache: 'no-store',
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          'x-device-auth-environment': EXPECTED_ENVIRONMENT,
+        },
       })
     );
+  });
+
+  it.each(['dev', 'stg', 'prd'] as const)(
+    'reads the exact %s backend runtime environment with a no-store session request',
+    async (environment) => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ environment }),
+      });
+
+      await expect(getDeviceAuthRuntimeEnvironment()).resolves.toBe(environment);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/nestapi/integration/devices/runtime-environment',
+        expect.objectContaining({
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        })
+      );
+    }
+  );
+
+  it.each([
+    {},
+    { environment: 'production' },
+    { environment: 'dev', issuer: 'must-not-be-accepted' },
+    ['dev'],
+    null,
+  ])('rejects a malformed or expanded runtime environment response: %p', async (body) => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => body,
+    });
+
+    await expect(getDeviceAuthRuntimeEnvironment()).rejects.toMatchObject({
+      name: 'DeviceManagementRequestError',
+    });
+  });
+
+  it('rejects an unsuccessful runtime environment response without parsing the body', async () => {
+    const json = jest.fn(async () => ({ environment: 'dev' }));
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json,
+    });
+
+    await expect(getDeviceAuthRuntimeEnvironment()).rejects.toMatchObject({
+      name: 'DeviceManagementRequestError',
+    });
+    expect(json).not.toHaveBeenCalled();
   });
 
   it('prepares CSRF then posts no body for an approval action', async () => {
@@ -102,7 +164,9 @@ describe('device management API helper', () => {
         json: async () => APPROVED_STATUS,
       });
 
-    await expect(approveManagedDevice(DEVICE_ID)).resolves.toEqual(APPROVED_STATUS);
+    await expect(approveManagedDevice(DEVICE_ID, EXPECTED_ENVIRONMENT)).resolves.toEqual(
+      APPROVED_STATUS
+    );
 
     expect(fetchMock).toHaveBeenLastCalledWith(
       `/nestapi/integration/devices/${DEVICE_ID}/approve-enrollment`,
@@ -114,6 +178,7 @@ describe('device management API helper', () => {
         headers: {
           Accept: 'application/json',
           'x-csrf-token': 'fresh-device-management-csrf-token',
+          'x-device-auth-environment': EXPECTED_ENVIRONMENT,
         },
       })
     );
@@ -132,14 +197,23 @@ describe('device management API helper', () => {
         json: async () => ({ ...PENDING_DEVICE, state: 'revoked' }),
       });
 
-    await expect(approveManagedDevice(DEVICE_ID)).resolves.toEqual(APPROVED_STATUS);
-    await expect(revokeManagedDevice(DEVICE_ID)).resolves.toEqual({
+    await expect(approveManagedDevice(DEVICE_ID, EXPECTED_ENVIRONMENT)).resolves.toEqual(
+      APPROVED_STATUS
+    );
+    await expect(revokeManagedDevice(DEVICE_ID, EXPECTED_ENVIRONMENT)).resolves.toEqual({
       ...PENDING_DEVICE,
       state: 'revoked',
     });
 
     const postRequests = fetchMock.mock.calls.filter(([, options]) => options?.method === 'POST');
     expect(postRequests).toHaveLength(2);
+    for (const [, options] of postRequests) {
+      expect(options?.headers).toEqual(
+        expect.objectContaining({
+          'x-device-auth-environment': EXPECTED_ENVIRONMENT,
+        })
+      );
+    }
   });
 
   it('requests credential rotation with CSRF and accepts only the safe rotation summary', async () => {
@@ -149,9 +223,9 @@ describe('device management API helper', () => {
       json: async () => ROTATION_SUMMARY,
     });
 
-    await expect(requestManagedDeviceCredentialRotation(DEVICE_ID)).resolves.toEqual(
-      ROTATION_SUMMARY
-    );
+    await expect(
+      requestManagedDeviceCredentialRotation(DEVICE_ID, EXPECTED_ENVIRONMENT)
+    ).resolves.toEqual(ROTATION_SUMMARY);
 
     expect(fetchMock).toHaveBeenCalledWith(
       `/nestapi/integration/devices/${DEVICE_ID}/credential-rotations`,
@@ -163,6 +237,7 @@ describe('device management API helper', () => {
         headers: {
           Accept: 'application/json',
           'x-csrf-token': 'device-management-csrf-token',
+          'x-device-auth-environment': EXPECTED_ENVIRONMENT,
         },
       })
     );
@@ -189,22 +264,24 @@ describe('device management API helper', () => {
         }),
       });
 
-    await expect(requestManagedDeviceCredentialRotation(DEVICE_ID)).rejects.toThrow(
-      '장치 관리 요청에 실패했습니다.'
-    );
-    await expect(requestManagedDeviceCredentialRotation(DEVICE_ID)).rejects.toThrow(
-      '장치 관리 요청에 실패했습니다.'
-    );
-    await expect(requestManagedDeviceCredentialRotation(DEVICE_ID)).rejects.toThrow(
-      '장치 관리 요청에 실패했습니다.'
-    );
+    await expect(
+      requestManagedDeviceCredentialRotation(DEVICE_ID, EXPECTED_ENVIRONMENT)
+    ).rejects.toThrow('장치 관리 요청에 실패했습니다.');
+    await expect(
+      requestManagedDeviceCredentialRotation(DEVICE_ID, EXPECTED_ENVIRONMENT)
+    ).rejects.toThrow('장치 관리 요청에 실패했습니다.');
+    await expect(
+      requestManagedDeviceCredentialRotation(DEVICE_ID, EXPECTED_ENVIRONMENT)
+    ).rejects.toThrow('장치 관리 요청에 실패했습니다.');
   });
 
   it('does not send an action POST when CSRF bootstrap fails', async () => {
     document.cookie = 'csrf-token=; Max-Age=0; Path=/';
     fetchMock.mockResolvedValue({ ok: false, status: 403, json: async () => ({}) });
 
-    await expect(approveManagedDevice(DEVICE_ID)).rejects.toThrow('장치 관리 요청에 실패했습니다.');
+    await expect(approveManagedDevice(DEVICE_ID, EXPECTED_ENVIRONMENT)).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
@@ -237,8 +314,8 @@ describe('device management API helper', () => {
       });
     });
 
-    const approval = approveManagedDevice(DEVICE_ID);
-    const revoke = revokeManagedDevice(DEVICE_ID);
+    const approval = approveManagedDevice(DEVICE_ID, EXPECTED_ENVIRONMENT);
+    const revoke = revokeManagedDevice(DEVICE_ID, EXPECTED_ENVIRONMENT);
 
     await Promise.resolve();
     await Promise.resolve();
@@ -262,6 +339,7 @@ describe('device management API helper', () => {
       expect(options?.headers).toEqual({
         Accept: 'application/json',
         'x-csrf-token': 'shared-device-management-csrf-token',
+        'x-device-auth-environment': EXPECTED_ENVIRONMENT,
       });
     });
   });
@@ -274,7 +352,9 @@ describe('device management API helper', () => {
       json: async () => ({ message: rawServerMessage }),
     });
 
-    await expect(revokeManagedDevice(DEVICE_ID)).rejects.toThrow('장치 관리 요청에 실패했습니다.');
+    await expect(revokeManagedDevice(DEVICE_ID, EXPECTED_ENVIRONMENT)).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
       `/nestapi/integration/devices/${DEVICE_ID}/revoke`,
@@ -291,7 +371,9 @@ describe('device management API helper', () => {
       ],
     });
 
-    await expect(listManagedDevices()).rejects.toThrow('장치 관리 요청에 실패했습니다.');
+    await expect(listManagedDevices({ expectedEnvironment: EXPECTED_ENVIRONMENT })).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
   });
 
   it('projects trimmed display and app values from a safe managed-device response', async () => {
@@ -307,7 +389,9 @@ describe('device management API helper', () => {
       ],
     });
 
-    await expect(listManagedDevices()).resolves.toEqual([
+    await expect(
+      listManagedDevices({ expectedEnvironment: EXPECTED_ENVIRONMENT })
+    ).resolves.toEqual([
       { ...PENDING_DEVICE, displayName: '관리 프로그램 사무실 PC', appVersion: '1.2.3' },
     ]);
   });
@@ -326,7 +410,9 @@ describe('device management API helper', () => {
       json: async () => [responseSummary],
     });
 
-    await expect(listManagedDevices()).rejects.toThrow('장치 관리 요청에 실패했습니다.');
+    await expect(listManagedDevices({ expectedEnvironment: EXPECTED_ENVIRONMENT })).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
   });
 
   it('rejects a non-canonical device ID from a list response', async () => {
@@ -341,7 +427,9 @@ describe('device management API helper', () => {
       ],
     });
 
-    await expect(listManagedDevices()).rejects.toThrow('장치 관리 요청에 실패했습니다.');
+    await expect(listManagedDevices({ expectedEnvironment: EXPECTED_ENVIRONMENT })).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
   });
 
   it('rejects a non-canonical UTC ISO timestamp from a list response', async () => {
@@ -351,7 +439,9 @@ describe('device management API helper', () => {
       json: async () => [{ ...PENDING_DEVICE, enrolledAt: '2026-07-20T12:00:00+09:00' }],
     });
 
-    await expect(listManagedDevices()).rejects.toThrow('장치 관리 요청에 실패했습니다.');
+    await expect(listManagedDevices({ expectedEnvironment: EXPECTED_ENVIRONMENT })).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
   });
 
   it('rejects unknown fields from approval and revoke action responses', async () => {
@@ -367,7 +457,11 @@ describe('device management API helper', () => {
         json: async () => ({ ...PENDING_DEVICE, refreshCredential: 'must not reach state' }),
       });
 
-    await expect(approveManagedDevice(DEVICE_ID)).rejects.toThrow('장치 관리 요청에 실패했습니다.');
-    await expect(revokeManagedDevice(DEVICE_ID)).rejects.toThrow('장치 관리 요청에 실패했습니다.');
+    await expect(approveManagedDevice(DEVICE_ID, EXPECTED_ENVIRONMENT)).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
+    await expect(revokeManagedDevice(DEVICE_ID, EXPECTED_ENVIRONMENT)).rejects.toThrow(
+      '장치 관리 요청에 실패했습니다.'
+    );
   });
 });

@@ -19,6 +19,7 @@ import { AdminGuard } from '../../auth/guards/admin.guard';
 import { CsrfExempt } from '../../common/decorators/csrf-exempt.decorator';
 import { SessionAuthGuard } from '../../auth/guards/session-auth.guard';
 import { DeviceAdminActorHasher } from './device-admin-actor-hash';
+import { DeviceAdminEnvironmentGuard } from './device-admin-environment.guard';
 import {
   DEVICE_ADMIN_ACTOR_HASHER,
   DEVICE_CREDENTIAL_ROTATION_SERVICE,
@@ -43,6 +44,7 @@ import type { DeviceRotationSummary } from './dto/device-credential-rotation.dto
   DeviceEnrollmentAdminSessionSourceGuard,
   SessionAuthGuard,
   AdminGuard,
+  DeviceAdminEnvironmentGuard,
   DeviceRotationAdminRequestShapeGuard
 )
 export class DeviceCredentialRotationController {

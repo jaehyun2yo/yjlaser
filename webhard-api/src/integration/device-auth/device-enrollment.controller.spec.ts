@@ -11,7 +11,15 @@ import { GlobalExceptionFilter } from '../../common/filters/global-exception.fil
 import { CsrfGuard } from '../../common/guards/csrf.guard';
 import { CsrfTokenMiddleware } from '../../common/middleware/csrf-token.middleware';
 import { DeviceAdminActorHasher } from './device-admin-actor-hash';
-import { DEVICE_ADMIN_ACTOR_HASHER, DEVICE_ENROLLMENT_SERVICE } from './device-auth.module';
+import {
+  DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER,
+  DeviceAdminEnvironmentGuard,
+} from './device-admin-environment.guard';
+import {
+  DEVICE_ADMIN_ACTOR_HASHER,
+  DEVICE_AUTH_CONFIG,
+  DEVICE_ENROLLMENT_SERVICE,
+} from './device-auth.module';
 import { DeviceEnrollmentAdminRequestShapeGuard } from './device-enrollment-admin-request-shape.guard';
 import { DeviceEnrollmentAdminSessionSourceGuard } from './device-enrollment-admin-session-source.guard';
 import { DeviceEnrollmentController } from './device-enrollment.controller';
@@ -72,7 +80,9 @@ describe('DeviceEnrollmentController', () => {
         AdminGuard,
         DeviceEnrollmentAdminSessionSourceGuard,
         DeviceEnrollmentAdminRequestShapeGuard,
+        DeviceAdminEnvironmentGuard,
         { provide: AuthService, useValue: authService },
+        { provide: DEVICE_AUTH_CONFIG, useValue: { environment: 'dev' } },
         { provide: DEVICE_ENROLLMENT_SERVICE, useValue: enrollmentService },
         { provide: DEVICE_ADMIN_ACTOR_HASHER, useValue: actorHasher },
       ],
@@ -122,6 +132,7 @@ describe('DeviceEnrollmentController', () => {
       .post(PATH)
       .set('Cookie', [`admin-session=${ADMIN_SESSION}`, `csrf-token=${CSRF_TOKEN}`])
       .set('X-CSRF-Token', CSRF_TOKEN)
+      .set(DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER, 'dev')
       .send(body);
   }
 
@@ -129,6 +140,7 @@ describe('DeviceEnrollmentController', () => {
     const response = await request(app.getHttpServer())
       .get(CSRF_BOOTSTRAP_PATH)
       .set('Cookie', `admin-session=${ADMIN_SESSION}`)
+      .set(DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER, 'dev')
       .expect(200);
 
     expect(response.headers['cache-control']).toContain('no-store');
@@ -186,6 +198,25 @@ describe('DeviceEnrollmentController', () => {
     expect(serializedResponse).not.toContain(ACTOR_HASH);
     expect(serializedResponse).not.toContain('refreshCredential');
     expect(serializedResponse).not.toContain('accessToken');
+  });
+
+  it('rejects enrollment-code issuance when the request environment is missing or mismatched', async () => {
+    for (const environment of [undefined, 'prd', 'DEV']) {
+      let testRequest = request(app.getHttpServer())
+        .post(PATH)
+        .set('Cookie', [`admin-session=${ADMIN_SESSION}`, `csrf-token=${CSRF_TOKEN}`])
+        .set('X-CSRF-Token', CSRF_TOKEN)
+        .send(validBody());
+      if (environment !== undefined) {
+        testRequest = testRequest.set(DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER, environment);
+      }
+
+      const response = await testRequest.expect(409);
+      expect(response.body).toMatchObject({ code: 'device_auth_environment_mismatch' });
+      expect(JSON.stringify(response.body)).not.toContain(environment ?? 'undefined');
+    }
+
+    expect(enrollmentService.createEnrollmentCode).not.toHaveBeenCalled();
   });
 
   it('rejects a request without a session only after valid CSRF reaches SessionAuthGuard', async () => {

@@ -9,6 +9,10 @@ import { SessionAuthGuard } from '../../auth/guards/session-auth.guard';
 import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
 import { CsrfGuard } from '../../common/guards/csrf.guard';
 import { CsrfTokenMiddleware } from '../../common/middleware/csrf-token.middleware';
+import {
+  DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER,
+  DeviceAdminEnvironmentGuard,
+} from './device-admin-environment.guard';
 import { DeviceEnrollmentAdminSessionSourceGuard } from './device-enrollment-admin-session-source.guard';
 import { DeviceManagementNoStoreMiddleware } from './device-management-no-store.middleware';
 import {
@@ -71,10 +75,12 @@ describe('DeviceCredentialRotationController', () => {
         SessionAuthGuard,
         AdminGuard,
         DeviceEnrollmentAdminSessionSourceGuard,
+        DeviceAdminEnvironmentGuard,
         {
           provide: tokens.DEVICE_AUTH_ROTATION_OPTIONS as symbol,
           useValue: { rotationRuntimeEnabled: true },
         },
+        { provide: tokens.DEVICE_AUTH_CONFIG, useValue: { environment: 'dev' } },
         { provide: AuthService, useValue: authService },
         { provide: tokens.DEVICE_CREDENTIAL_ROTATION_SERVICE, useValue: service },
         {
@@ -111,7 +117,8 @@ describe('DeviceCredentialRotationController', () => {
   function session(method: 'post' | 'get', path: string) {
     return request(app.getHttpServer())
       [method](path)
-      .set('Cookie', [`admin-session=${ADMIN_SESSION}`, `csrf-token=${CSRF}`]);
+      .set('Cookie', [`admin-session=${ADMIN_SESSION}`, `csrf-token=${CSRF}`])
+      .set(DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER, 'dev');
   }
 
   it('requests, reads, and cancels through the exact safe wire contract with no-store', async () => {
@@ -176,6 +183,25 @@ describe('DeviceCredentialRotationController', () => {
     expect(JSON.stringify(response.body)).not.toMatch(
       /actorHash|predecessor|candidate|credentialHash|requestIdDigest|accessToken|raw-jwt-secret/
     );
+  });
+
+  it('rejects credential rotation when the request environment is missing or mismatched', async () => {
+    for (const environment of [undefined, 'prd', 'DEV']) {
+      let call = request(app.getHttpServer())
+        .post(PATH)
+        .set('Cookie', [`admin-session=${ADMIN_SESSION}`, `csrf-token=${CSRF}`])
+        .set('X-CSRF-Token', CSRF)
+        .set('Content-Length', '0');
+      if (environment !== undefined) {
+        call = call.set(DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER, environment);
+      }
+
+      const response = await call.expect(409);
+      expect(response.body).toMatchObject({ code: 'device_auth_environment_mismatch' });
+      expect(JSON.stringify(response.body)).not.toContain(environment ?? 'undefined');
+    }
+
+    expect(service.requestRotation).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -297,8 +323,10 @@ describe('DeviceCredentialRotationController disabled feature boundary', () => {
         SessionAuthGuard,
         AdminGuard,
         DeviceEnrollmentAdminSessionSourceGuard,
+        DeviceAdminEnvironmentGuard,
         ShapeGuard,
         { provide: AuthService, useValue: { verifySession: jest.fn(() => admin) } },
+        { provide: tokens.DEVICE_AUTH_CONFIG, useValue: { environment: 'dev' } },
         {
           provide: tokens.DEVICE_AUTH_ROTATION_OPTIONS,
           useValue: { rotationRuntimeEnabled: false },

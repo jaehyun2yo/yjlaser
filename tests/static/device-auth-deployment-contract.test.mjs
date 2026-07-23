@@ -93,3 +93,17 @@ test('device-auth deployment contract: enum values commit before later constrain
   assert.match(rotationSource, /"status" <> 'expired' OR "expired_at" IS NOT NULL/);
   assert.match(rotationSource, /"status" <> 'revoked' OR "revoked_at" IS NOT NULL/);
 });
+
+test('device-auth deployment contract: frontend and backend environments are paired exactly', () => {
+  const railwayGuide = readProjectFile('docs/guides/railway-deploy.md');
+  const dopplerGuide = readProjectFile('docs/doppler.md');
+  const combinedGuide = `${railwayGuide}\n${dopplerGuide}`;
+
+  assert.match(combinedGuide, /NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT/);
+  assert.match(combinedGuide, /DEVICE_AUTH_ENVIRONMENT/);
+  assert.match(combinedGuide, /\|\s*local development\s*\|\s*`dev`\s*\|[^|]+\|\s*`dev`\s*\|/);
+  assert.match(combinedGuide, /\|\s*staging\/preview\s*\|\s*`stg`\s*\|[^|]+\|\s*`stg`\s*\|/);
+  assert.match(combinedGuide, /\|\s*production\s*\|\s*`prd`\s*\|[^|]+\|\s*`prd`\s*\|/);
+  assert.match(combinedGuide, /환경 불일치.*차단/s);
+  assert.match(combinedGuide, /keyring.*HMAC.*재사용.*금지/s);
+});

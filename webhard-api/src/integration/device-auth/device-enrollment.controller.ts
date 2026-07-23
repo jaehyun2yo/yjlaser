@@ -15,6 +15,7 @@ import type { SessionUser } from '../../auth/auth.service';
 import { AdminGuard } from '../../auth/guards/admin.guard';
 import { SessionAuthGuard } from '../../auth/guards/session-auth.guard';
 import { DeviceAdminActorHasher } from './device-admin-actor-hash';
+import { DeviceAdminEnvironmentGuard } from './device-admin-environment.guard';
 import { DeviceEnrollmentAdminRequestShapeGuard } from './device-enrollment-admin-request-shape.guard';
 import { DeviceEnrollmentAdminSessionSourceGuard } from './device-enrollment-admin-session-source.guard';
 import type { DeviceEnrollmentService } from './device-enrollment.service';
@@ -22,7 +23,12 @@ import { DEVICE_ADMIN_ACTOR_HASHER, DEVICE_ENROLLMENT_SERVICE } from './device-a
 import { CreateEnrollmentCodeDto } from './dto/create-enrollment-code.dto';
 
 @Controller('integration/devices')
-@UseGuards(SessionAuthGuard, AdminGuard, DeviceEnrollmentAdminSessionSourceGuard)
+@UseGuards(
+  SessionAuthGuard,
+  AdminGuard,
+  DeviceEnrollmentAdminSessionSourceGuard,
+  DeviceAdminEnvironmentGuard
+)
 export class DeviceEnrollmentController {
   public constructor(
     @Inject(DEVICE_ENROLLMENT_SERVICE)

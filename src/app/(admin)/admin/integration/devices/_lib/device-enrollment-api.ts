@@ -1,8 +1,11 @@
 import { NESTJS_CLIENT_API_BASE } from '@/lib/api/api-base';
+import type { DeviceAuthEnvironment } from '@/app/(admin)/admin/integration/devices/_lib/device-auth-environment';
 
 const DEVICE_ENROLLMENT_CODE_ENDPOINT = `${NESTJS_CLIENT_API_BASE}/integration/devices/enrollment-codes`;
 const DEVICE_ENROLLMENT_CSRF_ENDPOINT = `${NESTJS_CLIENT_API_BASE}/integration/devices/csrf`;
 const DEVICE_MANAGEMENT_ENDPOINT = `${NESTJS_CLIENT_API_BASE}/integration/devices`;
+const DEVICE_RUNTIME_ENVIRONMENT_ENDPOINT = `${DEVICE_MANAGEMENT_ENDPOINT}/runtime-environment`;
+const DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER = 'x-device-auth-environment';
 const DEVICE_MANAGEMENT_STATES = ['pending_approval', 'active', 'revoked'] as const;
 const DEVICE_ROTATION_STATUSES = [
   'requested',
@@ -28,7 +31,7 @@ const ENROLLMENT_CODE_RESPONSE_KEYS = [
   'expiresAt',
 ] as const;
 
-let csrfBootstrapPromise: Promise<string> | null = null;
+const csrfBootstrapPromises = new Map<DeviceAuthEnvironment, Promise<string>>();
 
 export const DEVICE_ENROLLMENT_PROGRAM_TYPES = [
   'external_webhard_sync',
@@ -51,7 +54,7 @@ export interface CreateDeviceEnrollmentCodeInput {
 export interface DeviceEnrollmentCodeResponse {
   readonly enrollmentCode: string;
   readonly enrollmentId: string;
-  readonly environment: 'dev' | 'stg' | 'prd';
+  readonly environment: DeviceAuthEnvironment;
   readonly programType: DeviceEnrollmentProgramType;
   readonly capabilityProfile: DeviceEnrollmentCapabilityProfile;
   readonly expiresAt: string;
@@ -61,7 +64,7 @@ export type DeviceEnrollmentState = (typeof DEVICE_MANAGEMENT_STATES)[number];
 
 export interface DeviceEnrollmentStatus {
   readonly deviceId: string;
-  readonly environment: 'dev' | 'stg' | 'prd';
+  readonly environment: DeviceAuthEnvironment;
   readonly programType: DeviceEnrollmentProgramType;
   readonly capabilityProfile: DeviceEnrollmentCapabilityProfile;
   readonly state: DeviceEnrollmentState;
@@ -88,6 +91,11 @@ export interface DeviceRotationSummary {
 }
 
 export interface ListManagedDevicesOptions {
+  readonly expectedEnvironment: DeviceAuthEnvironment;
+  readonly signal?: AbortSignal;
+}
+
+export interface GetDeviceAuthRuntimeEnvironmentOptions {
   readonly signal?: AbortSignal;
 }
 
@@ -122,27 +130,34 @@ function getCsrfToken(): string | undefined {
   }
 }
 
-async function ensureCsrfToken(): Promise<string> {
+async function ensureCsrfToken(expectedEnvironment: DeviceAuthEnvironment): Promise<string> {
   const existingToken = getCsrfToken();
   if (existingToken) return existingToken;
 
-  if (!csrfBootstrapPromise) {
-    csrfBootstrapPromise = bootstrapCsrfToken();
+  let bootstrapPromise = csrfBootstrapPromises.get(expectedEnvironment);
+  if (!bootstrapPromise) {
+    bootstrapPromise = bootstrapCsrfToken(expectedEnvironment);
+    csrfBootstrapPromises.set(expectedEnvironment, bootstrapPromise);
   }
 
   try {
-    return await csrfBootstrapPromise;
+    return await bootstrapPromise;
   } finally {
-    csrfBootstrapPromise = null;
+    if (csrfBootstrapPromises.get(expectedEnvironment) === bootstrapPromise) {
+      csrfBootstrapPromises.delete(expectedEnvironment);
+    }
   }
 }
 
-async function bootstrapCsrfToken(): Promise<string> {
+async function bootstrapCsrfToken(expectedEnvironment: DeviceAuthEnvironment): Promise<string> {
   const response = await fetch(DEVICE_ENROLLMENT_CSRF_ENDPOINT, {
     method: 'GET',
     credentials: 'include',
     cache: 'no-store',
-    headers: { Accept: 'application/json' },
+    headers: {
+      Accept: 'application/json',
+      [DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER]: expectedEnvironment,
+    },
   });
 
   if (!response.ok) {
@@ -187,7 +202,7 @@ function isDeviceRotationStatus(value: unknown): value is DeviceRotationStatus {
   );
 }
 
-function isDeviceEnvironment(value: unknown): value is DeviceEnrollmentCodeResponse['environment'] {
+function isDeviceEnvironment(value: unknown): value is DeviceAuthEnvironment {
   return value === 'dev' || value === 'stg' || value === 'prd';
 }
 
@@ -373,6 +388,19 @@ function parseManagedDeviceList(value: unknown): readonly ManagedDeviceSummary[]
   return value.map((item) => parseManagedDeviceSummary(item));
 }
 
+function parseDeviceAuthRuntimeEnvironment(value: unknown): DeviceAuthEnvironment {
+  if (!isRecord(value)) {
+    throw new DeviceManagementRequestError();
+  }
+
+  assertOnlyAllowedKeys(value, ['environment']);
+  if (!isDeviceEnvironment(value.environment)) {
+    throw new DeviceManagementRequestError();
+  }
+
+  return value.environment;
+}
+
 function parseDeviceRotationSummary(value: unknown): DeviceRotationSummary {
   if (!isRecord(value)) {
     throw new DeviceManagementRequestError();
@@ -438,11 +466,12 @@ async function requestManagedDeviceJson<T>(
 
 async function postManagedDeviceAction<T>(
   endpoint: string,
+  expectedEnvironment: DeviceAuthEnvironment,
   parser: (value: unknown) => T
 ): Promise<T> {
   let csrfToken: string;
   try {
-    csrfToken = await ensureCsrfToken();
+    csrfToken = await ensureCsrfToken(expectedEnvironment);
   } catch {
     throw new DeviceManagementRequestError();
   }
@@ -456,6 +485,7 @@ async function postManagedDeviceAction<T>(
       headers: {
         Accept: 'application/json',
         'x-csrf-token': csrfToken,
+        [DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER]: expectedEnvironment,
       },
       body: undefined,
     },
@@ -464,7 +494,7 @@ async function postManagedDeviceAction<T>(
 }
 
 export async function listManagedDevices(
-  options: ListManagedDevicesOptions = {}
+  options: ListManagedDevicesOptions
 ): Promise<readonly ManagedDeviceSummary[]> {
   return requestManagedDeviceJson(
     DEVICE_MANAGEMENT_ENDPOINT,
@@ -472,32 +502,61 @@ export async function listManagedDevices(
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        [DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER]: options.expectedEnvironment,
+      },
       signal: options.signal,
     },
     parseManagedDeviceList
   );
 }
 
-export async function approveManagedDevice(deviceId: string): Promise<DeviceEnrollmentStatus> {
+export async function getDeviceAuthRuntimeEnvironment(
+  options: GetDeviceAuthRuntimeEnvironmentOptions = {}
+): Promise<DeviceAuthEnvironment> {
+  return requestManagedDeviceJson(
+    DEVICE_RUNTIME_ENVIRONMENT_ENDPOINT,
+    {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+      signal: options.signal,
+    },
+    parseDeviceAuthRuntimeEnvironment
+  );
+}
+
+export async function approveManagedDevice(
+  deviceId: string,
+  expectedEnvironment: DeviceAuthEnvironment
+): Promise<DeviceEnrollmentStatus> {
   return postManagedDeviceAction(
     `${DEVICE_MANAGEMENT_ENDPOINT}/${encodeURIComponent(deviceId)}/approve-enrollment`,
+    expectedEnvironment,
     parseDeviceEnrollmentStatus
   );
 }
 
-export async function revokeManagedDevice(deviceId: string): Promise<ManagedDeviceSummary> {
+export async function revokeManagedDevice(
+  deviceId: string,
+  expectedEnvironment: DeviceAuthEnvironment
+): Promise<ManagedDeviceSummary> {
   return postManagedDeviceAction(
     `${DEVICE_MANAGEMENT_ENDPOINT}/${encodeURIComponent(deviceId)}/revoke`,
+    expectedEnvironment,
     parseManagedDeviceSummary
   );
 }
 
 export async function requestManagedDeviceCredentialRotation(
-  deviceId: string
+  deviceId: string,
+  expectedEnvironment: DeviceAuthEnvironment
 ): Promise<DeviceRotationSummary> {
   const summary = await postManagedDeviceAction(
     `${DEVICE_MANAGEMENT_ENDPOINT}/${encodeURIComponent(deviceId)}/credential-rotations`,
+    expectedEnvironment,
     parseDeviceRotationSummary
   );
 
@@ -537,9 +596,10 @@ function parseEnrollmentCodeResponse(value: unknown): DeviceEnrollmentCodeRespon
  * 사용하지 않으며, 호출 화면이 일회성 메모리에서만 표시·복사하도록 한다.
  */
 export async function createDeviceEnrollmentCode(
-  input: CreateDeviceEnrollmentCodeInput
+  input: CreateDeviceEnrollmentCodeInput,
+  expectedEnvironment: DeviceAuthEnvironment
 ): Promise<DeviceEnrollmentCodeResponse> {
-  const csrfToken = await ensureCsrfToken();
+  const csrfToken = await ensureCsrfToken(expectedEnvironment);
   const response = await fetch(DEVICE_ENROLLMENT_CODE_ENDPOINT, {
     method: 'POST',
     credentials: 'include',
@@ -547,6 +607,7 @@ export async function createDeviceEnrollmentCode(
     headers: {
       'Content-Type': 'application/json',
       'x-csrf-token': csrfToken,
+      [DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER]: expectedEnvironment,
     },
     body: JSON.stringify(input),
   });

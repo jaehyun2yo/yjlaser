@@ -14,22 +14,42 @@ import type { SessionUser } from '../../auth/auth.service';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AdminGuard } from '../../auth/guards/admin.guard';
 import { SessionAuthGuard } from '../../auth/guards/session-auth.guard';
+import type { DeviceAuthConfig } from './device-auth.config';
 import { DeviceAdminActorHasher } from './device-admin-actor-hash';
-import { DEVICE_ADMIN_ACTOR_HASHER, DEVICE_MANAGEMENT_SERVICE } from './device-auth.tokens';
-import type { DeviceEnrollmentStatus, ManagedDeviceSummary } from './device-auth.types';
+import {
+  AllowDeviceAuthEnvironmentDiscovery,
+  DeviceAdminEnvironmentGuard,
+} from './device-admin-environment.guard';
+import {
+  DEVICE_ADMIN_ACTOR_HASHER,
+  DEVICE_AUTH_CONFIG,
+  DEVICE_MANAGEMENT_SERVICE,
+} from './device-auth.tokens';
+import type {
+  DeviceAuthEnvironment,
+  DeviceEnrollmentStatus,
+  ManagedDeviceSummary,
+} from './device-auth.types';
 import { DeviceEnrollmentAdminEmptyBodyGuard } from './device-enrollment-admin-empty-body.guard';
 import { DeviceEnrollmentAdminSessionSourceGuard } from './device-enrollment-admin-session-source.guard';
 import { DeviceEnrollmentError } from './device-enrollment.service';
 import { DeviceManagementError, DeviceManagementService } from './device-management.service';
 
 @Controller('integration/devices')
-@UseGuards(SessionAuthGuard, AdminGuard, DeviceEnrollmentAdminSessionSourceGuard)
+@UseGuards(
+  SessionAuthGuard,
+  AdminGuard,
+  DeviceEnrollmentAdminSessionSourceGuard,
+  DeviceAdminEnvironmentGuard
+)
 export class DeviceManagementController {
   public constructor(
     @Inject(DEVICE_MANAGEMENT_SERVICE)
     private readonly managementService: DeviceManagementService,
     @Inject(DEVICE_ADMIN_ACTOR_HASHER)
-    private readonly adminActorHasher: DeviceAdminActorHasher
+    private readonly adminActorHasher: DeviceAdminActorHasher,
+    @Inject(DEVICE_AUTH_CONFIG)
+    private readonly deviceAuthConfig: DeviceAuthConfig
   ) {}
 
   @Get()
@@ -39,6 +59,12 @@ export class DeviceManagementController {
     } catch (error: unknown) {
       return mapDeviceManagementError(error);
     }
+  }
+
+  @Get('runtime-environment')
+  @AllowDeviceAuthEnvironmentDiscovery()
+  public getRuntimeEnvironment(): { readonly environment: DeviceAuthEnvironment } {
+    return { environment: this.deviceAuthConfig.environment };
   }
 
   @Post(':id/approve-enrollment')

@@ -7,6 +7,7 @@ import DevicesPage from '@/app/(admin)/admin/integration/devices/page';
 import {
   approveManagedDevice,
   createDeviceEnrollmentCode,
+  getDeviceAuthRuntimeEnvironment,
   listManagedDevices,
   requestManagedDeviceCredentialRotation,
   revokeManagedDevice,
@@ -22,6 +23,7 @@ jest.mock('next/navigation', () => ({
 jest.mock('@/app/(admin)/admin/integration/devices/_lib/device-enrollment-api', () => ({
   approveManagedDevice: jest.fn(),
   createDeviceEnrollmentCode: jest.fn(),
+  getDeviceAuthRuntimeEnvironment: jest.fn(),
   listManagedDevices: jest.fn(),
   requestManagedDeviceCredentialRotation: jest.fn(),
   revokeManagedDevice: jest.fn(),
@@ -29,6 +31,7 @@ jest.mock('@/app/(admin)/admin/integration/devices/_lib/device-enrollment-api', 
 
 const approveManagedDeviceMock = jest.mocked(approveManagedDevice);
 const createDeviceEnrollmentCodeMock = jest.mocked(createDeviceEnrollmentCode);
+const getDeviceAuthRuntimeEnvironmentMock = jest.mocked(getDeviceAuthRuntimeEnvironment);
 const listManagedDevicesMock = jest.mocked(listManagedDevices);
 const requestManagedDeviceCredentialRotationMock = jest.mocked(
   requestManagedDeviceCredentialRotation
@@ -101,19 +104,114 @@ function createDeferred<T>() {
 
 describe('Device enrollment page', () => {
   const clipboardWriteText = jest.fn<Promise<void>, [string]>();
+  const originalExpectedEnvironment = process.env.NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT;
 
   beforeEach(() => {
     approveManagedDeviceMock.mockReset();
     createDeviceEnrollmentCodeMock.mockReset();
+    getDeviceAuthRuntimeEnvironmentMock.mockReset();
     listManagedDevicesMock.mockReset();
     requestManagedDeviceCredentialRotationMock.mockReset();
     revokeManagedDeviceMock.mockReset();
     clipboardWriteText.mockReset();
     clipboardWriteText.mockResolvedValue(undefined);
+    process.env.NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT = 'dev';
+    getDeviceAuthRuntimeEnvironmentMock.mockResolvedValue('dev');
     listManagedDevicesMock.mockResolvedValue([]);
     Object.assign(navigator, {
       clipboard: { writeText: clipboardWriteText },
     });
+  });
+
+  afterAll(() => {
+    if (originalExpectedEnvironment === undefined) {
+      delete process.env.NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT;
+    } else {
+      process.env.NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT = originalExpectedEnvironment;
+    }
+  });
+
+  function expectDeviceControlsBlocked(): void {
+    expect(screen.queryByRole('heading', { name: '등록 코드 발급' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '등록 장치 관리' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '등록 코드 발급' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '승인' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '연동 해제' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '키 재발급' })).not.toBeInTheDocument();
+  }
+
+  function expectDeviceMutationsNotCalled(): void {
+    expect(listManagedDevicesMock).not.toHaveBeenCalled();
+    expect(createDeviceEnrollmentCodeMock).not.toHaveBeenCalled();
+    expect(approveManagedDeviceMock).not.toHaveBeenCalled();
+    expect(revokeManagedDeviceMock).not.toHaveBeenCalled();
+    expect(requestManagedDeviceCredentialRotationMock).not.toHaveBeenCalled();
+  }
+
+  it('shows the development environment and enables controls only when dev matches dev', async () => {
+    render(<DevicesPage />);
+
+    expect(await screen.findByText('개발 환경 (dev)')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '등록 코드 발급' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '등록 장치 관리' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '등록 코드 발급' })).toBeEnabled();
+  });
+
+  it('blocks every device action when the frontend and backend environments differ', async () => {
+    getDeviceAuthRuntimeEnvironmentMock.mockResolvedValue('prd');
+    listManagedDevicesMock.mockResolvedValue([pendingDevice, activeDevice]);
+
+    render(<DevicesPage />);
+
+    const mismatchTitle = await screen.findByText('환경 연결 불일치');
+    const mismatchAlert = mismatchTitle.closest('[role="alert"]');
+    expect(mismatchAlert).toHaveTextContent('개발 환경 (dev)');
+    expect(mismatchAlert).toHaveTextContent('운영 환경 (prd)');
+    expectDeviceControlsBlocked();
+    expectDeviceMutationsNotCalled();
+  });
+
+  it('blocks every device action without calling the backend when expected environment is missing', () => {
+    delete process.env.NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT;
+    listManagedDevicesMock.mockResolvedValue([pendingDevice, activeDevice]);
+
+    render(<DevicesPage />);
+
+    expect(screen.getByText('환경 설정 누락')).toBeInTheDocument();
+    expect(getDeviceAuthRuntimeEnvironmentMock).not.toHaveBeenCalled();
+    expectDeviceControlsBlocked();
+    expectDeviceMutationsNotCalled();
+  });
+
+  it('keeps controls blocked through request failure and mismatch until a retry returns the expected environment', async () => {
+    getDeviceAuthRuntimeEnvironmentMock
+      .mockRejectedValueOnce(new Error('runtime unavailable'))
+      .mockResolvedValueOnce('prd')
+      .mockResolvedValueOnce('dev');
+    listManagedDevicesMock.mockResolvedValue([pendingDevice, activeDevice]);
+
+    render(<DevicesPage />);
+
+    expect(await screen.findByText('환경 확인 실패')).toBeInTheDocument();
+    expectDeviceControlsBlocked();
+    expectDeviceMutationsNotCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '환경 다시 확인' }));
+    expect(await screen.findByText('환경 연결 불일치')).toBeInTheDocument();
+    expectDeviceControlsBlocked();
+    expectDeviceMutationsNotCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '환경 다시 확인' }));
+    expect(await screen.findByText('개발 환경 (dev)')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '등록 코드 발급' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '등록 장치 관리' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(listManagedDevicesMock).toHaveBeenCalledTimes(1);
+    });
+    expect(createDeviceEnrollmentCodeMock).not.toHaveBeenCalled();
+    expect(approveManagedDeviceMock).not.toHaveBeenCalled();
+    expect(revokeManagedDeviceMock).not.toHaveBeenCalled();
+    expect(requestManagedDeviceCredentialRotationMock).not.toHaveBeenCalled();
   });
 
   it('issues an enrollment code for only the supported desktop programs', async () => {
@@ -133,7 +231,9 @@ describe('Device enrollment page', () => {
       '/admin/integration/devices'
     );
     expect(screen.getByRole('heading', { name: '장치 인증' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '외부웹하드동기화프로그램' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('option', { name: '외부웹하드동기화프로그램' })
+    ).toBeInTheDocument();
     expect(screen.getByRole('option', { name: '유진레이저목형 관리프로그램' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: '레이저네스팅프로그램' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /computeroff/i })).toBeNull();
@@ -150,11 +250,14 @@ describe('Device enrollment page', () => {
     fireEvent.click(screen.getByRole('button', { name: '등록 코드 발급' }));
 
     await waitFor(() => {
-      expect(createDeviceEnrollmentCodeMock).toHaveBeenCalledWith({
-        programType: 'management_program',
-        capabilityProfile: 'safe_canary',
-        expectedDisplayName: '관리 프로그램 - 사무실 PC',
-      });
+      expect(createDeviceEnrollmentCodeMock).toHaveBeenCalledWith(
+        {
+          programType: 'management_program',
+          capabilityProfile: 'safe_canary',
+          expectedDisplayName: '관리 프로그램 - 사무실 PC',
+        },
+        'dev'
+      );
     });
     expect(screen.getByTestId('device-enrollment-code')).toHaveTextContent(
       'enrollment-code-raw-value'
@@ -172,7 +275,7 @@ describe('Device enrollment page', () => {
     });
 
     render(<DevicesPage />);
-    fireEvent.change(screen.getByLabelText('PC 표시명'), {
+    fireEvent.change(await screen.findByLabelText('PC 표시명'), {
       target: { value: '동기화 PC 1' },
     });
     fireEvent.click(screen.getByRole('button', { name: '등록 코드 발급' }));
@@ -213,7 +316,7 @@ describe('Device enrollment page', () => {
     fireEvent.click(screen.getByRole('button', { name: '승인' }));
 
     await waitFor(() => {
-      expect(approveManagedDeviceMock).toHaveBeenCalledWith(pendingDevice.deviceId);
+      expect(approveManagedDeviceMock).toHaveBeenCalledWith(pendingDevice.deviceId, 'dev');
     });
     await waitFor(() => {
       expect(listManagedDevicesMock).toHaveBeenCalledTimes(2);
@@ -245,7 +348,7 @@ describe('Device enrollment page', () => {
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
-      expect(revokeManagedDeviceMock).toHaveBeenCalledWith(activeDevice.deviceId);
+      expect(revokeManagedDeviceMock).toHaveBeenCalledWith(activeDevice.deviceId, 'dev');
     });
     expect(revokeManagedDeviceMock).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: '취소' })).toBeDisabled();
@@ -282,7 +385,8 @@ describe('Device enrollment page', () => {
 
     await waitFor(() => {
       expect(requestManagedDeviceCredentialRotationMock).toHaveBeenCalledWith(
-        activeDevice.deviceId
+        activeDevice.deviceId,
+        'dev'
       );
     });
     await waitFor(() => {

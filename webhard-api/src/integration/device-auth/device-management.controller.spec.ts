@@ -10,7 +10,15 @@ import { SessionAuthGuard } from '../../auth/guards/session-auth.guard';
 import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
 import { CsrfGuard } from '../../common/guards/csrf.guard';
 import { CsrfTokenMiddleware } from '../../common/middleware/csrf-token.middleware';
-import { DEVICE_ADMIN_ACTOR_HASHER, DEVICE_MANAGEMENT_SERVICE } from './device-auth.tokens';
+import {
+  DEVICE_ADMIN_ACTOR_HASHER,
+  DEVICE_AUTH_CONFIG,
+  DEVICE_MANAGEMENT_SERVICE,
+} from './device-auth.tokens';
+import {
+  DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER,
+  DeviceAdminEnvironmentGuard,
+} from './device-admin-environment.guard';
 import { DeviceEnrollmentAdminEmptyBodyGuard } from './device-enrollment-admin-empty-body.guard';
 import { DeviceEnrollmentAdminSessionSourceGuard } from './device-enrollment-admin-session-source.guard';
 import { DeviceEnrollmentError } from './device-enrollment.service';
@@ -101,7 +109,16 @@ describe('DeviceManagementController', () => {
         AdminGuard,
         DeviceEnrollmentAdminSessionSourceGuard,
         DeviceEnrollmentAdminEmptyBodyGuard,
+        DeviceAdminEnvironmentGuard,
         { provide: AuthService, useValue: authService },
+        {
+          provide: DEVICE_AUTH_CONFIG,
+          useValue: {
+            environment: 'dev',
+            currentHashKeyVersion: 1,
+            credentialPepperKeyring: {},
+          },
+        },
         { provide: DEVICE_MANAGEMENT_SERVICE, useValue: managementService },
         { provide: DEVICE_ADMIN_ACTOR_HASHER, useValue: actorHasher },
       ],
@@ -153,6 +170,13 @@ describe('DeviceManagementController', () => {
   function adminGet() {
     return request(app.getHttpServer())
       .get(PATH)
+      .set('Cookie', 'admin-session=' + ADMIN_SESSION)
+      .set(DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER, 'dev');
+  }
+
+  function adminRuntimeEnvironmentGet() {
+    return request(app.getHttpServer())
+      .get(PATH + '/runtime-environment')
       .set('Cookie', 'admin-session=' + ADMIN_SESSION);
   }
 
@@ -160,7 +184,8 @@ describe('DeviceManagementController', () => {
     const testRequest = request(app.getHttpServer())
       .post(path)
       .set('Cookie', ['admin-session=' + ADMIN_SESSION, 'csrf-token=' + CSRF_TOKEN])
-      .set('X-CSRF-Token', CSRF_TOKEN);
+      .set('X-CSRF-Token', CSRF_TOKEN)
+      .set(DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER, 'dev');
 
     return body === undefined ? testRequest.set('Content-Length', '0') : testRequest.send(body);
   }
@@ -208,6 +233,57 @@ describe('DeviceManagementController', () => {
     expect(serialized).not.toContain('credentialHash');
     expect(serialized).not.toContain('approvedByActorHash');
   });
+
+  it('returns only the server-selected device-auth environment to an authenticated admin', async () => {
+    const response = await adminRuntimeEnvironmentGet().expect(200);
+
+    expect(response.headers['cache-control']).toBe('no-store, private');
+    expect(response.body).toEqual({ environment: 'dev' });
+    expect(Object.keys(response.body)).toEqual(['environment']);
+    expect(managementService.listDevices).not.toHaveBeenCalled();
+  });
+
+  it('does not expose the runtime environment without an authenticated admin session', async () => {
+    const response = await request(app.getHttpServer())
+      .get(PATH + '/runtime-environment')
+      .expect(401);
+
+    expect(response.headers['cache-control']).toBe('no-store, private');
+    expect(response.body).toEqual({
+      statusCode: 401,
+      timestamp: expect.any(String),
+      path: PATH + '/runtime-environment',
+      message: 'Invalid or missing session',
+      error: 'Unauthorized',
+    });
+    expect(managementService.listDevices).not.toHaveBeenCalled();
+  });
+
+  it('does not expose the runtime environment to a company session', async () => {
+    const response = await request(app.getHttpServer())
+      .get(PATH + '/runtime-environment')
+      .set('Cookie', 'company-session=' + COMPANY_SESSION)
+      .expect(403);
+
+    expect(response.headers['cache-control']).toBe('no-store, private');
+    expect(managementService.listDevices).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'prd', 'DEV'])(
+    'rejects device listing at request time when expected environment is %p',
+    async (environment) => {
+      let testRequest = request(app.getHttpServer())
+        .get(PATH)
+        .set('Cookie', 'admin-session=' + ADMIN_SESSION);
+      if (environment !== undefined) {
+        testRequest = testRequest.set(DEVICE_AUTH_EXPECTED_ENVIRONMENT_HEADER, environment);
+      }
+
+      const response = await testRequest.expect(409);
+      expect(response.body).toMatchObject({ code: 'device_auth_environment_mismatch' });
+      expect(managementService.listDevices).not.toHaveBeenCalled();
+    }
+  );
 
   it('approves a device with an exact zero-octet body and returns 200', async () => {
     const response = await adminAction(PATH + '/' + DEVICE_ID + '/approve-enrollment').expect(200);

@@ -247,3 +247,36 @@ railway run -- node dist/scripts/backfill-initial-revisions.js --apply     # 실
 - `docs/guides/production-monitoring.md` — Sentry/로깅/알림
 - `webhard-api/Dockerfile` — 빌드·시작 스펙
 - `webhard-api/railway.toml` — Railway 빌더·배포 설정
+
+---
+
+## 8. 장치 인증 환경 결속
+
+회사사이트 관리자 장치 인증 화면과 Webhard API는 아래 조합만 허용한다.
+
+| Frontend scope | `NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT` | Backend environment | `DEVICE_AUTH_ENVIRONMENT` |
+| --- | --- | --- | --- |
+| local development | `dev` | local/Railway development | `dev` |
+| staging/preview | `stg` | Railway staging | `stg` |
+| production | `prd` | Railway production | `prd` |
+
+`NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT`는 서버 렌더링 시 읽으며 관리자가 화면에서 바꾸는
+선택값이 아니다. Backend는 admin session으로만 접근 가능한
+`GET /api/v1/integration/devices/runtime-environment`에서 현재 환경 식별자만 반환한다.
+Frontend는 이 값이 기대값과 정확히 일치할 때만 장치 관리 패널을 연다.
+패널이 열린 뒤에도 조회·등록·승인·폐기·재발급 요청은
+`x-device-auth-environment`로 기대 환경을 전달하며 Backend가 작업 직전에
+`DEVICE_AUTH_ENVIRONMENT`와 다시 비교한다. 누락 또는 불일치는 `409`로 중단한다.
+
+다음 조건에서는 배포 또는 운영 작업을 즉시 중지한다.
+
+- Frontend와 Backend 환경 불일치 또는 환경 확인 API 실패
+- 연결된 database/Supabase project가 대상 환경과 다름
+- 환경 사이에서 credential/access-token keyring이나 audit/token-exchange/rate-limit
+  HMAC namespace 재사용
+- production URL이 local 또는 preview Backend를 가리킴
+- 점검 출력에 secret 원문이 포함됨
+
+환경 불일치 상태에서는 등록·조회·승인·폐기·재발급을 모두 차단한다. 외부 개발
+배포를 새로 만들거나 운영 설정을 바꾸는 작업은 별도 승인과 대상 식별자 확인 후에만
+수행한다.

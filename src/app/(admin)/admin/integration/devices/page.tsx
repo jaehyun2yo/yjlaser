@@ -1,8 +1,12 @@
 import { IntegrationNav } from '@/app/(admin)/admin/integration/_components';
-import { DeviceEnrollmentPanel } from '@/app/(admin)/admin/integration/devices/_components/DeviceEnrollmentPanel';
-import { DeviceManagementPanel } from '@/app/(admin)/admin/integration/devices/_components/DeviceManagementPanel';
+import { DeviceEnvironmentBoundary } from '@/app/(admin)/admin/integration/devices/_components/DeviceEnvironmentBoundary';
+import { parseExpectedDeviceAuthEnvironment } from '@/app/(admin)/admin/integration/devices/_lib/device-auth-environment';
 
 export default function DevicesPage() {
+  const expectedEnvironment = parseExpectedDeviceAuthEnvironment(
+    process.env.NEXT_PUBLIC_DEVICE_AUTH_ENVIRONMENT
+  );
+
   return (
     <div className="space-y-6">
       <IntegrationNav />
@@ -14,8 +18,7 @@ export default function DevicesPage() {
         </p>
       </header>
 
-      <DeviceEnrollmentPanel />
-      <DeviceManagementPanel />
+      <DeviceEnvironmentBoundary expectedEnvironment={expectedEnvironment} />
     </div>
   );
 }
