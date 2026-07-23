@@ -2,6 +2,30 @@
 
 ## 최신 상태 (가장 위가 최신)
 
+### 세션 #149 — 2026-07-23
+
+- **작업 내용**: 중앙 장치 인증 hosted 개발·운영 환경 분리 배포와 읽기 전용 smoke
+- **완료한 것**:
+  - 기존 무료 Upstash를 공유하되 staging/production DB, credential/access-token
+    keyring, audit/token-exchange/rate-limit HMAC을 분리했다.
+  - Railway staging과 Vercel Preview를 `stg`, Railway/Vercel production을 `prd`로
+    결속해 단계적으로 배포했다.
+  - 운영 첫 Railway 업로드의 rootDirectory 중첩 실패를 확인하고 clean 전체 repository
+    root 업로드와 전체 rollback worktree 방식으로 수정했다.
+- **검증**:
+  - Railway staging `5aa3a1eb-fd67-49d7-a506-084aaff7d3a3`: `SUCCESS`,
+    health `200`, runtime 무인증 `401`, attestation `stg`.
+  - Vercel Preview `dpl_8C3UEgf6ziYachT7Ge1aLJS1Kqsa`: `READY`, target `preview`,
+    관리자 장치관리 경로 `307` login redirect.
+  - Railway production `fa25d457-798c-4465-8f0c-d3ac40d6bc02`: `SUCCESS`,
+    health `200`, runtime 무인증 `401`, attestation `prd`.
+  - Vercel Production `dpl_Fcp9d2NmCQfLYomZqyYzbJSTfnyq`: `READY`,
+    `www.yjlaser.net` alias, health `200`, runtime `401`, 관리자 경로 `307`.
+  - 정적 배포 계약 7/7과 장치 인증 집중 28/28을 통과했다.
+- **남은 범위**: 실제 장치 등록 코드 발급·승인·폐기·키 재발급은 Gate C 승인 전까지
+  실행하지 않았다.
+- **관련 커밋**: 본 변경에 포함
+
 ### 세션 #148 — 2026-07-23
 
 - **작업 내용**: 중앙 장치 인증 개발·스테이징·운영 환경 결속과 관리자 fail-closed 경계 추가

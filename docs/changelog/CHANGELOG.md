@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### 2026-07-23 — central-device-auth-hosted-rollout
+
+**Scope**: 회사사이트 중앙 장치 인증의 Railway/Vercel 개발·운영 단계 배포.
+
+**반영**:
+
+- Vercel Preview는 `stg` Frontend와 Railway staging API, Vercel Production은 `prd`
+  Frontend와 Railway production API로 결속했다.
+- staging/production DB와 credential/access-token keyring,
+  audit/token-exchange/rate-limit HMAC을 분리했다. 무료 한도 때문에 Upstash URL/token은
+  공유하되 환경 namespace와 rate-limit HMAC을 분리한다.
+- Railway production의 service rootDirectory가 CLI archive root와 중첩된 첫 배포
+  실패를 수정했다. 배포와 rollback 모두 해당 commit의 clean repository 전체를
+  archive root로 사용한다.
+
+**검증 및 경계**:
+
+- Railway staging/production은 각각 `SUCCESS`, health `200`, runtime 무인증 `401`,
+  runtime attestation `stg`/`prd`를 반환했다.
+- Vercel Preview/Production은 각각 `READY`와 올바른 target이며
+  `/admin/integration/devices`는 비로그인 상태에서 `307` login redirect를 반환했다.
+- 운영 회사 도메인은 health `200`, runtime 무인증 `401`을 반환한다.
+- 실제 장치 등록 코드 발급·승인·폐기·키 재발급 mutation과 DB migration은 실행하지
+  않았다. 공유 Upstash token의 cross-environment blast radius는 잔여 위험이다.
+
 ### 2026-07-23 — central-device-auth-environment-boundary
 
 **Scope**: 회사사이트 중앙 장치 인증의 개발·스테이징·운영 환경 결속.
