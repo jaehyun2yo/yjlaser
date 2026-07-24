@@ -12,6 +12,7 @@ import { FoldersService } from '../folders.service';
 import { WebhardConfigService } from '../webhard-config.service';
 import { SessionUser } from '../../auth/auth.service';
 import { ALLOW_INTEGRATION_PRINCIPAL_KEY } from '../../integration/auth/allow-integration-principal.decorator';
+import type { CurrentIntegrationPrincipalValue } from '../../integration/auth/current-integration-principal.decorator';
 import {
   FolderResponseDto,
   FolderListResponseDto,
@@ -43,6 +44,13 @@ function makeCompanyUser(companyId = 123): SessionUser {
     userType: 'company',
     userId: `company-${companyId}`,
     companyId,
+  };
+}
+
+function asSessionPrincipal(user: SessionUser): CurrentIntegrationPrincipalValue {
+  return {
+    mode: user.userType === 'admin' ? 'admin_session' : 'company_session',
+    user,
   };
 }
 
@@ -216,7 +224,7 @@ describe('FoldersController', () => {
 
       foldersService.getChildFolders.mockResolvedValue(children);
 
-      const result = await controller.getChildFolders(parentId, user);
+      const result = await controller.getChildFolders(parentId, asSessionPrincipal(user));
 
       expect(foldersService.getChildFolders).toHaveBeenCalledWith(parentId, user);
       expect(result).toHaveLength(2);
@@ -228,7 +236,7 @@ describe('FoldersController', () => {
 
       foldersService.getChildFolders.mockResolvedValue(rootFolders);
 
-      const result = await controller.getChildFolders(undefined, user);
+      const result = await controller.getChildFolders(undefined, asSessionPrincipal(user));
 
       expect(foldersService.getChildFolders).toHaveBeenCalledWith(null, user);
       expect(result).toHaveLength(1);
@@ -239,7 +247,7 @@ describe('FoldersController', () => {
 
       foldersService.getChildFolders.mockResolvedValue([]);
 
-      await controller.getChildFolders('', user);
+      await controller.getChildFolders('', asSessionPrincipal(user));
 
       expect(foldersService.getChildFolders).toHaveBeenCalledWith(null, user);
     });
@@ -393,7 +401,7 @@ describe('FoldersController', () => {
 
       foldersService.createFolder.mockResolvedValue(createdFolder);
 
-      const result = await controller.createFolder(dto, user);
+      const result = await controller.createFolder(dto, asSessionPrincipal(user));
 
       expect(foldersService.createFolder).toHaveBeenCalledWith(dto, user);
       expect(result.name).toBe('새폴더');
@@ -410,7 +418,7 @@ describe('FoldersController', () => {
 
       foldersService.createFolder.mockResolvedValue(createdFolder);
 
-      const result = await controller.createFolder(dto, user);
+      const result = await controller.createFolder(dto, asSessionPrincipal(user));
 
       expect(result.parent_id).toBeNull();
     });
@@ -428,7 +436,7 @@ describe('FoldersController', () => {
 
       foldersService.createFolder.mockResolvedValue(createdFolder);
 
-      const result = await controller.createFolder(dto, user);
+      const result = await controller.createFolder(dto, asSessionPrincipal(user));
 
       expect(result.company_id).toBe(123);
     });
@@ -445,7 +453,7 @@ describe('FoldersController', () => {
 
       foldersService.renameFolder.mockResolvedValue(renamedFolder);
 
-      const result = await controller.renameFolder(folderId, dto, user);
+      const result = await controller.renameFolder(folderId, dto, asSessionPrincipal(user));
 
       expect(foldersService.renameFolder).toHaveBeenCalledWith(folderId, dto, user);
       expect(result.name).toBe('새이름');
@@ -463,7 +471,7 @@ describe('FoldersController', () => {
 
       foldersService.moveFolder.mockResolvedValue(movedFolder);
 
-      const result = await controller.moveFolder(folderId, dto, user);
+      const result = await controller.moveFolder(folderId, dto, asSessionPrincipal(user));
 
       expect(foldersService.moveFolder).toHaveBeenCalledWith(folderId, dto, user);
       expect(result.parent_id).toBe('new-parent-uuid');
@@ -477,7 +485,7 @@ describe('FoldersController', () => {
 
       foldersService.moveFolder.mockResolvedValue(movedFolder);
 
-      const result = await controller.moveFolder(folderId, dto, user);
+      const result = await controller.moveFolder(folderId, dto, asSessionPrincipal(user));
 
       expect(result.parent_id).toBeNull();
     });

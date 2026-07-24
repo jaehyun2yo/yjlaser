@@ -103,6 +103,11 @@ ISO 8601: `2026-03-24T09:30:00.000Z`
 | 유진레이저목형 관리프로그램 (Python)  | integration/programs, events, orders (via api_client)                     | X-API-Key |
 | 레이저네스팅프로그램                  | integration/nesting-tasks, laser-completions, programs, events, inventory | X-API-Key |
 
+`integration/programs`의 legacy heartbeat는 일반 연동 공용 권한으로 열려 있지 않습니다.
+`POST /integration/programs/heartbeat`는 `event/write` 또는 `all` API key만,
+`GET /integration/programs`는 admin 세션 또는 `operation/read`/`all` API key만 허용합니다.
+상세 payload와 최소수집 정책은 [Integration API](endpoints/integration.md#programs)를 따릅니다.
+
 ## Detailed API Documentation
 
 ### External Integration APIs (for external programs)

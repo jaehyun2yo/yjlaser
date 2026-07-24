@@ -2,6 +2,243 @@
 
 ## [Unreleased]
 
+### 2026-07-24 — central-device-bearer-csrf-boundary
+
+**Scope**: 중앙 장치 인증 Bearer를 사용하는 표준 데스크톱 업무 endpoint의 전역 CSRF 경계.
+
+**수정**:
+
+- `@RequireDeviceEndpointPolicy`가 선언된 handler의 동일 method 요청이 cookie 없는 정확한
+  `Authorization: Bearer <JWT>` 형식일 때만 전역 CSRF 검증을 건너뛴다.
+- cookie, Origin, Referer, CSRF/session credential, proxy authorization 혼용, 잘못된 Bearer
+  형식, method 불일치와 정책 미선언 endpoint는 기존 CSRF 검증을 유지한다.
+- 이 예외는 token을 인증하거나 권한을 부여하지 않는다. 기존 장치 guard chain이 token 서명,
+  현재 장치 상태, program/profile/permission과 혼합 principal 금지를 계속 검증한다.
+
+**검증 및 경계**:
+
+- CSRF RED에서 정상 장치 Bearer 행만 403으로 실패하는 것을 확인한 뒤 GREEN 19개를 통과했다.
+- CSRF, 파일/폴더 장치 controller, endpoint policy와 Bearer guard 묶음 5 suites / 108 tests,
+  backend/frontend TypeScript, Nest build와 Next production build를 통과했다.
+- 배포, 운영 DB, secret, 운영 장치 상태와 실제 파일 업로드는 변경하지 않았다.
+
+### 2026-07-23 — central-device-auth-dev-lifecycle-smoke
+
+**Scope**: 세 데스크톱 program type의 중앙 장치 인증 DEV 실제 상태 전환 증거.
+
+**수정**:
+
+- 루트 `dev`, `dev:webpack`, `webhard:dev`가 로컬 폴더의 이전 Doppler 선택값을
+  상속하지 않고 `yjlaser/dev`를 명시하도록 고정해 `npm run dev:all`의 프런트와
+  Webhard API가 항상 같은 DEV secret 집합으로 시작되게 했다.
+- Doppler config와 장치 인증 환경이 모두 `dev`이고, 실제 `DATABASE_URL` 대상 지문이
+  승인된 DEV DB와 일치하며, 명시 확인 플래그가 있을 때만 실행되는 생명주기 smoke 도구를
+  추가했다.
+- 외부웹하드·관리·네스팅 program type마다 등록, 승인, token exchange, heartbeat, 폐기,
+  동일 표시명 신규 등록을 수행하고 새 device ID가 발급되는지 확인한다.
+- raw 등록 코드, refresh/access token, credential hash는 출력하지 않는다. 실행 고유 actor와
+  display-name 범위의 device/enrollment 및 종속 row만 정리하고 잔존 0건을 재검증한다.
+
+**검증 및 경계**:
+
+- clean RC worktree에서 별도 Doppler scope 설정 없이 `npm run dev:all`로 현재 후보의
+  Next.js와 Webhard API를 각각 3000/4000번 포트에 실행하고, health 200과 장치 관리
+  경로의 로그인 보호 307을 확인했다.
+- 안전 게이트 1 suite / 13 tests, backend TypeScript, Prettier를 통과했다.
+- 확인 플래그 없는 Doppler DEV 실행은 DB 연결 전 차단됐다.
+- 실제 Doppler DEV 실행에서 세 program type 모두 active→revoked→reissued active를 통과하고
+  `cleanupVerified=true`를 확인했다.
+- 생명주기와 정리 단계가 함께 실패하면 정리 실패가 숨지 않도록 고정 오류 코드로 함께
+  보고한다.
+- 운영 config/DB/장치, 관리자 브라우저 세션, 서명·배포에는 접근하지 않았다.
+
+### 2026-07-21 — runtime-doppler-entrypoint
+
+**Scope**: 회사사이트 Webhard API의 Railway/Docker runtime secret 주입 시작 경계.
+
+**수정**:
+
+- Docker CMD와 Railway startCommand를 단일 `/app/docker-entrypoint.sh`에 결속했다.
+- `DOPPLER_TOKEN`이 있으면 `doppler run`으로 runtime secret을 주입하고, 없으면 직접 Node를
+  실행한다. 두 분기 모두 `exec`를 사용하고 startup migration은 실행하지 않는다.
+- Windows checkout의 CRLF를 image build에서 정규화하고 entrypoint 실행 권한을 부여한다.
+  기존 build 전용 4096 MiB heap과 runtime `NODE_OPTIONS` 부재는 유지한다.
+
+**검증 및 경계**:
+
+- 정적 배포 계약은 RED 3/5에서 GREEN 5/5로 전환됐고, review-fix mutation RED 4/5에서
+  복원 GREEN 5/5를 확인했다. shell/LF, token 유/무 PATH stub probe, TypeScript, Nest build,
+  compatibility collector, Prettier/diff/secret scan을 통과했으며 fresh spec/quality re-review는
+  모두 Critical/Important/Minor 0/0/0으로 승인됐다. source CI는 5/5 success이며 no-cache
+  Docker image의 CMD/755/LF/runtime `NODE_OPTIONS` 부재, offline token 유/무 분기와 built
+  compatibility collector도 통과했다.
+- 운영 배포, secret/environment 변경, DB 연결, migration 실행은 수행하지 않았다.
+
+### 2026-07-21 — docker-build-heap-boundary
+
+**Scope**: 회사사이트 Webhard API Docker build 단계의 V8 heap OOM 방지와 runtime 환경 경계.
+
+**수정**:
+
+- NestJS build RUN에만 process-scoped `NODE_OPTIONS=--max-old-space-size=4096`을 적용했다. global `ENV`, runtime CMD, startup migration은 변경하지 않았다.
+- 정적 배포 계약은 유일한 `pnpm build`가 4096 MiB 이상 heap을 받고, `NODE_OPTIONS`가 runtime CMD/ENV로 전파되지 않으며 `node dist/src/main` startup command가 유지됨을 검사한다.
+
+**검증 및 경계**:
+
+- contract TDD는 RED 3/4에서 GREEN 4/4로 전환됐고, backend TypeScript, Nest build, source compatibility collector 및 Prettier를 통과했다.
+- Docker retry/rebuild, image/registry/sign, CI 재실행, deploy, migration, DB, secret/environment/server 작업은 수행하지 않았다.
+
+### 2026-07-21 — ci-gate-closure
+
+**Scope**: 회사사이트 root CI lint/test gate의 플랫폼 독립성 및 정적 검사 정합성.
+
+**수정**:
+
+- secret fallback static gate가 GitHub Ubuntu runner에 없는 `rg` 실행 파일에 의존하지 않도록 Node `fs`의 정렬 순회로 바꿨다. 기존 source root와 검사 제외 규칙은 유지한다.
+- 장치 인증 test/collector의 35개 ESLint 오류를 정적 import, 정확한 타입, 명확한 지역 변수명으로 해소했다. built artifact runtime probe에만 좁은 `createRequire(__filename)`을 사용한다.
+
+**검증 및 경계**:
+
+- root lint error-only 0/0, secret gate 1/5, 영향 Nest 11/220, root/backend TypeScript, collector runtime probe, Prettier, root Jest 158 suites / 1,149 tests를 통과했다.
+- 기존 lint warning 1,031건은 범위 밖으로 남겼다. 실제 GitHub CI 재실행, 배포, migration, DB/secret/environment/server 작업은 수행하지 않았다.
+
+### 2026-07-21 — root-lockfile-consistency
+
+**Scope**: 회사사이트 root pnpm lockfile와 CI frozen-install 정합성.
+
+**수정**:
+
+- root `pnpm-lock.yaml`을 package manifest의 10개 `pnpm.overrides` 및 기존 `nodemailer ^9.0.1` 선언에 맞춰 재생성했다.
+
+**검증 및 경계**:
+
+- exact pnpm 9 frozen lockfile-only 검증, scripts-off frozen install, TypeScript, root Jest 158 suites / 1,149 tests를 통과했다.
+- root lint는 이번 lockfile 변경과 무관한 기존 35 errors / 1,031 warnings로 실패한다. 실제 GitHub CI 재실행, 배포, migration, DB/secret/environment/server 작업은 수행하지 않았다.
+
+### 2026-07-21 — device-auth-deployment-contract
+
+**Scope**: 회사사이트 장치 rotation의 CI, container startup, PostgreSQL enum migration 배포 경계.
+
+**수정**:
+
+- CI가 `main`과 `codex/**` push, `main` 대상 PR을 수신하도록 고치고, Node 내장 배포 계약 test를 test job에 연결했다.
+- Webhard API container는 시작 시 migration을 실행하지 않고 `node dist/src/main`만 실행한다. migration deploy는 명시적인 one-off `pnpm migrate:deploy` script로 남는다.
+- `expired`/`revoked` enum 값은 후속 constraint migration보다 앞선 enum 전용 Prisma migration에서 추가했다.
+
+**검증 및 경계**:
+
+- RED 0/3에서 GREEN 3/3까지 계약을 확인했고 persistence 18/18, rotation compatibility 25/25, TypeScript, Nest build, compatibility collector, placeholder-only Prisma validate와 diff check를 통과했다.
+- 실제 PostgreSQL migration apply, Docker build, GitHub CI run, deploy는 수행하지 않았다.
+
+### 2026-07-20 — central-device-auth-rotation-compatibility-source-evidence
+
+**Scope**: 중앙 rotation/endpoint policy의 source-only contract lock과 no-secret 호환 증적.
+
+**수정**:
+
+- deterministic source/build/schema hash와 exact rotation enum/5개 nullable-column 호환성을 확인하는
+  read-only collector를 추가했다. runtime flag가 꺼져 있으면 실제 raw middleware가 5개 rotation HTTP
+  target을 body parser보다 먼저 404/no-store로 종료하고 controller/service/Prisma write에 도달하지
+  않는지 source와 built output에서 확인한다. token rotation directive suppression은 별도 service gate로
+  확인한다.
+- 중앙 contract는 rotation/ACK 응답 유실 복구, 승인 route 14개, legacy 분리와
+  `device_rotation_incompatible` 409/no-store/fail-closed 경계를 잠갔다.
+
+**검증 및 경계**:
+
+- 중앙 source 53 suites / 905 tests, review-fix 영향 7 suites / 195 tests, collector 1 suite / 16 tests,
+  TypeScript, Nest build,
+  placeholder-only Prisma validate와 중앙 fixture verifier `--require-copies 0`을 통과했다.
+- source-only 재리뷰는 correctness/security 모두 Critical/Important 0으로 승인됐다. current dist는 final
+  no-emit TypeScript incremental 파일을 포함한 1103 files이며 동일 built hash와 actual probe가 연속 2회
+  재현됐다. 최종 evidence는 clean build 뒤 probe/hash를 완료하고 이후 build output을 변경하지 않는
+  순서로 수집한다.
+- Docker client는 존재하지만 daemon pipe와 prior rollback image digest가 없어 image/deploy는 No-Go다.
+  실제 DB/migration, secret, PC/장치, desktop copy, image build/publish/sign, 배포는 수행하지 않았다.
+
+### 2026-07-20 — central-device-auth-token-bearer-source-boundary
+
+**Scope**: 중앙 장치 token 교환과 bearer 전용 heartbeat/safe-canary의 clean RC 소스 경계.
+
+**수정**:
+
+- cookie/static key/session/recovery/CSRF와 분리된 `/integration/device-auth/token`을 추가했다. 응답
+  유실은 동일 현재 credential·candidate·request ID로만 복구하며, public 응답은 access token과
+  서버 권위의 최소 필드만 반환한다.
+- `/integration/devices/heartbeat`와 `/integration/devices/canary`를 정확히 하나의 device bearer
+  전용 경로로 추가했다. guard는 매 요청마다 현재 환경의 active/revoke 상태, program/profile,
+  credential version, 활성 credential 및 폐기된 exchange를 확인하고 권한을 서버에서 유도한다.
+- heartbeat는 `{}` 또는 선택 `appVersion`만 받고 검증된 장치별 6회/60초 quota 뒤
+  `lastHeartbeatAt`과 선택 version만 갱신한다. canary는 DB write나 업무 service 호출이 없는
+  contract check다. `safe_canary`에는 rotation·동기화·발송·DXF·nesting 업무를 허용하지 않는다.
+
+**검증 및 경계**:
+
+- source-only auth Jest 34 suites / 549 tests, TypeScript, Nest build, placeholder DSN Prisma schema
+  validate와 JS/Python canonical fixture 검증(`--require-copies 0`)을 통과했다. 실제 DB/Redis/proxy,
+  migration, secret, PC, artifact, deploy는 다루지 않았다.
+- 소스의 다음-request 폐기 검사는 새 `DeviceBearerGuard` heartbeat/canary에만 적용된다. legacy
+  static-key 업무 호출과 실제 PC 즉시 폐기는 아직 보장하지 않는다. rotation prepare/ack/admin,
+  업무 endpoint policy, 세 데스크톱 vault/client, DEV/STG, 서명 artifact와 production pilot이 남았다.
+
+### 2026-07-20 — central-device-auth-admin-control-source-boundary
+
+**Scope**: 회사사이트 중앙 장치 인증의 관리자 목록·승인·폐기 제어 plane과 관리자 UI 소스 경계.
+
+**수정**:
+
+- admin session 전용 장치 목록과 admin session+CSRF 전용 등록 승인·폐기 controller/화면을
+  추가했다. 대상은 외부웹하드동기화프로그램, 관리프로그램, 레이저네스팅프로그램뿐이며
+  `computeroff`는 제외한다.
+- 목록은 최소 장치 요약만 반환하고, 승인/폐기는 raw credential·hash·actor·PC 식별 메타데이터를
+  반환하지 않는다. 관리자 action은 빈 body만 허용하며, API key/recovery key/Authorization 혼용을
+  값 유무와 중복에 관계없이 거부하고 장치 목록/승인/폐기 세 경로에 `no-store` cache policy를 적용한다.
+- 폐기 소스 transaction은 장치 상태, 준비/활성 refresh credential, 요청/준비 rotation을 함께
+  종료하도록 구현했다. 이 entry 시점에는 token endpoint와 per-request bearer guard가 없었다. 현재는
+  heartbeat/canary 보호 경로 소스에 guard가 구현되었지만, legacy static-key 업무 호출이나 실제 PC의
+  원격 업무 중지를 즉시 차단하지는 않는다.
+
+**검증 및 경계**:
+
+- `webhard-api` 장치 인증 source Jest 21 suites / 303 tests, TypeScript, Nest build, Prisma schema
+  validate를 통과했다. 관리자 UI Jest 4 suites / 32 tests, TypeScript, Prettier를 통과했고, canonical
+  fixture JS/Python 검증은 아직 데스크톱 전환 사본이 없으므로 `--require-copies 0` 범위에서 통과했다.
+- 실제 DB migration, secret, PC 등록·승인·폐기, key 재발급, endpoint 배포는 실행하지 않았다.
+
+### 2026-07-20 — central-device-auth-bootstrap-source-boundary
+
+**Scope**: 회사사이트 중앙 장치 인증의 관리자 등록코드·공개 bootstrap 소스 경계.
+
+**수정**:
+
+- admin session 전용 등록코드 발급 화면과 CSRF 준비 경로를 추가했다. 대상은 외부웹하드동기화,
+  관리프로그램, 레이저네스팅프로그램뿐이며 `computeroff`는 제외한다.
+- 공개 enroll/status는 4 KiB non-inflating parser, metadata CSRF 예외, ambient credential 차단,
+  exact payload shape, 전용 Upstash `EVAL` rate/replay store를 사용하도록 소스에 구현했다.
+- raw 등록코드·attempt·refresh credential은 응답/오류/로그/Redis key에 남기지 않고, Redis key는
+  DEV/STG/PRD 분리 HMAC 식별자만 사용한다.
+
+**검증 및 경계**:
+
+- clean RC source Jest와 TypeScript 검증을 실행했다. 실제 Upstash, secret, DB migration,
+  public deployment, PC 등록·승인·폐기·재발급은 실행하지 않았다.
+- Railway/edge proxy chain, trusted client identity, WAF abuse 제어가 별도 운영 승인 gate다.
+
+### 2026-07-20 — integration-programs-legacy-heartbeat-boundary
+
+**Scope**: legacy 프로그램 heartbeat의 API key 최소권한과 PC 메타데이터 최소수집.
+
+**수정**:
+
+- `POST /api/v1/integration/programs/heartbeat`는 `event/write` 또는 legacy `all` API key만 허용하고, admin/company/worker session을 쓰기 principal에서 제외한다.
+- `GET /api/v1/integration/programs`는 admin session 또는 `operation/read`/legacy `all` API key만 허용한다.
+- legacy wire의 `hostname`/`metadata` DTO 수신 호환은 유지하지만 새 heartbeat upsert에 저장하지 않고, 목록은 명시적으로 선택한 안전 필드만 반환한다. 기존 DB 값의 삭제·정리는 수행하지 않는다.
+
+**검증**:
+
+- clean RC source test 3 suites / 19 tests 통과 (`programs.service`, `programs-access.guard`, `programs.controller`).
+- 실제 DB, migration, seed, API 배포, API key 발급·폐기, PC 호출은 실행하지 않았다.
+
 ### 2026-07-09 — integration-bank-notification-test-filter
 
 **Scope**: IBK 은행 알림 테스트 마커의 운영 저장 차단과 기존 테스트 row 정리.

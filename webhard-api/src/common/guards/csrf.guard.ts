@@ -5,8 +5,14 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import * as crypto from 'crypto';
+import { CSRF_EXEMPT_METADATA_KEY } from '../decorators/csrf-exempt.decorator';
 import { formatLogEvent, generateCorrelationId } from '../logging/log-event';
+import {
+  DEVICE_ENDPOINT_POLICY_KEY,
+  type DeviceEndpointPolicyRequirement,
+} from '../../integration/auth/require-device-endpoint-policy.decorator';
 
 /**
  * CSRF 검증을 건너뛸 경로 목록.
@@ -14,6 +20,24 @@ import { formatLogEvent, generateCorrelationId } from '../logging/log-event';
  */
 const CSRF_EXEMPT_PATHS = ['/api/v1/erp/workers/pin-login'];
 const LOG_INGESTION_PATH = '/api/v1/integration/log-events';
+const DEVICE_BEARER_PATTERN = /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const AMBIENT_BROWSER_CREDENTIAL_HEADERS = [
+  'cookie',
+  'origin',
+  'referer',
+  'x-csrf-token',
+  'x-session-token',
+  'proxy-authorization',
+] as const;
+
+type CsrfRequest = {
+  method: string;
+  headers: Record<string, string | string[] | undefined>;
+  cookies?: Record<string, string>;
+  path?: string;
+  originalUrl?: string;
+  url?: string;
+};
 
 /**
  * Double Submit Cookie 패턴 기반 CSRF 보호 Guard.
@@ -21,6 +45,7 @@ const LOG_INGESTION_PATH = '/api/v1/integration/log-events';
  * 스킵 조건:
  * - GET / HEAD / OPTIONS 요청
  * - X-API-Key 또는 X-Account-Recovery-Key 헤더가 있는 요청 (서버 간 클라이언트)
+ * - 장치 정책이 선언된 endpoint의 cookie 없는 정확한 Bearer JWT 요청
  * - CSRF_EXEMPT_PATHS에 포함된 경로 (세션 없이 호출되는 로그인 등)
  *
  * 검증:
@@ -30,18 +55,21 @@ const LOG_INGESTION_PATH = '/api/v1/integration/log-events';
 export class CsrfGuard implements CanActivate {
   private readonly logger = new Logger(CsrfGuard.name);
 
+  public constructor(private readonly reflector?: Reflector) {}
+
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest<{
-      method: string;
-      headers: Record<string, string | string[] | undefined>;
-      cookies?: Record<string, string>;
-      path?: string;
-      originalUrl?: string;
-      url?: string;
-    }>();
+    const request = context.switchToHttp().getRequest<CsrfRequest>();
 
     // GET / HEAD / OPTIONS는 상태를 변경하지 않으므로 스킵
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+      return true;
+    }
+
+    if (this.isCsrfExempt(context)) {
+      return true;
+    }
+
+    if (this.isCookieLessDeviceBearerRequest(context, request)) {
       return true;
     }
 
@@ -103,6 +131,59 @@ export class CsrfGuard implements CanActivate {
       })
     );
   }
+
+  private isCsrfExempt(context: ExecutionContext): boolean {
+    if (
+      !this.reflector ||
+      typeof context.getHandler !== 'function' ||
+      typeof context.getClass !== 'function'
+    ) {
+      return false;
+    }
+
+    return (
+      this.reflector.getAllAndOverride<boolean>(CSRF_EXEMPT_METADATA_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
+  }
+
+  private isCookieLessDeviceBearerRequest(
+    context: ExecutionContext,
+    request: CsrfRequest
+  ): boolean {
+    if (
+      !this.reflector ||
+      typeof context.getHandler !== 'function' ||
+      typeof context.getClass !== 'function'
+    ) {
+      return false;
+    }
+
+    const requirement = this.reflector.getAllAndOverride<DeviceEndpointPolicyRequirement>(
+      DEVICE_ENDPOINT_POLICY_KEY,
+      [context.getHandler(), context.getClass()]
+    );
+    if (!requirement || requirement.method !== request.method) {
+      return false;
+    }
+
+    const authorization = getSingleHeader(request.headers['authorization']);
+    if (!authorization || !DEVICE_BEARER_PATTERN.test(authorization)) {
+      return false;
+    }
+
+    if (
+      AMBIENT_BROWSER_CREDENTIAL_HEADERS.some(
+        (headerName) => request.headers[headerName] !== undefined
+      )
+    ) {
+      return false;
+    }
+
+    return !request.cookies || Object.keys(request.cookies).length === 0;
+  }
 }
 
 function getMissingTokenReason(
@@ -120,6 +201,13 @@ function getMissingTokenReason(
 
 function isLogIngestionRequest(requestPath: string, method: string): boolean {
   return method === 'POST' && requestPath === LOG_INGESTION_PATH;
+}
+
+function getSingleHeader(header: string | string[] | undefined): string | undefined {
+  if (Array.isArray(header)) {
+    return header.length === 1 ? header[0] : undefined;
+  }
+  return header;
 }
 
 /**

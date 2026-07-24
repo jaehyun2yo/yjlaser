@@ -37,6 +37,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { StorageProvider } from '@prisma/client';
 import { FoldersService } from './folders.service';
 import type { SessionUser } from '../auth/auth.service';
+import type { DeviceAccessPrincipal } from '../integration/device-auth/device-auth.types';
 import {
   buildWebhardFixtureCleanupWhere,
   buildWebhardFolderTreeFixture,
@@ -50,6 +51,14 @@ const WORK_NUMBER = '260420-F-004';
 const ROOT_FOLDER_ID = 'root-folder-id';
 const INQUIRY_FOLDER_ID = 'inquiry-folder-id';
 const INQUIRY_ROOT_FOLDER_ID = 'inquiry-root-folder-id';
+const externalDevice: DeviceAccessPrincipal = {
+  deviceId: 'external-device',
+  environment: 'prd',
+  programType: 'external_webhard_sync',
+  capabilityProfile: 'standard',
+  permissions: ['folder/read', 'folder/write', 'folder/move'],
+  credentialVersion: 1,
+};
 
 type FolderRow = {
   id: string;
@@ -190,6 +199,137 @@ function buildService(prisma: PrismaMock = makePrisma()) {
   );
   return { service, prisma, contactsGateway, eventsGateway, cacheManager, storageService };
 }
+
+describe('FoldersService device-scoped authorization', () => {
+  it.each([
+    {
+      label: 'wrong program',
+      programType: 'management_program' as const,
+      permissions: ['folder/read', 'folder/write', 'folder/move'] as const,
+    },
+    {
+      label: 'missing permission',
+      programType: 'external_webhard_sync' as const,
+      permissions: [] as const,
+    },
+  ])(
+    'rejects $label before every approved persistence path',
+    async ({ programType, permissions }) => {
+      const { service, prisma, storageService } = buildService();
+      const principal: DeviceAccessPrincipal = {
+        deviceId: 'management-device',
+        environment: 'prd',
+        programType,
+        capabilityProfile: 'standard',
+        permissions,
+        credentialVersion: 1,
+      };
+      const operations = [
+        () => service.getChildFoldersForDevice(null, principal),
+        () => service.createFolderForDevice({ name: 'held' }, principal),
+        () => service.renameFolderForDevice('folder-id', { name: 'held' }, principal),
+        () => service.moveFolderForDevice('folder-id', { parentId: null }, principal),
+      ];
+
+      for (const operation of operations) {
+        await expect(operation()).rejects.toBeInstanceOf(ForbiddenException);
+      }
+      expect(prisma.executeWithRetry).not.toHaveBeenCalled();
+      expect(storageService.createDriveFolder).not.toHaveBeenCalled();
+      expect(storageService.renameDriveFolder).not.toHaveBeenCalled();
+      expect(storageService.moveDriveFolder).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe('FoldersService device resource namespace integrity', () => {
+  const folderRow = (id: string, companyId: number | null, parentId: string | null = null) => ({
+    id,
+    name: id,
+    parentId,
+    companyId,
+    path: `/${id}`,
+    deletedAt: null,
+    storageProvider: StorageProvider.R2,
+    driveFolderId: null,
+    createdAt: new Date('2026-07-20T00:00:00.000Z'),
+    updatedAt: new Date('2026-07-20T00:00:00.000Z'),
+    company: null,
+  });
+
+  it('rejects parent companyId mismatch before storage, create, transaction, or event work', async () => {
+    const { service, prisma, storageService, eventsGateway } = buildService();
+    prisma.webhardFolder.findUnique.mockResolvedValue(folderRow('parent-7', 7));
+
+    await expect(
+      service.createFolderForDevice(
+        { name: 'child', parentId: 'parent-7', companyId: 8 },
+        externalDevice
+      )
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(storageService.createDriveFolder).not.toHaveBeenCalled();
+    expect(prisma.webhardFolder.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(eventsGateway.emitGlobal).not.toHaveBeenCalled();
+  });
+
+  it('rejects device root create with a non-null companyId before mutation', async () => {
+    const { service, prisma, storageService, eventsGateway } = buildService();
+    await expect(
+      service.createFolderForDevice({ name: 'root', companyId: 7 }, externalDevice)
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(storageService.createDriveFolder).not.toHaveBeenCalled();
+    expect(prisma.webhardFolder.create).not.toHaveBeenCalled();
+    expect(eventsGateway.emitGlobal).not.toHaveBeenCalled();
+  });
+
+  it('derives device child companyId from the parent when the client omits it', async () => {
+    const { service, prisma } = buildService();
+    prisma.webhardFolder.findUnique.mockResolvedValue(folderRow('parent-7', 7));
+    prisma.webhardFolder.findFirst.mockResolvedValue(null);
+    prisma.webhardFolder.create.mockResolvedValue(folderRow('child', 7, 'parent-7'));
+
+    await service.createFolderForDevice({ name: 'child', parentId: 'parent-7' }, externalDevice);
+    expect(prisma.webhardFolder.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ companyId: 7 }) })
+    );
+  });
+
+  it.each([
+    ['cross-company target', folderRow('source-7', 7), 'target-8', folderRow('target-8', 8)],
+    ['non-null source to null root', folderRow('source-7', 7), null, null],
+  ])(
+    'rejects device folder move to $label before storage, transaction, update, or events',
+    async (_label, source, parentId, target) => {
+      const { service, prisma, storageService, eventsGateway } = buildService();
+      prisma.webhardFolder.findUnique.mockImplementation(
+        async ({ where }: { where: { id: string } }) => (where.id === source.id ? source : target)
+      );
+
+      await expect(
+        service.moveFolderForDevice(source.id, { parentId }, externalDevice)
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(storageService.moveDriveFolder).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.webhardFolder.update).not.toHaveBeenCalled();
+      expect(eventsGateway.emitGlobal).not.toHaveBeenCalled();
+    }
+  );
+
+  it('allows a null-namespace device folder to move to the null root', async () => {
+    const { service, prisma } = buildService();
+    const source = folderRow('external-source', null, 'external-parent');
+    const moved = folderRow('external-source', null, null);
+    prisma.webhardFolder.findUnique.mockResolvedValue(source);
+    prisma.webhardFolder.findMany.mockResolvedValue([]);
+    prisma.webhardFolder.update.mockResolvedValue(moved);
+
+    await service.moveFolderForDevice(source.id, { parentId: null }, externalDevice);
+    expect(prisma.webhardFolder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ parentId: null }) })
+    );
+  });
+});
 
 describe('FoldersService DB-only fast path', () => {
   it('getFolders 목록 조회는 Google Drive mutation API를 호출하지 않는다', async () => {

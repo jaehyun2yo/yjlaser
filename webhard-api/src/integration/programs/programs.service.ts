@@ -11,6 +11,7 @@ export class ProgramsService {
   constructor(private prisma: PrismaService) {}
 
   async receiveHeartbeat(dto: HeartbeatDto) {
+    const receivedAt = new Date();
     const heartbeat = await this.prisma.executeWithRetry(
       () =>
         this.prisma.programHeartbeat.upsert({
@@ -23,18 +24,14 @@ export class ProgramsService {
           update: {
             status: 'online',
             version: dto.version ?? undefined,
-            hostname: dto.hostname ?? undefined,
-            lastSeenAt: new Date(),
-            metadata: dto.metadata ? (dto.metadata as object) : undefined,
+            lastSeenAt: receivedAt,
           },
           create: {
             programType: dto.programType,
             instanceName: dto.instanceName,
             status: 'online',
             version: dto.version ?? null,
-            hostname: dto.hostname ?? null,
-            lastSeenAt: new Date(),
-            metadata: dto.metadata ? (dto.metadata as object) : undefined,
+            lastSeenAt: receivedAt,
           },
         }),
       { operationName: 'receiveHeartbeat' }
@@ -54,6 +51,15 @@ export class ProgramsService {
       () =>
         this.prisma.programHeartbeat.findMany({
           orderBy: { programType: 'asc' },
+          select: {
+            id: true,
+            programType: true,
+            instanceName: true,
+            status: true,
+            version: true,
+            lastSeenAt: true,
+            createdAt: true,
+          },
         }),
       { operationName: 'listPrograms' }
     );
@@ -67,9 +73,7 @@ export class ProgramsService {
         instance_name: p.instanceName,
         status: isOnline ? 'online' : 'offline',
         version: p.version,
-        hostname: p.hostname,
         last_seen_at: p.lastSeenAt.toISOString(),
-        metadata: p.metadata,
         created_at: p.createdAt.toISOString(),
       };
     });

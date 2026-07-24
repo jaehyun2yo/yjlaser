@@ -11,6 +11,7 @@ import { DriveProvisioningStatus, Prisma, StorageProvider } from '@prisma/client
 import { StorageService } from '../storage/storage.service';
 import { StorageRepairService } from '../storage/storage-repair.service';
 import { SessionUser } from '../auth/auth.service';
+import type { DeviceAccessPrincipal } from '../integration/device-auth/device-auth.types';
 import { EventsGateway } from '../events/events.gateway';
 import {
   FileResponseDto,
@@ -540,6 +541,21 @@ export class FilesService {
    * Get files list with pagination
    */
   async getFiles(query: GetFilesQueryDto, user: SessionUser): Promise<FileListResponseDto> {
+    return this.getFilesForPrincipal(query, user);
+  }
+
+  async getFilesForDevice(
+    query: GetFilesQueryDto,
+    principal: DeviceAccessPrincipal
+  ): Promise<FileListResponseDto> {
+    this.assertDeviceAccess(principal, 'external_webhard_sync', 'file/read');
+    return this.getFilesForPrincipal(query, null);
+  }
+
+  private async getFilesForPrincipal(
+    query: GetFilesQueryDto,
+    user: SessionUser | null
+  ): Promise<FileListResponseDto> {
     const {
       folderId,
       companyId,
@@ -555,7 +571,7 @@ export class FilesService {
       ...this.validFileStorageWhere(),
     };
 
-    if (user.userType === 'worker') {
+    if (user?.userType === 'worker') {
       if (!folderId) {
         throw new ForbiddenException('Worker folder access required');
       }
@@ -570,7 +586,7 @@ export class FilesService {
     }
 
     // Company access control — 자기 회사 파일만 접근 가능
-    if (user.userType === 'company') {
+    if (user?.userType === 'company') {
       where.companyId = user.companyId;
     } else if (companyId !== undefined) {
       // Admin filtering by company
@@ -609,6 +625,59 @@ export class FilesService {
       limit,
       hasMore: page * limit < total,
     };
+  }
+
+  private assertDeviceAccess(
+    principal: DeviceAccessPrincipal,
+    programType: DeviceAccessPrincipal['programType'],
+    permission: DeviceAccessPrincipal['permissions'][number]
+  ): void {
+    if (
+      principal.programType !== programType ||
+      principal.capabilityProfile !== 'standard' ||
+      principal.credentialVersion < 1 ||
+      !principal.permissions.includes(permission)
+    ) {
+      throw new ForbiddenException('Device principal is not allowed for this operation');
+    }
+  }
+
+  private createDeviceUploadActor(principal: DeviceAccessPrincipal): SessionUser {
+    return {
+      userType: 'integration',
+      userId: `device:${principal.deviceId}`,
+      companyId: null,
+      programType: principal.programType,
+      permissions: ['file/register'],
+    };
+  }
+
+  private assertDeviceUploadCompanyIdOmitted(companyId: number | null | undefined): void {
+    if (companyId !== undefined && companyId !== null) {
+      throw new ForbiddenException('Device uploads must not provide companyId');
+    }
+  }
+
+  private assertDeviceR2KeyNamespace(
+    key: string,
+    companyId: number | null,
+    folderId: string | null
+  ): void {
+    const segments = ['webhard', companyId === null ? 'admin' : `company-${companyId}`];
+    if (folderId) segments.push(folderId);
+    const canonicalPrefix = `${segments.join('/')}/`;
+    if (!key.startsWith(canonicalPrefix) || key.length === canonicalPrefix.length) {
+      throw new ForbiddenException('Device upload key does not match the resolved namespace');
+    }
+  }
+
+  private assertSameDeviceCompanyNamespace(
+    sourceCompanyId: number | null,
+    targetCompanyId: number | null
+  ): void {
+    if (sourceCompanyId !== targetCompanyId) {
+      throw new ForbiddenException('Device company namespace mismatch');
+    }
   }
 
   /**
@@ -669,7 +738,29 @@ export class FilesService {
     user: SessionUser
   ): Promise<PresignedUrlResponseDto> {
     this.assertFileRegistrationPermission(user);
-    const destination = await this.prepareUploadDestination(dto, user);
+    return this.getUploadPresignedUrlAuthorized(dto, user);
+  }
+
+  async getUploadPresignedUrlForDevice(
+    dto: CreatePresignedUrlDto,
+    principal: DeviceAccessPrincipal
+  ): Promise<PresignedUrlResponseDto> {
+    this.assertDeviceAccess(principal, 'external_webhard_sync', 'file/write');
+    this.assertDeviceUploadCompanyIdOmitted(dto.companyId);
+    return this.getUploadPresignedUrlAuthorized(dto, this.createDeviceUploadActor(principal), true);
+  }
+
+  private async getUploadPresignedUrlAuthorized(
+    dto: CreatePresignedUrlDto,
+    user: SessionUser,
+    enforceDeviceNamespace = false
+  ): Promise<PresignedUrlResponseDto> {
+    const destination = await this.prepareUploadDestination(
+      dto,
+      user,
+      undefined,
+      enforceDeviceNamespace
+    );
     return this.buildUploadPresignedUrl(dto, destination);
   }
 
@@ -743,7 +834,8 @@ export class FilesService {
   private async prepareUploadDestination(
     dto: CreatePresignedUrlDto,
     user: SessionUser,
-    context?: UploadPresignBatchContext
+    context?: UploadPresignBatchContext,
+    enforceDeviceNamespace = false
   ): Promise<UploadDestination> {
     assertUploadAllowed({ filename: dto.filename, mimeType: dto.contentType });
 
@@ -794,7 +886,9 @@ export class FilesService {
     //   4) admin + folder 있음 + 명시 없음 → folder.companyId 상속
     //   5) admin + folder 없음 → null
     let effectiveCompanyId: number | null;
-    if (user.userType === 'company') {
+    if (enforceDeviceNamespace) {
+      effectiveCompanyId = redirected ? routedCompanyId : (folder?.companyId ?? null);
+    } else if (user.userType === 'company') {
       effectiveCompanyId = user.companyId;
     } else if (redirected && routedCompanyId !== null) {
       effectiveCompanyId = routedCompanyId;
@@ -1101,6 +1195,23 @@ export class FilesService {
    */
   async confirmUpload(dto: ConfirmUploadDto, user: SessionUser): Promise<FileResponseDto> {
     this.assertFileRegistrationPermission(user);
+    return this.confirmUploadAuthorized(dto, user);
+  }
+
+  async confirmUploadForDevice(
+    dto: ConfirmUploadDto,
+    principal: DeviceAccessPrincipal
+  ): Promise<FileResponseDto> {
+    this.assertDeviceAccess(principal, 'external_webhard_sync', 'file/write');
+    this.assertDeviceUploadCompanyIdOmitted(dto.companyId);
+    return this.confirmUploadAuthorized(dto, this.createDeviceUploadActor(principal), true);
+  }
+
+  private async confirmUploadAuthorized(
+    dto: ConfirmUploadDto,
+    user: SessionUser,
+    enforceDeviceNamespace = false
+  ): Promise<FileResponseDto> {
     assertUploadAllowed({
       filename: dto.name,
       originalName: dto.originalName,
@@ -1118,7 +1229,7 @@ export class FilesService {
     let routedFolderId: string | null = null;
     let routedCompanyId: number | null = null;
     let redirected = false;
-    if (dto.folderId) {
+    if (dto.folderId && !enforceDeviceNamespace) {
       try {
         const routed = await this.tryRouteExternalUpload(dto.folderId);
         if (routed) {
@@ -1158,12 +1269,20 @@ export class FilesService {
     //   4) admin + folder 있음 + 명시 없음 → folder.companyId 상속
     //   5) admin + folder 없음 → null
     let effectiveCompanyId: number | null;
-    if (user.userType === 'company') {
+    if (enforceDeviceNamespace) {
+      effectiveCompanyId = redirected ? routedCompanyId : (folder?.companyId ?? null);
+    } else if (user.userType === 'company') {
       effectiveCompanyId = user.companyId;
     } else if (redirected && routedCompanyId !== null) {
       effectiveCompanyId = routedCompanyId;
     } else {
       effectiveCompanyId = dto.companyId ?? folder?.companyId ?? null;
+    }
+
+    const requestedDriveUpload =
+      dto.storageProvider === 'google_drive' || (!dto.storageProvider && Boolean(dto.driveFileId));
+    if (enforceDeviceNamespace && !requestedDriveUpload) {
+      this.assertDeviceR2KeyNamespace(dto.key, effectiveCompanyId, effectiveFolderId);
     }
 
     const size = Math.floor(Number(dto.size));
@@ -1179,8 +1298,6 @@ export class FilesService {
     // uploaded_by: admin → 'admin', company/integration → userId 문자열
     const uploadedBy = user.userType === 'admin' ? 'admin' : String(user.userId);
 
-    const requestedDriveUpload =
-      dto.storageProvider === 'google_drive' || (!dto.storageProvider && Boolean(dto.driveFileId));
     if (requestedDriveUpload) {
       if (!dto.driveFileId) {
         throw new BadRequestException('Google Drive 업로드 확인 정보가 필요합니다.');
@@ -1973,6 +2090,23 @@ export class FilesService {
     dto: RenameFileDto,
     user: SessionUser
   ): Promise<FileResponseDto> {
+    return this.renameFileAuthorized(fileId, dto, user);
+  }
+
+  async renameFileForDevice(
+    fileId: string,
+    dto: RenameFileDto,
+    principal: DeviceAccessPrincipal
+  ): Promise<FileResponseDto> {
+    this.assertDeviceAccess(principal, 'external_webhard_sync', 'file/write');
+    return this.renameFileAuthorized(fileId, dto, null);
+  }
+
+  private async renameFileAuthorized(
+    fileId: string,
+    dto: RenameFileDto,
+    user: SessionUser | null
+  ): Promise<FileResponseDto> {
     const file = await this.prisma.executeWithRetry(
       () => this.prisma.webhardFile.findUnique({ where: { id: fileId } }),
       { operationName: 'renameFile.findUnique' }
@@ -1982,7 +2116,7 @@ export class FilesService {
       throw new NotFoundException('File not found');
     }
 
-    this.verifyFileAccess(file, user);
+    if (user) this.verifyFileAccess(file, user);
     const sanitizedName = sanitizeWebhardFilename(dto.name);
     const duplicateFile = await this.prisma.executeWithRetry(
       () =>
@@ -2052,6 +2186,24 @@ export class FilesService {
    * Move a file to another folder
    */
   async moveFile(fileId: string, dto: MoveFileDto, user: SessionUser): Promise<FileResponseDto> {
+    return this.moveFileAuthorized(fileId, dto, user);
+  }
+
+  async moveFileForDevice(
+    fileId: string,
+    dto: MoveFileDto,
+    principal: DeviceAccessPrincipal
+  ): Promise<FileResponseDto> {
+    this.assertDeviceAccess(principal, 'external_webhard_sync', 'file/move');
+    return this.moveFileAuthorized(fileId, dto, null, true);
+  }
+
+  private async moveFileAuthorized(
+    fileId: string,
+    dto: MoveFileDto,
+    user: SessionUser | null,
+    enforceDeviceNamespace = false
+  ): Promise<FileResponseDto> {
     const file = await this.prisma.executeWithRetry(
       () => this.prisma.webhardFile.findUnique({ where: { id: fileId } }),
       { operationName: 'moveFile.findUnique' }
@@ -2061,11 +2213,26 @@ export class FilesService {
       throw new NotFoundException('File not found');
     }
 
-    this.verifyFileAccess(file, user);
+    if (user) this.verifyFileAccess(file, user);
+
+    if (enforceDeviceNamespace) {
+      let targetCompanyId: number | null = null;
+      if (dto.folderId) {
+        const targetFolder = await this.prisma.webhardFolder.findUnique({
+          where: { id: dto.folderId },
+          select: { companyId: true, deletedAt: true },
+        });
+        if (!targetFolder || targetFolder.deletedAt) {
+          throw new NotFoundException('Target folder not found');
+        }
+        targetCompanyId = targetFolder.companyId;
+      }
+      this.assertSameDeviceCompanyNamespace(file.companyId, targetCompanyId);
+    }
 
     // Verify target folder access if specified
     if (dto.folderId) {
-      await this.verifyFolderAccess(dto.folderId, user);
+      if (user) await this.verifyFolderAccess(dto.folderId, user);
     }
 
     if (file.storageProvider === StorageProvider.GOOGLE_DRIVE && file.driveFileId) {

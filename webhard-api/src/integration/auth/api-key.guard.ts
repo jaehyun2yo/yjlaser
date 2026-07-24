@@ -25,6 +25,19 @@ const SESSION_COOKIE_NAMES = ['admin-session', 'company-session'] as const;
 const WORKER_SESSION_COOKIE_NAME = 'erp-session';
 const INTEGRATION_AUTH_REQUIRED_CODE = 'INTEGRATION_AUTH_REQUIRED';
 const INTEGRATION_PERMISSION_DENIED_CODE = 'INTEGRATION_PERMISSION_DENIED';
+const INTEGRATION_PRINCIPAL_AMBIGUOUS_CODE = 'INTEGRATION_PRINCIPAL_AMBIGUOUS';
+
+export type PrincipalMode =
+  | 'device_bearer'
+  | 'legacy_api_key'
+  | 'admin_session'
+  | 'company_session'
+  | 'worker_session';
+
+export interface RawIntegrationPrincipalSources {
+  readonly modes: readonly PrincipalMode[];
+  readonly ambiguous: boolean;
+}
 
 type SecurityLogInput = {
   event: string;
@@ -52,16 +65,37 @@ export class ApiKeyGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // @Public() 데코레이터가 적용된 라우트는 인증 생략
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (isPublic) {
-      return true;
+    return this.authenticate(context, true);
+  }
+
+  public async canActivateStrict(context: ExecutionContext): Promise<boolean> {
+    return this.authenticate(context, false);
+  }
+
+  private async authenticate(
+    context: ExecutionContext,
+    allowPublicBypass: boolean
+  ): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const rawSources = inspectRawIntegrationPrincipalSources(request);
+    if (rawSources.ambiguous) {
+      throw new UnauthorizedException({
+        code: INTEGRATION_PRINCIPAL_AMBIGUOUS_CODE,
+        message: 'Exactly one integration principal source is required',
+      });
     }
 
-    const request = context.switchToHttp().getRequest<Request>();
+    // @Public() 데코레이터가 적용된 라우트는 인증 생략
+    if (allowPublicBypass) {
+      const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (isPublic) {
+        return true;
+      }
+    }
+
     const allowWorkerSession = this.reflector.getAllAndOverride<boolean>(ALLOW_WORKER_SESSION_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -180,4 +214,85 @@ export class ApiKeyGuard implements CanActivate {
       })
     );
   }
+}
+
+const AUTH_COOKIE_MODES: Readonly<Record<string, PrincipalMode>> = Object.freeze({
+  'admin-session': 'admin_session',
+  'company-session': 'company_session',
+  'erp-session': 'worker_session',
+  'worker-session': 'worker_session',
+});
+
+export function inspectRawIntegrationPrincipalSources(
+  request: Request
+): RawIntegrationPrincipalSources {
+  const authorizationValues = getRawHeaderValues(request, 'authorization');
+  const apiKeyValues = getRawHeaderValues(request, API_KEY_HEADER);
+  const cookieHeaderValues = getRawHeaderValues(request, 'cookie');
+  const modes: PrincipalMode[] = [];
+  let malformed = false;
+
+  if (authorizationValues.length > 0) {
+    modes.push('device_bearer');
+    malformed ||= hasDuplicateOrCombinedValues(authorizationValues);
+  }
+  if (apiKeyValues.length > 0) {
+    modes.push('legacy_api_key');
+    malformed ||= hasDuplicateOrCombinedValues(apiKeyValues);
+  }
+
+  const cookieModes =
+    cookieHeaderValues.length > 0
+      ? getAuthCookieModes(cookieHeaderValues)
+      : getParsedCookieModes(request.cookies);
+  modes.push(...cookieModes);
+  malformed ||=
+    cookieModes.length > 0 &&
+    (cookieHeaderValues.length > 1 || cookieHeaderValues.some((value) => value.includes(',')));
+
+  return Object.freeze({
+    modes: Object.freeze([...modes]),
+    ambiguous: malformed || modes.length > 1,
+  });
+}
+
+function getRawHeaderValues(request: Request, name: string): string[] {
+  const values: string[] = [];
+  const rawHeaders = Array.isArray(request.rawHeaders) ? request.rawHeaders : [];
+  for (let index = 0; index + 1 < rawHeaders.length; index += 2) {
+    if (rawHeaders[index]?.toLowerCase() === name.toLowerCase()) {
+      values.push(rawHeaders[index + 1] ?? '');
+    }
+  }
+  if (values.length > 0) return values;
+
+  const normalized = Object.entries(request.headers ?? {}).find(
+    ([candidate]) => candidate.toLowerCase() === name.toLowerCase()
+  )?.[1];
+  if (Array.isArray(normalized)) return normalized;
+  return typeof normalized === 'string' ? [normalized] : [];
+}
+
+function hasDuplicateOrCombinedValues(values: readonly string[]): boolean {
+  return values.length !== 1 || values[0].includes(',');
+}
+
+function getAuthCookieModes(cookieHeaders: readonly string[]): PrincipalMode[] {
+  const modes: PrincipalMode[] = [];
+  for (const cookieHeader of cookieHeaders) {
+    for (const part of cookieHeader.split(';')) {
+      const separator = part.indexOf('=');
+      const name = (separator < 0 ? part : part.slice(0, separator)).trim().toLowerCase();
+      const mode = AUTH_COOKIE_MODES[name];
+      if (mode) modes.push(mode);
+    }
+  }
+  return modes;
+}
+
+function getParsedCookieModes(cookies: unknown): PrincipalMode[] {
+  if (!cookies || typeof cookies !== 'object' || Array.isArray(cookies)) return [];
+  return Object.keys(cookies as Record<string, unknown>)
+    .map((name) => AUTH_COOKIE_MODES[name.toLowerCase()])
+    .filter((mode): mode is PrincipalMode => mode !== undefined);
 }

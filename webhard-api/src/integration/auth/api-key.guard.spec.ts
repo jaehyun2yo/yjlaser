@@ -39,6 +39,55 @@ describe('ApiKeyGuard principal model', () => {
     } as unknown as ExecutionContext;
   }
 
+  it.each([
+    {
+      headers: { authorization: 'Bearer token', 'x-api-key': 'legacy' },
+      rawHeaders: ['Authorization', 'Bearer token', 'X-API-Key', 'legacy'],
+      cookies: {},
+    },
+    { headers: { 'x-api-key': 'legacy' }, cookies: { 'admin-session': 'admin' } },
+    { headers: {}, cookies: { 'admin-session': 'admin', 'company-session': 'company' } },
+    {
+      headers: { 'x-api-key': ['first', 'second'] },
+      rawHeaders: ['X-API-Key', 'first', 'X-API-Key', 'second'],
+      cookies: {},
+    },
+    {
+      headers: { cookie: 'erp-session=first; worker-session=second' },
+      rawHeaders: ['Cookie', 'erp-session=first; worker-session=second'],
+      cookies: { 'erp-session': 'first', 'worker-session': 'second' },
+    },
+    {
+      headers: { cookie: 'admin-session=first, company-session=second' },
+      rawHeaders: ['Cookie', 'admin-session=first, company-session=second'],
+      cookies: { 'admin-session': 'first, company-session=second' },
+    },
+  ])(
+    'rejects raw credential-source ambiguity before public metadata or mutation %#',
+    async (request) => {
+      const reflector = {
+        getAllAndOverride: jest.fn().mockReturnValue(true),
+      } as unknown as Reflector;
+      const apiKeyService = { validateKey: jest.fn() } as unknown as ApiKeyService;
+      const authService = {
+        verifySession: jest.fn(),
+        verifyWorkerSession: jest.fn(),
+      } as unknown as AuthService;
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const guard = new ApiKeyGuard(reflector, apiKeyService, authService);
+
+      await expect(guard.canActivate(createContext(request))).rejects.toBeInstanceOf(
+        UnauthorizedException
+      );
+      expect(reflector.getAllAndOverride).not.toHaveBeenCalled();
+      expect(apiKeyService.validateKey).not.toHaveBeenCalled();
+      expect(authService.verifySession).not.toHaveBeenCalled();
+      expect(authService.verifyWorkerSession).not.toHaveBeenCalled();
+      expect((request as { user?: unknown }).user).toBeUndefined();
+      expect((request as { apiKeyInfo?: unknown }).apiKeyInfo).toBeUndefined();
+    }
+  );
+
   it('does not model a valid API key as an admin session user', async () => {
     const reflector = {
       getAllAndOverride: jest.fn().mockReturnValue(false),
@@ -65,6 +114,76 @@ describe('ApiKeyGuard principal model', () => {
     await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
     expect((request as { user?: { userType?: string } }).user?.userType).not.toBe('admin');
     expect((request as { apiKeyInfo?: typeof keyInfo }).apiKeyInfo).toEqual(keyInfo);
+  });
+
+  it('preserves standalone @Public bypass but authenticates a valid API key through the strict entrypoint', async () => {
+    const reflector = {
+      getAllAndOverride: jest.fn((key: string) => key === IS_PUBLIC_KEY),
+    } as unknown as Reflector;
+    const keyInfo = {
+      id: 'api-key-public-strict',
+      programType: 'management_program',
+      permissions: ['event/write'],
+    };
+    const apiKeyService = {
+      validateKey: jest.fn().mockResolvedValue(keyInfo),
+    } as unknown as ApiKeyService;
+    const authService = {
+      verifySession: jest.fn().mockReturnValue(null),
+      verifyWorkerSession: jest.fn().mockReturnValue(null),
+    } as unknown as AuthService;
+    const guard = new ApiKeyGuard(reflector, apiKeyService, authService);
+    const publicRequest = { cookies: {}, headers: {} } as Record<string, unknown>;
+    const strictRequest = {
+      cookies: {},
+      headers: { 'x-api-key': 'valid-public-key' },
+    } as Record<string, unknown>;
+
+    await expect(guard.canActivate(createContext(publicRequest))).resolves.toBe(true);
+    expect(apiKeyService.validateKey).not.toHaveBeenCalled();
+
+    await expect(guard.canActivateStrict(createContext(strictRequest))).resolves.toBe(true);
+    expect(apiKeyService.validateKey).toHaveBeenCalledWith('valid-public-key');
+    expect((strictRequest as { user?: { userType?: string } }).user?.userType).toBe('integration');
+    expect((strictRequest as { apiKeyInfo?: typeof keyInfo }).apiKeyInfo).toEqual(keyInfo);
+  });
+
+  it('rejects missing credentials through the strict entrypoint even when the route is @Public', async () => {
+    const reflector = {
+      getAllAndOverride: jest.fn((key: string) => key === IS_PUBLIC_KEY),
+    } as unknown as Reflector;
+    const apiKeyService = { validateKey: jest.fn() } as unknown as ApiKeyService;
+    const authService = {
+      verifySession: jest.fn().mockReturnValue(null),
+      verifyWorkerSession: jest.fn().mockReturnValue(null),
+    } as unknown as AuthService;
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const guard = new ApiKeyGuard(reflector, apiKeyService, authService);
+
+    await expect(
+      guard.canActivateStrict(createContext({ cookies: {}, headers: {} }))
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('authenticates a valid admin session through the strict entrypoint on an @Public route', async () => {
+    const reflector = {
+      getAllAndOverride: jest.fn((key: string) => key === IS_PUBLIC_KEY),
+    } as unknown as Reflector;
+    const expectedUser = { userType: 'admin', userId: 'admin-public', companyId: null };
+    const apiKeyService = { validateKey: jest.fn() } as unknown as ApiKeyService;
+    const authService = {
+      verifySession: jest.fn().mockReturnValue(expectedUser),
+      verifyWorkerSession: jest.fn().mockReturnValue(null),
+    } as unknown as AuthService;
+    const guard = new ApiKeyGuard(reflector, apiKeyService, authService);
+    const request = {
+      headers: {},
+      cookies: { 'admin-session': 'valid-admin-session' },
+    } as Record<string, unknown>;
+
+    await expect(guard.canActivateStrict(createContext(request))).resolves.toBe(true);
+    expect(authService.verifySession).toHaveBeenCalledWith('valid-admin-session');
+    expect((request as { user?: unknown }).user).toBe(expectedUser);
   });
 
   it('allows an API key principal when route metadata permission is included', async () => {

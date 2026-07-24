@@ -11,7 +11,7 @@ if (process.env.OPERATIONAL_E2E_ENV_FILE) {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
 }
 
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
@@ -21,6 +21,20 @@ import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { CsrfTokenMiddleware } from './common/middleware/csrf-token.middleware';
 import { CsrfGuard } from './common/guards/csrf.guard';
+import {
+  createDeviceAuthBootstrapTransportMiddleware,
+  shouldSkipGenericBodyParserForDeviceAuthBootstrap,
+} from './common/middleware/device-auth-bootstrap-transport.middleware';
+import {
+  createDeviceAuthBearerTransportMiddleware,
+  shouldSkipGenericBodyParserForDeviceAuthBearer,
+} from './common/middleware/device-auth-bearer-transport.middleware';
+import { DEVICE_AUTH_ROTATION_OPTIONS } from './integration/device-auth/device-auth.tokens';
+import type { DeviceAuthRotationRuntimeOptions } from './integration/device-auth/device-auth.runtime-config';
+import {
+  createDeviceRotationFeatureGateMiddleware,
+  isDeviceRotationAdminRequest,
+} from './integration/device-auth/device-rotation-feature-gate.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -40,7 +54,10 @@ async function bootstrap() {
     const pathOnly = (req.originalUrl || req.url).split('?')[0];
     return (
       (req.method === 'PUT' && pathOnly === '/api/v1/files/google-drive/upload') ||
-      shouldUseLogIngestionBodyParser(req)
+      shouldUseLogIngestionBodyParser(req) ||
+      shouldSkipGenericBodyParserForDeviceAuthBearer(req) ||
+      shouldSkipGenericBodyParserForDeviceAuthBootstrap(req) ||
+      isDeviceRotationAdminRequest(req)
     );
   };
   const skipBodyParserForDriveUpload =
@@ -60,6 +77,12 @@ async function bootstrap() {
       }
     },
   });
+  // Device bearer routes and public bootstrap use separate 4 KiB
+  // non-inflating parsers before generic parsers below.
+  const rotationOptions = app.get<DeviceAuthRotationRuntimeOptions>(DEVICE_AUTH_ROTATION_OPTIONS);
+  rawExpressApp.use(createDeviceRotationFeatureGateMiddleware(rotationOptions));
+  rawExpressApp.use(createDeviceAuthBearerTransportMiddleware());
+  rawExpressApp.use(createDeviceAuthBootstrapTransportMiddleware());
   rawExpressApp.use((req: Request, res: Response, next: NextFunction) => {
     if (shouldUseLogIngestionBodyParser(req)) {
       logIngestionJsonParser(req, res, next);
@@ -119,7 +142,7 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   // CSRF Guard (전역 — POST/PATCH/DELETE 요청에서 csrf-token 검증)
-  app.useGlobalGuards(new CsrfGuard());
+  app.useGlobalGuards(new CsrfGuard(app.get(Reflector)));
 
   // Validation pipe
   // whitelist: true → DTO에 없는 속성은 자동 제거 (unknown props stripped silently)

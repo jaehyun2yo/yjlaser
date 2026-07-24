@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,6 +12,7 @@ import {
   sanitizeIntegrationEventText,
 } from '../../common/sensitive-data-sanitizer.util';
 import { resolveOrderStateEventEffects } from '../state/order-state-event-effect';
+import type { DeviceAccessPrincipal } from '../device-auth/device-auth.types';
 
 // 이벤트 타입 -> 자동 상태 전환 매핑
 const AUTO_STATUS_MAP: Record<string, string> = {
@@ -46,6 +47,26 @@ export class EventsService {
     }
 
     return this.createLegacyOrderEvent(dto);
+  }
+
+  async createEventForDevice(
+    dto: CreateEventDto | EventEnvelopeDto,
+    principal: DeviceAccessPrincipal
+  ) {
+    if (
+      !this.isEventEnvelopeDto(dto) ||
+      dto.source_worker !== principal.programType ||
+      this.containsCrLf(dto.event_type) ||
+      this.containsCrLf(dto.error?.code)
+    ) {
+      throw new ForbiddenException('Device event source does not match authenticated program');
+    }
+
+    return this.createJobEvent(dto);
+  }
+
+  private containsCrLf(value: string | null | undefined): boolean {
+    return typeof value === 'string' && /[\r\n]/.test(value);
   }
 
   private async createJobEvent(dto: EventEnvelopeDto): Promise<EventResponseDto> {

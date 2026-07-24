@@ -11,6 +11,10 @@ import { NumberModule } from '../../number/number.module';
 import { ContactsModule } from '../../contacts/contacts.module';
 import { CompaniesModule } from '../../companies/companies.module';
 import { SyncLogModule } from '../sync-log/sync-log.module';
+import { DeviceAuthModule } from '../device-auth/device-auth.module';
+import { ApiKeyGuard } from '../auth/api-key.guard';
+import { IntegrationPrincipalSourceGuard } from '../auth/integration-principal-source.guard';
+import { DeviceEndpointPolicyGuard } from '../auth/device-endpoint-policy.guard';
 
 @Module({
   imports: [
@@ -21,9 +25,17 @@ import { SyncLogModule } from '../sync-log/sync-log.module';
     ContactsModule,
     CompaniesModule,
     SyncLogModule,
+    DeviceAuthModule,
   ],
   controllers: [OrdersController, AutoContactController],
-  providers: [OrdersService, AutoDeliveryService, AutoContactService],
+  providers: [
+    OrdersService,
+    AutoDeliveryService,
+    AutoContactService,
+    ApiKeyGuard,
+    IntegrationPrincipalSourceGuard,
+    DeviceEndpointPolicyGuard,
+  ],
   exports: [OrdersService, AutoContactService],
 })
 export class OrdersModule {}

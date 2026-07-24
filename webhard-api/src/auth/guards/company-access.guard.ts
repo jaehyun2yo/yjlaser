@@ -8,6 +8,7 @@ import {
 import { Request } from 'express';
 import { SessionUser } from '../auth.service';
 import { ALLOW_INTEGRATION_PRINCIPAL_KEY } from '../../integration/auth/allow-integration-principal.decorator';
+import { getIntegrationPrincipalMode } from '../../integration/auth/integration-principal-source.guard';
 
 /**
  * Guard to check if user has access to a specific company's resources
@@ -24,8 +25,18 @@ export class CompanyAccessGuard implements CanActivate {
   private readonly logger = new Logger(CompanyAccessGuard.name);
 
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest<Request & { user: SessionUser }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<Request & { user?: SessionUser; deviceAuthInfo?: unknown }>();
     const user = request.user;
+
+    if (
+      getIntegrationPrincipalMode(request) === 'device_bearer' &&
+      request.deviceAuthInfo !== undefined &&
+      user === undefined
+    ) {
+      return true;
+    }
 
     if (!user) {
       throw new ForbiddenException('No user found in request');

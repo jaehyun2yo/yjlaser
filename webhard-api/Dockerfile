@@ -20,11 +20,14 @@ RUN pnpm install --frozen-lockfile
 # Copy source files
 COPY . .
 
+# Normalize the runtime entrypoint for Windows checkouts and make it executable.
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
+
 # Generate Prisma client
 RUN npx prisma generate
 
 # Build the application
-RUN pnpm build
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm build
 
 # Verify build output
 # scripts/*.ts 가 src/ 밖에 있어 tsc rootDir 가 webhard-api/ 로 자동 설정되므로
@@ -35,5 +38,4 @@ RUN ls dist/src/main.js && echo "Build OK"
 ENV NODE_ENV=production
 
 # Start the application
-# DOPPLER_TOKEN이 설정되어 있으면 Doppler에서 시크릿을 주입, 없으면 기존 환경변수 사용
-CMD ["sh", "-c", "if [ -n \"$DOPPLER_TOKEN\" ]; then doppler run -- sh -c 'npx prisma migrate deploy && node dist/src/main'; else npx prisma migrate deploy && node dist/src/main; fi"]
+CMD ["/app/docker-entrypoint.sh"]

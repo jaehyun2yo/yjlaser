@@ -13,6 +13,7 @@ import {
   HardDrive,
   Activity,
   Gauge,
+  KeyRound,
 } from 'lucide-react';
 
 interface NavTab {
@@ -31,6 +32,11 @@ const navTabs: NavTab[] = [
     href: '/admin/integration/operations',
     label: '운영현황',
     icon: <Gauge className="w-4 h-4" />,
+  },
+  {
+    href: '/admin/integration/devices',
+    label: '장치 인증',
+    icon: <KeyRound className="w-4 h-4" />,
   },
   {
     href: '/admin/integration/companies',

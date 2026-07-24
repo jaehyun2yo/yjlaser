@@ -6,17 +6,19 @@ Browser-facing Next routes under `/api/webhard/*` proxy or adapt selected NestJS
 
 ## 인증
 
-| Header         | 설명                                   | 필수                         |
-| -------------- | -------------------------------------- | ---------------------------- |
-| `X-API-Key`    | API 키 (ApiKeyGuard)                   | 세션 없는 외부 프로그램 요청 |
-| `Cookie`       | `admin-session` 또는 `company-session` | 브라우저 세션 요청           |
-| `X-Company-Id` | 업체 ID (CompanyAccessGuard)           | Storage·Sync 제외 전부       |
+| Header          | 설명                                    | 필수                                |
+| --------------- | --------------------------------------- | ----------------------------------- |
+| `Authorization` | 중앙 장치 access token (`Bearer <JWT>`) | 표준 장치 정책 endpoint 요청        |
+| `X-API-Key`     | legacy API 키 (ApiKeyGuard)             | legacy 세션 없는 외부 프로그램 요청 |
+| `Cookie`        | `admin-session` 또는 `company-session`  | 브라우저 세션 요청                  |
+| `X-Company-Id`  | 업체 ID (CompanyAccessGuard)            | Storage·Sync 제외 전부              |
 
 > Storage 모듈의 브라우저/API endpoint는 `ApiKeyGuard + CompanyAccessGuard`를 적용한다. `POST /storage/drive-change-webhook`은 Google Drive가 호출하는 별도 endpoint라 세션/업체 가드 대신 Drive channel token 검증을 사용한다. Sync 모듈은 `ApiKeyGuard`만 적용.
 > `folders/config/*` 엔드포인트는 `AdminGuard` 추가 적용.
 > `GET /storage/performance`는 `AdminGuard` 추가 적용.
 > Backup 모듈은 `ApiKeyGuard + BackupAdminGuard`를 적용한다. Admin session은 허용, company session은 거부, API key는 endpoint별 명시 백업 스코프가 필요하다.
 > `CompanyAccessGuard` 뒤의 Webhard files/folders endpoint에서 `X-API-Key`는 integration principal로만 처리한다. API key 호출은 `POST /files/presigned-url`, `POST /files/confirm`, `POST /files/batch/upload`, `POST /files/batch/confirm`, `POST /files/mark-downloaded`, `POST /folders/initialize`, `POST /share-links/validate`, `POST /share-links/download/stream`처럼 명시적으로 integration 허용 메타데이터가 붙은 endpoint만 통과한다. `GET /files/:id/download`, `GET /files/:id/download/stream`, `GET /share-links`, `POST /share-links`, `GET /folders` 같은 generic company-scoped endpoint는 API key-only 요청으로 호출할 수 없다.
+> 장치 Bearer는 `docs/specs/api/endpoints/integration.md`의 표준 장치 endpoint allowlist에 포함된 method/path만 호출할 수 있다. 상태 변경 요청의 CSRF 예외는 장치 정책 metadata가 있는 handler의 cookie-less Bearer 형식에만 적용되며, 실제 token·장치·program·permission 검증은 이후 장치 guard가 수행한다.
 
 ---
 
@@ -210,6 +212,13 @@ POST /files/multipart/initiate
 **Guard:** ApiKeyGuard + CompanyAccessGuard. 외부웹하드동기화프로그램 integration principal 허용.
 
 **사용 프로그램:** 외부웹하드동기화프로그램
+
+**장치 bearer confirm 계약:** 장치 클라이언트는 `POST /files/presigned-url` 응답의
+`folderId`와 `key`를 변경하지 않고 이 요청에 전달해야 한다. 원래 외부웹하드 husk
+`folderId`를 다시 보내면 안 된다. 장치 confirm은 routing이나 lazy folder 생성을 다시
+수행하지 않고, 제출된 폴더의 서버 검증 company와 canonical key가 정확히 일치할 때만
+metadata를 저장한다. 기존 static API key 및 admin session 경로의 원본 husk routing
+fallback은 하위 호환을 위해 유지한다.
 
 **Request Body:**
 

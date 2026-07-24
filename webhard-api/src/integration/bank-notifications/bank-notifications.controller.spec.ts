@@ -1,10 +1,20 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  ExecutionContext,
+  INestApplication,
+  UnauthorizedException,
+  ValidationPipe,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AuthService } from '../../auth/auth.service';
 import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { ApiKeyService } from '../auth/api-key.service';
+import { DeviceEndpointPolicyGuard } from '../auth/device-endpoint-policy.guard';
+import { IntegrationPrincipalSourceGuard } from '../auth/integration-principal-source.guard';
+import { DeviceBearerGuard } from '../device-auth/device-bearer.guard';
+import { DeviceBearerRequestSourceGuard } from '../device-auth/device-bearer-request-source.guard';
 import {
   getDefaultIntegrationPermissions,
   type IntegrationWorkerType,
@@ -80,7 +90,37 @@ describe('BankNotificationsController', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [BankNotificationsController],
       providers: [
+        Reflector,
         ApiKeyGuard,
+        IntegrationPrincipalSourceGuard,
+        DeviceEndpointPolicyGuard,
+        {
+          provide: DeviceBearerRequestSourceGuard,
+          useValue: { canActivate: jest.fn().mockReturnValue(true) },
+        },
+        {
+          provide: DeviceBearerGuard,
+          useValue: {
+            canActivate: jest.fn((context: ExecutionContext) => {
+              const req = context.switchToHttp().getRequest();
+              const state = req.headers['x-test-device-state'];
+              if (['revoked', 'stale', 'wrong_environment'].includes(state)) {
+                throw new UnauthorizedException(`synthetic ${state}`);
+              }
+              req.deviceAuthInfo = {
+                deviceId: 'device-1',
+                environment: 'prd',
+                programType: req.headers['x-test-program'] ?? 'management_program',
+                capabilityProfile: req.headers['x-test-capability'] ?? 'standard',
+                permissions: String(req.headers['x-test-permissions'] ?? '')
+                  .split(',')
+                  .filter(Boolean),
+                credentialVersion: 4,
+              };
+              return true;
+            }),
+          },
+        },
         { provide: ApiKeyService, useValue: apiKeyService },
         { provide: BankNotificationsService, useValue: service },
         {
@@ -244,4 +284,90 @@ describe('BankNotificationsController', () => {
       older_than_days: 365,
     });
   });
+
+  it.each([
+    ['get', '/integration/bank-notifications', 'bank-notification/read', 200, 'list'],
+    [
+      'patch',
+      '/integration/bank-notifications/mark-processed',
+      'bank-notification/manage',
+      200,
+      'markProcessed',
+    ],
+    [
+      'post',
+      '/integration/bank-notifications/backup-batches',
+      'bank-notification/manage',
+      201,
+      'createBackupBatch',
+    ],
+  ] as const)(
+    'allows exact device tuple for %s %s and rejects all mismatches',
+    async (method, path, permission, status, serviceMethod) => {
+      await deviceRequest(method, path, permission, {}).expect(status);
+      expect(service[serviceMethod]).toHaveBeenCalledTimes(1);
+
+      const denied: Array<Record<string, string>> = [
+        { 'X-Test-Program': 'external_webhard_sync' },
+        { 'X-Test-Program': 'nesting_program' },
+        { 'X-Test-Permissions': '' },
+        { 'X-Test-Capability': 'safe_canary' },
+        { 'X-Test-Device-State': 'revoked' },
+        { 'X-Test-Device-State': 'stale' },
+        { 'X-Test-Device-State': 'wrong_environment' },
+        { 'X-API-Key': MANAGEMENT_KEY },
+      ];
+      for (const headers of denied) {
+        jest.clearAllMocks();
+        await deviceRequest(method, path, permission, headers).expect((res) => {
+          if (![401, 403].includes(res.status)) throw new Error(`expected deny, got ${res.status}`);
+        });
+        expect(service[serviceMethod]).not.toHaveBeenCalled();
+      }
+    }
+  );
+
+  it.each([
+    ['post', '/integration/bank-notifications'],
+    ['delete', '/integration/bank-notifications/test-notifications'],
+    ['delete', '/integration/bank-notifications/retention'],
+  ] as const)('holds %s %s before all service writes', async (method, path) => {
+    await deviceRequest(method, path, 'bank-notification/manage', {}).expect(403);
+    expect(Object.values(service).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+  });
+
+  function deviceRequest(
+    method: 'get' | 'post' | 'patch' | 'delete',
+    path: string,
+    permission: string,
+    headers: Record<string, string>
+  ) {
+    const agent = request(app.getHttpServer());
+    const call =
+      method === 'get'
+        ? agent.get(path)
+        : method === 'post'
+          ? agent.post(path)
+          : method === 'patch'
+            ? agent.patch(path)
+            : agent.delete(path);
+    call.set('Authorization', 'Bearer synthetic.jwt.token');
+    call.set('X-Test-Permissions', headers['X-Test-Permissions'] ?? permission);
+    for (const [name, value] of Object.entries(headers)) call.set(name, value);
+    const body = path.endsWith('/mark-processed')
+      ? { event_ids: ['ibk-controller-event-1'] }
+      : path.endsWith('/backup-batches')
+        ? {
+            year: 2026,
+            file_name: 'bank-notifications-2026.jsonl',
+            sha256: 'a'.repeat(64),
+            event_count: 1,
+            posted_from: '2026-01-01T00:00:00.000Z',
+            posted_to: '2026-12-31T23:59:59.999Z',
+            event_ids: ['ibk-controller-event-1'],
+          }
+        : {};
+    call.send(body);
+    return call;
+  }
 });

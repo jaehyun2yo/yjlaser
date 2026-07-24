@@ -9,9 +9,19 @@ import { AuthModule } from '../auth/auth.module';
 import { ApiKeyModule } from '../integration/auth/api-key.module';
 import { ContactsModule } from '../contacts/contacts.module';
 import { StorageModule } from '../storage/storage.module';
+import { DeviceAuthModule } from '../integration/device-auth/device-auth.module';
+import { ApiKeyGuard } from '../integration/auth/api-key.guard';
+import { IntegrationPrincipalSourceGuard } from '../integration/auth/integration-principal-source.guard';
+import { DeviceEndpointPolicyGuard } from '../integration/auth/device-endpoint-policy.guard';
 
 @Module({
-  imports: [AuthModule, ApiKeyModule, StorageModule, forwardRef(() => ContactsModule)],
+  imports: [
+    AuthModule,
+    ApiKeyModule,
+    StorageModule,
+    DeviceAuthModule,
+    forwardRef(() => ContactsModule),
+  ],
   controllers: [FoldersController],
   providers: [
     FoldersService,
@@ -19,6 +29,9 @@ import { StorageModule } from '../storage/storage.module';
     WebhardConfigService,
     FolderTemplateService,
     DriveProvisioningService,
+    ApiKeyGuard,
+    IntegrationPrincipalSourceGuard,
+    DeviceEndpointPolicyGuard,
   ],
   exports: [
     FoldersService,

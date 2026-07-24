@@ -15,8 +15,14 @@ import {
 } from '@nestjs/common';
 import { FoldersService } from './folders.service';
 import { WebhardConfigService } from './webhard-config.service';
-import { ApiKeyGuard } from '../integration/auth/api-key.guard';
 import { AllowIntegrationPrincipal } from '../integration/auth/allow-integration-principal.decorator';
+import { DeviceEndpointPolicyGuard } from '../integration/auth/device-endpoint-policy.guard';
+import { IntegrationPrincipalSourceGuard } from '../integration/auth/integration-principal-source.guard';
+import { RequireDeviceEndpointPolicy } from '../integration/auth/require-device-endpoint-policy.decorator';
+import {
+  CurrentIntegrationPrincipal,
+  type CurrentIntegrationPrincipalValue,
+} from '../integration/auth/current-integration-principal.decorator';
 import { CompanyAccessGuard } from '../auth/guards/company-access.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -37,7 +43,7 @@ import {
 } from './dto/webhard-config.dto';
 
 @Controller('folders')
-@UseGuards(ApiKeyGuard, CompanyAccessGuard)
+@UseGuards(IntegrationPrincipalSourceGuard, DeviceEndpointPolicyGuard, CompanyAccessGuard)
 export class FoldersController {
   constructor(
     private readonly foldersService: FoldersService,
@@ -139,12 +145,16 @@ export class FoldersController {
    */
   @Get('children')
   @AllowIntegrationPrincipal()
+  @RequireDeviceEndpointPolicy('GET', '/folders/children')
   async getChildFolders(
     @Query('parentId') parentId: string | undefined,
-    @CurrentUser() user: SessionUser
+    @CurrentIntegrationPrincipal() principal: CurrentIntegrationPrincipalValue
   ) {
     const effectiveParentId = parentId === undefined || parentId === '' ? null : parentId;
-    return this.foldersService.getChildFolders(effectiveParentId, user);
+    if (principal.mode === 'device_bearer') {
+      return this.foldersService.getChildFoldersForDevice(effectiveParentId, principal.device);
+    }
+    return this.foldersService.getChildFolders(effectiveParentId, principal.user);
   }
 
   /**
@@ -261,32 +271,47 @@ export class FoldersController {
    */
   @Post()
   @AllowIntegrationPrincipal()
-  async createFolder(@Body() dto: CreateFolderDto, @CurrentUser() user: SessionUser) {
-    return this.foldersService.createFolder(dto, user);
+  @RequireDeviceEndpointPolicy('POST', '/folders')
+  async createFolder(
+    @Body() dto: CreateFolderDto,
+    @CurrentIntegrationPrincipal() principal: CurrentIntegrationPrincipalValue
+  ) {
+    if (principal.mode === 'device_bearer') {
+      return this.foldersService.createFolderForDevice(dto, principal.device);
+    }
+    return this.foldersService.createFolder(dto, principal.user);
   }
 
   /**
    * PATCH /folders/:id/rename - Rename folder
    */
   @Patch(':id/rename')
+  @RequireDeviceEndpointPolicy('PATCH', '/folders/:id/rename')
   async renameFolder(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RenameFolderDto,
-    @CurrentUser() user: SessionUser
+    @CurrentIntegrationPrincipal() principal: CurrentIntegrationPrincipalValue
   ) {
-    return this.foldersService.renameFolder(id, dto, user);
+    if (principal.mode === 'device_bearer') {
+      return this.foldersService.renameFolderForDevice(id, dto, principal.device);
+    }
+    return this.foldersService.renameFolder(id, dto, principal.user);
   }
 
   /**
    * PATCH /folders/:id/move - Move folder
    */
   @Patch(':id/move')
+  @RequireDeviceEndpointPolicy('PATCH', '/folders/:id/move')
   async moveFolder(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: MoveFolderDto,
-    @CurrentUser() user: SessionUser
+    @CurrentIntegrationPrincipal() principal: CurrentIntegrationPrincipalValue
   ) {
-    return this.foldersService.moveFolder(id, dto, user);
+    if (principal.mode === 'device_bearer') {
+      return this.foldersService.moveFolderForDevice(id, dto, principal.device);
+    }
+    return this.foldersService.moveFolder(id, dto, principal.user);
   }
 
   /**
