@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { CSRF_EXEMPT_METADATA_KEY, CsrfExempt } from '../decorators/csrf-exempt.decorator';
 import { CsrfGuard } from './csrf.guard';
 import { DeviceBearerController } from '../../integration/device-auth/device-bearer.controller';
+import { RequireDeviceEndpointPolicy } from '../../integration/auth/require-device-endpoint-policy.decorator';
 
 type LoggedSecurityEvent = {
   project?: string;
@@ -138,6 +139,118 @@ describe('CsrfGuard', () => {
         })
       )
     ).toThrow(ForbiddenException);
+  });
+
+  describe('device Bearer business endpoint', () => {
+    const deviceBearer = 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkZXZpY2UifQ.signature';
+    class DeviceBusinessController {
+      @RequireDeviceEndpointPolicy('POST', '/files/presigned-url')
+      public getPresignedUrl(): void {}
+    }
+    const handler = DeviceBusinessController.prototype.getPresignedUrl;
+    const targetClass = DeviceBusinessController;
+
+    it('장치 정책이 선언된 POST는 cookie 없는 정확한 Bearer 요청만 CSRF 검증을 건너뛴다', () => {
+      const guard = new CsrfGuard(new Reflector());
+
+      expect(
+        guard.canActivate(
+          makeContext({
+            method: 'POST',
+            path: '/api/v1/files/presigned-url',
+            headers: { authorization: deviceBearer },
+            handler,
+            targetClass,
+          })
+        )
+      ).toBe(true);
+    });
+
+    it('장치 정책이 선언돼도 Bearer 값이 JWT 형식이 아니면 CSRF 검증을 유지한다', () => {
+      const guard = new CsrfGuard(new Reflector());
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      expect(() =>
+        guard.canActivate(
+          makeContext({
+            method: 'POST',
+            path: '/api/v1/files/presigned-url',
+            headers: { authorization: 'Bearer not-a-jwt' },
+            handler,
+            targetClass,
+          })
+        )
+      ).toThrow(ForbiddenException);
+    });
+
+    it('장치 정책 Bearer 요청에 cookie가 섞이면 CSRF 검증을 유지한다', () => {
+      const guard = new CsrfGuard(new Reflector());
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      expect(() =>
+        guard.canActivate(
+          makeContext({
+            method: 'POST',
+            path: '/api/v1/files/presigned-url',
+            headers: { authorization: deviceBearer },
+            cookies: { session: 'ambient-session' },
+            handler,
+            targetClass,
+          })
+        )
+      ).toThrow(ForbiddenException);
+    });
+
+    it('장치 정책 Bearer 요청에 browser origin이 섞이면 CSRF 검증을 유지한다', () => {
+      const guard = new CsrfGuard(new Reflector());
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      expect(() =>
+        guard.canActivate(
+          makeContext({
+            method: 'POST',
+            path: '/api/v1/files/presigned-url',
+            headers: {
+              authorization: deviceBearer,
+              origin: 'https://example.test',
+            },
+            handler,
+            targetClass,
+          })
+        )
+      ).toThrow(ForbiddenException);
+    });
+
+    it('장치 정책의 method와 실제 method가 다르면 CSRF 검증을 유지한다', () => {
+      const guard = new CsrfGuard(new Reflector());
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      expect(() =>
+        guard.canActivate(
+          makeContext({
+            method: 'DELETE',
+            path: '/api/v1/files/presigned-url',
+            headers: { authorization: deviceBearer },
+            handler,
+            targetClass,
+          })
+        )
+      ).toThrow(ForbiddenException);
+    });
+
+    it('장치 정책이 없는 handler는 정확한 Bearer 요청이어도 CSRF 검증을 유지한다', () => {
+      const guard = new CsrfGuard(new Reflector());
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      expect(() =>
+        guard.canActivate(
+          makeContext({
+            method: 'POST',
+            headers: { authorization: deviceBearer },
+          })
+        )
+      ).toThrow(ForbiddenException);
+    });
   });
 
   it('key와 csrf token이 없는 POST 요청은 거부한다', () => {

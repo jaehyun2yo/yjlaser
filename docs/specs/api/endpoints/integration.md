@@ -318,6 +318,14 @@ capability, 현재 실행 환경, active/non-revoked 장치, 정확한 credentia
 permission을 동시에 요구합니다. 장치 principal은 `request.deviceAuthInfo`로만 전달되며 기존
 session/static API key user로 합성하지 않습니다.
 
+상태 변경 method의 표준 장치 Bearer 요청은 전역 CSRF guard에서
+`@RequireDeviceEndpointPolicy`가 선언된 handler와 선언 method가 일치하고, 정확히 하나의
+`Authorization: Bearer <JWT>` 형식이며 cookie, Origin, Referer, CSRF/session credential,
+proxy authorization이 없을 때만 cookie-less 서버 간 요청으로 통과합니다. 이 단계는 token을
+신뢰하거나 권한을 부여하지 않으며, 이어지는 장치 guard chain이 token 서명·현재 장치 상태·
+program/profile/permission과 혼합 principal 금지를 계속 검증합니다. 정책이 없는 endpoint,
+잘못된 Bearer 형식 또는 브라우저/session 문맥이 섞인 요청은 기존 CSRF 검증을 유지합니다.
+
 | 프로그램                | Method/path                                            | Permission                 |
 | ----------------------- | ------------------------------------------------------ | -------------------------- |
 | `external_webhard_sync` | `GET /folders/children`                                | `folder/read`              |

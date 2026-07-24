@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### 2026-07-24 — central-device-bearer-csrf-boundary
+
+**Scope**: 중앙 장치 인증 Bearer를 사용하는 표준 데스크톱 업무 endpoint의 전역 CSRF 경계.
+
+**수정**:
+
+- `@RequireDeviceEndpointPolicy`가 선언된 handler의 동일 method 요청이 cookie 없는 정확한
+  `Authorization: Bearer <JWT>` 형식일 때만 전역 CSRF 검증을 건너뛴다.
+- cookie, Origin, Referer, CSRF/session credential, proxy authorization 혼용, 잘못된 Bearer
+  형식, method 불일치와 정책 미선언 endpoint는 기존 CSRF 검증을 유지한다.
+- 이 예외는 token을 인증하거나 권한을 부여하지 않는다. 기존 장치 guard chain이 token 서명,
+  현재 장치 상태, program/profile/permission과 혼합 principal 금지를 계속 검증한다.
+
+**검증 및 경계**:
+
+- CSRF RED에서 정상 장치 Bearer 행만 403으로 실패하는 것을 확인한 뒤 GREEN 19개를 통과했다.
+- CSRF, 파일/폴더 장치 controller, endpoint policy와 Bearer guard 묶음 5 suites / 108 tests,
+  backend/frontend TypeScript, Nest build와 Next production build를 통과했다.
+- 배포, 운영 DB, secret, 운영 장치 상태와 실제 파일 업로드는 변경하지 않았다.
+
 ### 2026-07-23 — central-device-auth-dev-lifecycle-smoke
 
 **Scope**: 세 데스크톱 program type의 중앙 장치 인증 DEV 실제 상태 전환 증거.
